@@ -18,6 +18,9 @@ from groundingdino.util.inference import Model
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Constants
+NO_CLASS_ID = -1  # GroundingDINO doesn't use integer class IDs (open-vocabulary)
+
 
 class InferenceEngine:
     """
@@ -75,7 +78,10 @@ class InferenceEngine:
         self.class_confidence_overrides = class_confidence_overrides or {}
 
         # Create text prompt caption (period-separated)
-        self.caption = " . ".join(self.text_prompts) + " ."
+        if self.text_prompts:
+            self.caption = " . ".join(self.text_prompts) + " ."
+        else:
+            self.caption = ""
 
         self.model: Optional[Model] = None
         self.is_loaded = False
@@ -297,7 +303,7 @@ class InferenceEngine:
                     continue
 
                 detection = {
-                    'class_id': -1,  # GroundingDINO doesn't have class IDs
+                    'class_id': NO_CLASS_ID,
                     'class_name': class_name,
                     'confidence': float(conf),
                     'bbox': {

@@ -115,8 +115,8 @@ detection:
     - "small animal"
 
   # Two-stage detection pipeline (GroundingDINO + iNaturalist)
-  use_two_stage: false  # Disabled for now - test GroundingDINO first, then re-enable
-  enable_species_classification: false  # Can be re-enabled after testing base GroundingDINO
+  use_two_stage: false  # Feature currently disabled
+  enable_species_classification: false  # Feature currently disabled
 
   # GroundingDINO thresholds
   box_threshold: 0.25  # Confidence for bounding boxes (similar to old confidence)
