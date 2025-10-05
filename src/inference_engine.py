@@ -260,7 +260,8 @@ class InferenceEngine:
         image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         # Predict with GroundingDINO
-        boxes, logits, phrases = self.model.predict_with_caption(
+        # Returns: (Detections object, List[str] labels)
+        detections_obj, labels = self.model.predict_with_caption(
             image=image_rgb,
             caption=self.caption,
             box_threshold=self.box_threshold,
@@ -269,54 +270,50 @@ class InferenceEngine:
 
         detections = []
 
-        # Convert boxes from normalized [0,1] to pixel coordinates
-        h, w = frame.shape[:2]
+        # Extract data from Detections object
+        # detections_obj.xyxy: bounding boxes in [x1, y1, x2, y2] format (already in pixels)
+        # detections_obj.confidence: confidence scores
+        # labels: list of class names
 
-        # GroundingDINO returns boxes in format [cx, cy, w, h] normalized
-        # We need to convert to [x1, y1, x2, y2] in pixels
-        for box, conf, phrase in zip(boxes, logits, phrases):
-            # Convert from [cx, cy, w, h] to [x1, y1, x2, y2]
-            cx, cy, box_w, box_h = box
-            x1 = (cx - box_w / 2) * w
-            y1 = (cy - box_h / 2) * h
-            x2 = (cx + box_w / 2) * w
-            y2 = (cy + box_h / 2) * h
+        if len(detections_obj.xyxy) > 0:
+            for box, conf, label in zip(detections_obj.xyxy, detections_obj.confidence, labels):
+                x1, y1, x2, y2 = box
 
-            # Clean up phrase (remove periods and extra spaces)
-            class_name = phrase.strip().strip('.')
+                # Clean up label (remove periods and extra spaces)
+                class_name = label.strip().strip('.')
 
-            # Apply per-class confidence threshold if specified
-            class_conf_threshold = self.class_confidence_overrides.get(class_name, self.box_threshold)
-            if conf < class_conf_threshold:
-                continue
+                # Apply per-class confidence threshold if specified
+                class_conf_threshold = self.class_confidence_overrides.get(class_name, self.box_threshold)
+                if conf < class_conf_threshold:
+                    continue
 
-            # Calculate bounding box area
-            box_width = x2 - x1
-            box_height = y2 - y1
-            box_area = box_width * box_height
+                # Calculate bounding box area
+                box_width = x2 - x1
+                box_height = y2 - y1
+                box_area = box_width * box_height
 
-            # Filter by minimum box area (skip tiny detections)
-            if self.min_box_area > 0 and box_area < self.min_box_area:
-                continue
+                # Filter by minimum box area (skip tiny detections)
+                if self.min_box_area > 0 and box_area < self.min_box_area:
+                    continue
 
-            detection = {
-                'class_id': -1,  # GroundingDINO doesn't have class IDs
-                'class_name': class_name,
-                'confidence': float(conf),
-                'bbox': {
-                    'x1': float(x1),
-                    'y1': float(y1),
-                    'x2': float(x2),
-                    'y2': float(y2),
-                    'area': int(box_area)
+                detection = {
+                    'class_id': -1,  # GroundingDINO doesn't have class IDs
+                    'class_name': class_name,
+                    'confidence': float(conf),
+                    'bbox': {
+                        'x1': float(x1),
+                        'y1': float(y1),
+                        'x2': float(x2),
+                        'y2': float(y2),
+                        'area': int(box_area)
+                    }
                 }
-            }
 
-            detections.append(detection)
+                detections.append(detection)
 
-            # Stop if we hit max detections
-            if len(detections) >= self.max_det:
-                break
+                # Stop if we hit max detections
+                if len(detections) >= self.max_det:
+                    break
 
         return detections
 
