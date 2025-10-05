@@ -9,12 +9,13 @@ Real-time object detection system for **telescope collision prevention** and **w
 **Dual Purpose System**:
 1. **Telescope Safety** (Primary Goal): Detect telescope equipment parts (tube, mount, tripod legs) and potential collision hazards (people, animals). Prevent accidents with telescope equipment by alerting when objects are too close to tripod legs or moving telescope components.
 
-2. **Wildlife Monitoring** (Secondary Goal): Monitor desert animals (coyotes, rabbits, quail, roadrunners, lizards, etc.) using YOLO-World open-vocabulary detection.
+2. **Wildlife Monitoring** (Secondary Goal): Monitor desert animals (coyotes, rabbits, quail, roadrunners, lizards, etc.) using GroundingDINO open-vocabulary detection with 93 comprehensive text prompts.
 
 **Current Status**:
-- Wildlife detection: **ACTIVE** (using YOLO-World)
-- Telescope detection: **IN TRAINING** (custom model requires annotated dataset)
+- Wildlife detection: **ACTIVE** (using GroundingDINO - Apache 2.0 license)
+- Telescope detection: **PLANNED** (custom model requires annotated dataset)
 - Collision detection logic: **FRAMEWORK READY** (config placeholders exist)
+- License: **MIT** (all dependencies Apache 2.0 or MIT compatible)
 
 **Camera Setup**: Mounted overlooking backyard telescope setup and surrounding desert terrain
 
@@ -102,10 +103,13 @@ RTSP Camera → Stream Capture → Frame Queue → Inference Engine → Detectio
 
 **Low-Latency Frame Pipeline**: Uses Queue size=1-2 and aggressive frame dropping to process only the latest frames, target <100ms end-to-end latency.
 
-**Two-Stage Detection (Optional)**:
-- Stage 1: YOLO-World detects broad categories ("bird", "mammal", "reptile")
-- Stage 2: Species classifier identifies specific species ("Gambel's Quail")
-- Currently: Stage 1 only (Stage 2 framework exists but needs trained models)
+**Detection Pipeline**:
+- **Stage 1**: GroundingDINO open-vocabulary detection with 93 text prompts
+  - Comprehensive desert wildlife: mammals, birds, reptiles, amphibians
+  - Specific species: "zebra-tailed lizard", "gambel's quail", "desert iguana", etc.
+- **Stage 2 (Optional)**: iNaturalist species classifier for fine-grained ID
+  - Framework ready but disabled for initial testing
+  - Can be re-enabled after GroundingDINO validation
 
 **Snapshot Cooldown System**: Prevents duplicate saves using per-class cooldown timers (default 45s).
 
@@ -114,21 +118,24 @@ RTSP Camera → Stream Capture → Frame Queue → Inference Engine → Detectio
 **Main Config**: `config/config.yaml`
 
 Critical settings:
-- `detection.model`: Currently using `yolov8x-worldv2.pt` (YOLO-World for wildlife)
-  - **Future**: Switch to `models/telescope_custom.pt` once trained
-- `detection.use_yolo_world`: true (enables open-vocabulary detection)
-- `detection.yolo_world_classes`: List of 17 desert species text prompts
-- `detection.confidence`: 0.25 (lower for distant animals/telescope parts)
-- `detection.min_box_area`: 100px² (filters tiny false positives)
+- `detection.model.config`: `models/GroundingDINO_SwinT_OGC.py` (Apache 2.0)
+- `detection.model.weights`: `models/groundingdino_swint_ogc.pth` (662MB)
+- `detection.text_prompts`: List of 93 comprehensive wildlife + human prompts
+- `detection.box_threshold`: 0.25 (confidence for bounding boxes)
+- `detection.text_threshold`: 0.25 (confidence for text-image matching)
+- `detection.min_box_area`: 50px² (catches small distant lizards)
 - `snapshots.enabled`: true (saves detections to clips/)
 - `snapshots.trigger_classes`: Which animals trigger saves
 - `detection_zones`: **PLANNED** - Define danger zones around telescope equipment
 - `collision_detection.enabled`: **PLANNED** - Enable proximity alerts
 
 **Model Selection Strategy**:
-- **YOLO-World** (`yolov8x-worldv2.pt`): For wildlife using text prompts (no training needed)
-- **Custom YOLOv8** (`telescope_custom.pt`): For telescope parts (requires training on 7 classes)
-- **Dual Model Setup** (future): Run both models simultaneously - YOLO-World for wildlife, custom model for telescope equipment
+- **GroundingDINO** (Apache 2.0): For wildlife using 93 text prompts (no training needed)
+  - Open-vocabulary detection with natural language
+  - Supports specific species names: "desert iguana", "zebra-tailed lizard"
+- **Custom Model** (future): For telescope parts (requires training on 7 classes)
+  - Will need to train separate model or fine-tune GroundingDINO
+- **License**: All components MIT/Apache 2.0 compatible for open source release
 
 **Telescope Detection Classes** (training/datasets/telescope_equipment/classes.yaml):
 ```yaml
@@ -144,206 +151,82 @@ Critical settings:
 ## Important File Locations
 
 ### Core Modules (src/)
-- `stream_capture.py`: RTSP stream handling with OpenCV
-- `inference_engine.py`: GPU inference with YOLOv8/YOLO-World
-- `detection_processor.py`: Post-processing, filtering, snapshot coordination
-- `web_server.py`: FastAPI web interface with WebSocket + MJPEG stream
-- `snapshot_saver.py`: Saves detection events as images/clips
-- `two_stage_pipeline.py`: Two-stage detection framework (Stage 2 inactive)
-- `species_classifier.py`: Species classification models (Stage 2 inactive)
+- `stream_capture.py`: RTSP stream handling
+- `inference_engine.py`: GroundingDINO inference (Apache 2.0)
+- `detection_processor.py`: Post-processing, snapshot coordination
+- `web_server.py`: FastAPI + WebSocket interface
+- `snapshot_saver.py`: Saves detection clips
+- `two_stage_pipeline.py`: Optional iNaturalist classifier (disabled)
+- `species_classifier.py`: Species classification (disabled)
 
-### Entry Point
-- `main.py`: Orchestrates all components, handles shutdown
-
-### Training Infrastructure (training/)
-- `training/datasets/telescope_equipment/`: 900+ training images collected
-- `training/scripts/train_custom_model.py`: YOLOv8 training script
-- `training/TRAINING_GUIDE.md`: Complete training workflow
-
-### Documentation
-- `README.md`: User-facing documentation
-- `STAGE2_SETUP.md`: Guide for enabling species classification
-- `SNAPSHOT_FEATURE.md`: Snapshot saving feature documentation
-- `ANNOTATION_GUIDE.md`: How to annotate training images
+### Key Files
+- `main.py`: Entry point
+- `config/config.yaml`: Main configuration (93 text prompts here)
+- `models/`: GroundingDINO weights (662MB) + config
 
 ## Development Workflow
 
-### Training Custom Telescope Detection Model
+### Training Custom Telescope Detection Model (Future)
 
-**Why?** To detect telescope equipment parts for collision prevention. YOLO-World detects wildlife, but can't reliably identify telescope-specific parts like tripod legs.
+**Note**: Currently using GroundingDINO for wildlife. Telescope detection is planned for future.
 
-**Training Process** (see training/TRAINING_GUIDE.md):
-1. **Collect 100-200 images**: Use `capture_training_images.py` to grab frames from camera
-   - Walk around telescopes to get different angles
-   - Include covered and uncovered states
-   - Vary distances (2-20 feet)
-   - Different lighting conditions
-2. **Annotate images**: Draw bounding boxes around 7 telescope parts using LabelImg or Roboflow
-   - **Critical**: Precisely label all three tripod legs (needed for collision detection)
-   - Be consistent with box placement
-3. **Train model**: Run `train_custom_model.py` (15-30 mins on A30)
-   - Target: mAP50 > 0.85
-   - Output: `models/telescope_custom.pt`
-4. **Deploy**: Update config to use custom model, restart system
-
-**Expected Results**:
-- 90%+ accuracy on telescope parts
-- 10-15ms inference time
-- No more false "person" detections on covered telescopes
+If you're asked to help with telescope detection:
+1. Training images are in `training/datasets/telescope_equipment/` (1,050+ images)
+2. See `training/TRAINING_GUIDE.md` for complete workflow
+3. Will need to train separate model or fine-tune GroundingDINO
+4. Target: Detect telescope tube, mount, tripod legs for collision prevention
 
 ### Adding New Wildlife Detection Classes
-1. Edit `config/config.yaml` → `detection.yolo_world_classes`
-2. Add text prompt for new animal (e.g., "javelina", "bobcat")
-3. Restart system (no training needed with YOLO-World)
+1. Edit `config/config.yaml` → `detection.text_prompts`
+2. Add text prompt for new animal (e.g., "coati", "ringtail")
+3. Restart system (no training needed with GroundingDINO open-vocabulary)
 
 ### Implementing Collision Detection Logic
 
-**Framework exists but not active**. To implement:
+**Framework exists but not active**. Config placeholders are in `config/config.yaml`:
+- `detection_zones`: Define danger zones around telescope
+- `collision_detection.enabled`: Enable proximity alerts
 
-1. **Enable collision detection** in config:
-```yaml
-collision_detection:
-  enabled: true
-  danger_threshold: 50  # pixels - minimum safe distance
-```
+If asked to implement, see comments in `detection_processor.py` for approach.
 
-2. **Define detection zones** around telescope equipment:
-```yaml
-detection_zones:
-  - name: "telescope_1_danger_zone"
-    type: "polygon"
-    points: [[100,200], [300,200], [300,400], [100,400]]
-    alert_on_entry: ["person", "coyote", "dog"]
+### Common Adjustments
 
-  - name: "tripod_collision_zone"
-    type: "radius"
-    center: [640, 480]  # Center of tripod base
-    radius: 150  # pixels
-    alert_on_proximity: ["person", "bird", "counterweight"]
-```
+**Detection thresholds** (in `config/config.yaml`):
+- `box_threshold`: 0.25 (confidence for bounding boxes)
+- `text_threshold`: 0.25 (text-image matching confidence)
+- `min_box_area`: 50px² (filters tiny false positives)
+- `class_confidence_overrides`: Per-class thresholds (e.g., person: 0.60)
 
-3. **Implement collision logic** in `src/detection_processor.py`:
-   - Calculate distances between detected objects
-   - Check if objects are within danger zones
-   - Track velocity vectors for moving objects
-   - Predict collision paths
-   - Trigger alerts/sounds when collision risk detected
+**Debugging**:
+- Check `clips/` directory for saved detections
+- Use `scripts/view_snapshots.py` to review with metadata
+- Logs show inference times (currently ~120ms, target <50ms with TensorRT)
 
-4. **Add alert system**:
-   - WebSocket messages with collision warnings
-   - Visual red bounding boxes on web UI
-   - Audio alerts (optional)
-   - Integration with telescope mount for emergency stop (future)
+## GPU Optimization
 
-### Modifying Detection Thresholds
-Common adjustments for distant wildlife:
-- Lower `detection.confidence` (0.2-0.3 for small/distant animals)
-- Adjust `detection.min_box_area` (100-200px² filters noise)
-- Modify `snapshots.cooldown_seconds` (30-60s prevents spam)
+**Current Performance (A30)**:
+- GroundingDINO: ~120ms inference (unoptimized)
+- Target with TensorRT: ~13ms (Phase 4 - planned)
+- VRAM usage: ~2-3GB
+- Use `/stats` endpoint for detailed metrics
 
-### Debugging Detection Issues
-1. Check logs for inference times (should be ~20-30ms)
-2. View `clips/` directory for saved detections
-3. Use `scripts/view_snapshots.py` to review detections with metadata
-4. Lower confidence threshold if missing animals
-5. Raise min_box_area if too many false positives
+## API Quick Reference
 
-### Camera Configuration
-**RTSP URL Format**: `rtsp://username:password@ip/stream`
-- Main stream: 2560x1440 (high quality, higher latency)
-- Sub stream: lower resolution (faster, used for real-time)
-- Current: Using main stream resized to 1280x720
-
-## GPU Optimization Notes
-
-**NVIDIA A30 Performance**:
-- Expected inference: 20-30ms (yolov8x-world)
-- VRAM usage: ~2GB
-- Runs at fp16 precision automatically
-- CUDA 11.8+ required
-
-**Performance Monitoring**:
-- Web interface shows live latency metrics
-- Check `/stats` endpoint for detailed performance
-- Use `tests/test_latency.py` for benchmarking
-
-## Model Management
-
-**Auto-downloaded models** (stored in `models/`):
-- `yolov8x-worldv2.pt`: Current model (YOLO-World v2)
-- Downloaded automatically on first run via Ultralytics
-
-**Custom trained models**:
-- Train using `training/scripts/train_custom_model.py`
-- Output: `training/runs/detect/train/weights/best.pt`
-- Update config to point to custom model
-
-## WebSocket API
-
-**Connect**: `ws://localhost:8000/ws/detections`
-
-**Message Format**:
-```json
-{
-  "type": "detections",
-  "frame_id": 12345,
-  "timestamp": 1634567890.123,
-  "latency_ms": 25.5,
-  "inference_time_ms": 20.2,
-  "total_detections": 3,
-  "detection_counts": {"bird": 2, "rabbit": 1},
-  "detections": [
-    {
-      "class_name": "bird",
-      "confidence": 0.85,
-      "bbox": {"x1": 100, "y1": 200, "x2": 300, "y2": 400}
-    }
-  ]
-}
-```
+- **WebSocket**: `ws://localhost:8000/ws/detections` (real-time detections)
+- **HTTP**: `GET /stats` (performance metrics)
+- See `API_REFERENCE.md` for complete documentation
 
 ## Common Issues
-
-### General Issues
 
 **"No module named 'src.stream_capture'"**: Run from repo root, not from src/
 
 **Camera connection fails**: Check IP, credentials, firewall. Run `tests/test_camera_connection.py`
 
-**High latency (>100ms)**: Switch to sub stream, reduce resolution, or use yolov8s instead of yolov8x
+**High latency (>160ms)**: Expected with current GroundingDINO. Will improve with TensorRT (Phase 4)
 
-### Wildlife Detection Issues
+**False positives**: Increase `min_box_area` or adjust `class_confidence_overrides`
 
-**False positives on distant objects**: Increase `min_box_area` to 200-300px²
-
-**Missing wildlife detections**: Lower `confidence` threshold to 0.2, verify YOLO-World classes include the animal
-
-**YOLO-World detects telescope cover as "person"**: This is why custom telescope model is needed! Train custom model to properly identify telescope parts.
-
-### Telescope Detection Issues
-
-**Custom model not detecting telescope parts**:
-- Lower confidence threshold to 0.3-0.4
-- Check if model was trained properly (mAP50 > 0.80)
-- Verify you're using correct model path in config
-- Collect more diverse training images and retrain
-
-**Tripod legs not detected**:
-- Most critical for collision detection
-- Ensure training images include clear views of all three legs
-- Annotate legs precisely during training
-- May need separate "tripod_leg_close" vs "tripod_leg_far" classes
-
-**Training fails with OOM error**:
-- Reduce batch size: `--batch 8` or `--batch 4`
-- Use smaller model: `--base-model yolov8n.pt`
-- Reduce image size: `--imgsz 320`
-
-**Poor training results (mAP50 < 0.70)**:
-- Collect more diverse training images (100-200+ recommended)
-- Improve annotation quality (tight, consistent boxes)
-- Train for more epochs (200-300)
-- Try larger base model (yolov8m or yolov8x)
+**Missing detections**: Lower `box_threshold` or add more specific text prompts
 
 ## Code Style Notes
 
@@ -405,3 +288,24 @@ Direct integration with INDI/ASCOM telescope control software for emergency stop
 **Use Case**: Auto-stop telescope slew if collision risk detected
 **Platforms**: INDI (Linux), ASCOM (Windows)
 **Safety**: Requires hardware safety interlocks
+
+---
+
+## Credits & Licenses
+
+This project is licensed under the **MIT License**. All dependencies use permissive licenses compatible with MIT.
+
+### Core Dependencies
+
+- **GroundingDINO** (Apache 2.0) - https://github.com/IDEA-Research/GroundingDINO
+  - Open-vocabulary object detection
+- **iNaturalist/EVA02** (Apache 2.0) - https://github.com/huggingface/pytorch-image-models  
+  - 10,000 species classification
+- **PyTorch** (BSD-3-Clause) - https://pytorch.org/
+  - Deep learning framework
+- **OpenCV** (Apache 2.0) - https://opencv.org/
+  - Computer vision library
+- **FastAPI** (MIT) - https://fastapi.tiangolo.com/
+  - Web framework
+
+All components are MIT/Apache 2.0/BSD compatible.

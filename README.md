@@ -1,15 +1,17 @@
 # Telescope Detection System
 
-Real-time object detection system for monitoring astronomical telescopes using Reolink RLC-410W camera and NVIDIA A30 GPU.
+Real-time object detection system for monitoring astronomical telescopes and desert wildlife using Reolink RLC-410W camera and NVIDIA A30 GPU.
 
 ## Features
 
-- **Ultra-low latency**: Target <100ms end-to-end latency
-- **Real-time detection**: People, animals, and custom telescope equipment
+- **Open-vocabulary detection**: 93 wildlife species using GroundingDINO (Apache 2.0)
+- **Comprehensive wildlife coverage**: Desert mammals, birds, reptiles, amphibians
 - **GPU accelerated**: Optimized for NVIDIA A30
+- **Ultra-low latency**: Target <100ms end-to-end (will improve with TensorRT)
 - **Web interface**: Live video stream with detection overlays
 - **WebSocket streaming**: Real-time detection results
 - **Snapshot saving**: Automatic image/clip saving on detection events
+- **MIT License**: Fully open source with permissive licensing
 
 ## System Requirements
 
@@ -44,9 +46,17 @@ camera:
   stream: "main"
 
 detection:
-  model: "yolov8x.pt"
+  model:
+    config: "models/GroundingDINO_SwinT_OGC.py"
+    weights: "models/groundingdino_swint_ogc.pth"
   device: "cuda:0"
-  confidence: 0.5
+  box_threshold: 0.25
+  text_threshold: 0.25
+  text_prompts:  # 93 wildlife categories
+    - "person"
+    - "coyote"
+    - "rabbit"
+    # ... and 90 more!
 
 web:
   host: "0.0.0.0"
@@ -65,8 +75,8 @@ python main.py
 
 The system will:
 1. Connect to the camera
-2. Download YOLOv8 model (if not already present)
-3. Start the inference engine
+2. Load GroundingDINO model (662MB, already downloaded)
+3. Start the inference engine with 93 wildlife text prompts
 4. Launch the web server
 
 Access the web interface at: **http://localhost:8000**
@@ -354,7 +364,9 @@ Connect to: `ws://localhost:8000/ws/detections`
 
 ## License
 
-This project is for personal use. Modify and extend as needed for your telescope monitoring setup.
+MIT License - fully open source. See [LICENSE](LICENSE) for details.
+
+All dependencies use permissive licenses (Apache 2.0, BSD, MIT).
 
 ## Support
 
@@ -362,18 +374,33 @@ For issues or questions:
 1. Check logs in `logs/` directory
 2. Run test scripts to diagnose problems
 3. Review configuration in `config/config.yaml`
+4. See [DOCUMENTATION.md](DOCUMENTATION.md) for complete docs
 
 ## Performance Notes
 
 - **A30 GPU**: 24GB HBM2, excellent for this workload
-- **YOLOv8x on 1280x720**: ~30-50ms inference time expected
-- **YOLOv8n on 1280x720**: ~10-15ms inference time expected
+- **GroundingDINO on 1280x720**: ~120ms inference (Phase 3 - current)
+- **GroundingDINO + TensorRT**: ~13ms inference (Phase 4 - planned)
 - **Network latency**: ~20-40ms typical for local camera
-- **Total pipeline**: ~50-100ms achievable with optimization
+- **Total pipeline**: Currently 130-160ms, target <50ms with TensorRT
 
 ## Credits
 
-- **Ultralytics YOLOv8**: https://github.com/ultralytics/ultralytics
-- **FastAPI**: https://fastapi.tiangolo.com/
-- **OpenCV**: https://opencv.org/
-- **PyTorch**: https://pytorch.org/
+This project uses the following open-source components:
+
+- **GroundingDINO** (Apache 2.0) - https://github.com/IDEA-Research/GroundingDINO
+- **iNaturalist / EVA02** (Apache 2.0) - https://github.com/huggingface/pytorch-image-models
+- **PyTorch** (BSD-3-Clause) - https://pytorch.org/
+- **OpenCV** (Apache 2.0) - https://opencv.org/
+- **FastAPI** (MIT) - https://fastapi.tiangolo.com/
+
+## Wildlife Detection Coverage
+
+93 comprehensive text prompts covering:
+- **Mammals**: Coyote, bobcat, fox, mountain lion, rabbit, deer, javelina, and more
+- **Birds**: Hawks, owls, falcons, roadrunner, quail, hummingbirds, and more
+- **Reptiles**: Desert iguanas, chuckwallas, zebra-tailed lizards, snakes, tortoises
+- **Amphibians**: Toads, frogs
+- **Arthropods**: Scorpions, tarantulas
+
+See `config/config.yaml` for the complete list of 93 detection categories.
