@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wildlife & Detection Clips - Telescope Detection System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            color: #00ff88;
+        }
+
+        .back-link {
+            display: inline-block;
+            background-color: #2a2a2a;
+            color: #00ff88;
+            padding: 10px 20px;
+            border-radius: 5px;
+            text-decoration: none;
+            font-weight: bold;
+            margin-bottom: 20px;
+            transition: background-color 0.3s ease;
+            border: 1px solid #00ff8844;
+        }
+
+        .back-link:hover {
+            background-color: #00ff8822;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .stat-box {
+            background-color: #2a2a2a;
+            color: #00ff88;
+            padding: 15px 25px;
+            border-radius: 5px;
+            font-weight: bold;
+            border: 1px solid #00ff8844;
+        }
+
+        .filters {
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid #00ff8822;
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .filter-group label {
+            font-weight: bold;
+            color: #00ff88;
+        }
+
+        .filter-group select, .filter-group input {
+            padding: 8px 15px;
+            border: 1px solid #00ff8844;
+            border-radius: 5px;
+            font-size: 14px;
+            background: #1a1a1a;
+            color: #ffffff;
+        }
+
+        .filter-group select:focus, .filter-group input:focus {
+            outline: none;
+            border-color: #00ff88;
+        }
+
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        .clip-card {
+            background-color: #2a2a2a;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            cursor: pointer;
+            border: 1px solid #00ff8822;
+        }
+
+        .clip-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(0, 255, 136, 0.3);
+            border-color: #00ff88;
+        }
+
+        .clip-image {
+            width: 100%;
+            height: 250px;
+            object-fit: cover;
+            background: #000;
+        }
+
+        .clip-info {
+            padding: 15px;
+        }
+
+        .clip-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #00ff88;
+            margin-bottom: 8px;
+        }
+
+        .clip-meta {
+            color: #aaa;
+            font-size: 0.9em;
+            margin: 5px 0;
+        }
+
+        .detection-tags {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .tag {
+            background-color: #00ff8844;
+            color: #00ff88;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.85em;
+            font-weight: bold;
+            border: 1px solid #00ff88;
+        }
+
+        .tag.bird {
+            background-color: #ffaa0044;
+            color: #ffaa00;
+            border-color: #ffaa00;
+        }
+        .tag.person {
+            background-color: #ff666644;
+            color: #ff6666;
+            border-color: #ff6666;
+        }
+        .tag.dog {
+            background-color: #44bbff44;
+            color: #44bbff;
+            border-color: #44bbff;
+        }
+        .tag.cat {
+            background-color: #ff44ff44;
+            color: #ff44ff;
+            border-color: #ff44ff;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #00ff88;
+            font-size: 1.5em;
+        }
+
+        .no-clips {
+            text-align: center;
+            padding: 50px;
+            background-color: #2a2a2a;
+            border-radius: 10px;
+            color: #aaa;
+            font-size: 1.2em;
+            border: 1px solid #00ff8822;
+        }
+
+        .no-clips h2 {
+            color: #00ff88;
+            margin-bottom: 10px;
+        }
+
+        /* Modal for viewing full image */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            position: relative;
+            margin: 50px auto;
+            max-width: 90%;
+            max-height: 90%;
+            text-align: center;
+        }
+
+        .modal-image {
+            max-width: 100%;
+            max-height: 80vh;
+            border-radius: 10px;
+            box-shadow: 0 8px 32px rgba(0, 255, 136, 0.3);
+            border: 2px solid #00ff8844;
+        }
+
+        .modal-info {
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: inline-block;
+            text-align: left;
+            border: 1px solid #00ff8844;
+        }
+
+        .modal-info h3 {
+            color: #00ff88;
+            margin-bottom: 10px;
+        }
+
+        .modal-info ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .modal-info li {
+            padding: 5px 0;
+            color: #aaa;
+        }
+
+        .modal-info strong {
+            color: #00ff88;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 20px;
+            right: 40px;
+            color: #00ff88;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+            background: rgba(26, 26, 26, 0.8);
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s ease;
+            border: 2px solid #00ff88;
+        }
+
+        .close-modal:hover {
+            background: rgba(0, 255, 136, 0.2);
+        }
+
+        @media (max-width: 768px) {
+            .gallery {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 1.8em;
+            }
+
+            .stats {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Back to Live Feed</a>
+
+        <header>
+            <h1>🐾 Wildlife & Detection Gallery</h1>
+            <div class="stats">
+                <div class="stat-box" id="total-clips">Total Clips: 0</div>
+                <div class="stat-box" id="total-detections">Detections: 0</div>
+                <div class="stat-box" id="date-range">Loading...</div>
+            </div>
+        </header>
+
+        <div class="filters">
+            <div class="filter-group">
+                <label>Filter by:</label>
+                <select id="filter-class">
+                    <option value="all">All Classes</option>
+                </select>
+                <label>Sort by:</label>
+                <select id="sort-order">
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                    <option value="confidence">Highest Confidence</option>
+                </select>
+                <input type="text" id="search" placeholder="Search filename...">
+            </div>
+        </div>
+
+        <div class="gallery" id="gallery">
+            <div class="loading">Loading clips...</div>
+        </div>
+
+        <div class="no-clips" id="no-clips" style="display: none;">
+            <h2>No clips yet!</h2>
+            <p>The system is running and watching for wildlife. Check back soon!</p>
+        </div>
+    </div>
+
+    <!-- Modal for full-size viewing -->
+    <div id="modal" class="modal">
+        <span class="close-modal" onclick="closeModal()">&times;</span>
+        <div class="modal-content">
+            <img id="modal-image" class="modal-image" src="" alt="Full size">
+            <div class="modal-info" id="modal-info"></div>
+        </div>
+    </div>
+
+    <script>
+        let allClips = [];
+        let currentFilter = 'all';
+        let currentSort = 'newest';
+        let searchTerm = '';
+
+        // Load clips from API
+        async function loadClips() {
+            try {
+                const response = await fetch('/clips_list');
+                const data = await response.json();
+                allClips = data.clips || [];
+
+                updateStats();
+                updateFilters();
+                renderClips();
+            } catch (error) {
+                console.error('Error loading clips:', error);
+                document.getElementById('gallery').innerHTML = '<div class="loading">Error loading clips</div>';
+            }
+        }
+
+        // Update statistics
+        function updateStats() {
+            document.getElementById('total-clips').textContent = `Total Clips: ${allClips.length}`;
+
+            let totalDetections = 0;
+            const classes = new Set();
+            allClips.forEach(clip => {
+                if (clip.metadata && clip.metadata.detections) {
+                    totalDetections += clip.metadata.detections.length;
+                    clip.metadata.detections.forEach(det => classes.add(det.class_name));
+                }
+            });
+
+            document.getElementById('total-detections').textContent = `Detections: ${totalDetections}`;
+
+            if (allClips.length > 0) {
+                const dates = allClips.map(c => new Date(c.timestamp * 1000));
+                const oldest = new Date(Math.min(...dates));
+                const newest = new Date(Math.max(...dates));
+                document.getElementById('date-range').textContent =
+                    `${oldest.toLocaleDateString()} - ${newest.toLocaleDateString()}`;
+            }
+        }
+
+        // Update filter dropdown
+        function updateFilters() {
+            const classes = new Set();
+            allClips.forEach(clip => {
+                if (clip.metadata && clip.metadata.detections) {
+                    clip.metadata.detections.forEach(det => classes.add(det.class_name));
+                }
+            });
+
+            const filterSelect = document.getElementById('filter-class');
+            filterSelect.innerHTML = '<option value="all">All Classes</option>';
+            Array.from(classes).sort().forEach(className => {
+                const option = document.createElement('option');
+                option.value = className;
+                option.textContent = className.charAt(0).toUpperCase() + className.slice(1);
+                filterSelect.appendChild(option);
+            });
+        }
+
+        // Filter and sort clips
+        function getFilteredClips() {
+            let filtered = [...allClips];
+
+            // Filter by class
+            if (currentFilter !== 'all') {
+                filtered = filtered.filter(clip => {
+                    if (!clip.metadata || !clip.metadata.detections) return false;
+                    return clip.metadata.detections.some(det => det.class_name === currentFilter);
+                });
+            }
+
+            // Filter by search
+            if (searchTerm) {
+                filtered = filtered.filter(clip =>
+                    clip.filename.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+            }
+
+            // Sort
+            if (currentSort === 'newest') {
+                filtered.sort((a, b) => b.timestamp - a.timestamp);
+            } else if (currentSort === 'oldest') {
+                filtered.sort((a, b) => a.timestamp - b.timestamp);
+            } else if (currentSort === 'confidence') {
+                filtered.sort((a, b) => {
+                    const aConf = a.metadata?.detections?.[0]?.confidence || 0;
+                    const bConf = b.metadata?.detections?.[0]?.confidence || 0;
+                    return bConf - aConf;
+                });
+            }
+
+            return filtered;
+        }
+
+        // Render clips to gallery
+        function renderClips() {
+            const gallery = document.getElementById('gallery');
+            const noClips = document.getElementById('no-clips');
+            const filtered = getFilteredClips();
+
+            if (filtered.length === 0) {
+                gallery.style.display = 'none';
+                noClips.style.display = 'block';
+                return;
+            }
+
+            gallery.style.display = 'grid';
+            noClips.style.display = 'none';
+
+            gallery.innerHTML = filtered.map(clip => {
+                const date = new Date(clip.timestamp * 1000);
+                const detections = clip.metadata?.detections || [];
+                const counts = clip.metadata?.detection_counts || {};
+                const latency = clip.metadata?.latency_ms || 0;
+
+                // Use annotated image for display if available, otherwise use raw
+                const displayUrl = clip.annotated_url || clip.url;
+
+                return `
+                    <div class="clip-card" onclick="openModal('${displayUrl}', ${JSON.stringify(clip).replace(/"/g, '&quot;')})">
+                        <img class="clip-image" src="${displayUrl}" alt="${clip.filename}" loading="lazy">
+                        <div class="clip-info">
+                            <div class="clip-title">${clip.filename.split('_')[0].toUpperCase()}</div>
+                            <div class="clip-meta">📅 ${date.toLocaleString()}</div>
+                            <div class="clip-meta">⚡ Latency: ${latency.toFixed(1)}ms</div>
+                            <div class="detection-tags">
+                                ${Object.entries(counts).map(([cls, count]) =>
+                                    `<span class="tag ${cls}">${cls} (${count})</span>`
+                                ).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Open modal with full-size image
+        function openModal(url, clip) {
+            const modal = document.getElementById('modal');
+            const modalImage = document.getElementById('modal-image');
+            const modalInfo = document.getElementById('modal-info');
+
+            modalImage.src = url;
+
+            const date = new Date(clip.timestamp * 1000);
+            const detections = clip.metadata?.detections || [];
+
+            modalInfo.innerHTML = `
+                <h3>${clip.filename}</h3>
+                <p><strong>Date:</strong> ${date.toLocaleString()}</p>
+                <p><strong>Latency:</strong> ${(clip.metadata?.latency_ms || 0).toFixed(1)}ms</p>
+                <h4 style="color: #00ff88; margin-top: 15px;">Detections:</h4>
+                <ul>
+                    ${detections.map(det => `
+                        <li>
+                            <strong>${det.class_name}</strong>: ${(det.confidence * 100).toFixed(1)}% confidence
+                            ${det.bbox.area ? `<br><span style="color: #888;">Size: ${det.bbox.area}px²</span>` : ''}
+                        </li>
+                    `).join('')}
+                </ul>
+            `;
+
+            modal.style.display = 'block';
+        }
+
+        // Close modal
+        function closeModal() {
+            document.getElementById('modal').style.display = 'none';
+        }
+
+        // Event listeners
+        document.getElementById('filter-class').addEventListener('change', (e) => {
+            currentFilter = e.target.value;
+            renderClips();
+        });
+
+        document.getElementById('sort-order').addEventListener('change', (e) => {
+            currentSort = e.target.value;
+            renderClips();
+        });
+
+        document.getElementById('search').addEventListener('input', (e) => {
+            searchTerm = e.target.value;
+            renderClips();
+        });
+
+        // Close modal on click outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('modal');
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // Load clips on page load
+        loadClips();
+
+        // Refresh every 30 seconds
+        setInterval(loadClips, 30000);
+    </script>
+</body>
+</html>
