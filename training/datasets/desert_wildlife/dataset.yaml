@@ -1,0 +1,15 @@
+names:
+  0: coyote
+  1: rabbit
+  2: ground_squirrel
+  3: roadrunner
+  4: quail
+  5: iguana
+  6: tortoise
+  7: lizard
+  8: person
+  9: bird_other
+path: /home/damen/telescope_cam_detection/training/datasets/desert_wildlife
+test: images/test
+train: images/train
+val: images/val

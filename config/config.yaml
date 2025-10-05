@@ -1,0 +1,82 @@
+# Telescope Detection System Configuration
+
+camera:
+  ip: "10.0.8.18"
+  username: "admin"
+  password: "REDACTED"
+  stream: "main"  # Options: "main" (2K) or "sub" (lower resolution)
+
+  # Frame processing
+  target_width: 1280
+  target_height: 720
+  buffer_size: 1  # Keep at 1 for lowest latency
+
+detection:
+  # Model configuration
+  model: "yolov8x.pt"  # Options: yolov8n, yolov8s, yolov8m, yolov8l, yolov8x
+  device: "cuda:0"
+
+  # Detection thresholds
+  confidence: 0.25  # Lower for distant/small wildlife (camera mounted high)
+  iou_threshold: 0.45
+
+  # Size filtering (better than just confidence for distant wildlife!)
+  # Note: Inference runs at 1280x720 (921,600 total pixels)
+  # Typical sizes: tiny=50-200px², small bird/rabbit=200-1000px², coyote=1000-5000px²
+  min_box_area: 100  # Minimum bounding box area in pixels² (~10x10 pixels at 720p)
+  max_detections: 300  # Maximum number of detections per frame
+
+  # Target classes (empty = detect ALL COCO classes, or list specific ones)
+  # Leave empty to see everything (including funny false positives)
+  target_classes: []
+
+web:
+  host: "0.0.0.0"
+  port: 8000
+
+performance:
+  # Queue sizes
+  frame_queue_size: 2
+  detection_queue_size: 10
+
+  # Detection history
+  history_size: 30
+
+# Future configuration for Phase 3
+detection_zones: []
+  # Example:
+  # - name: "telescope_danger_zone"
+  #   type: "polygon"
+  #   points: [[100,200], [300,200], [300,400], [100,400]]
+  #   alert_on_entry: ["person"]
+
+collision_detection:
+  enabled: false
+  danger_threshold: 50  # pixels
+
+# Snapshot/Clip Saving
+snapshots:
+  enabled: true  # Enable snapshot saving
+  save_mode: "image"  # "image" for single frames, "clip" for videos
+  output_dir: "clips"  # Directory to save snapshots
+
+  # Trigger settings
+  trigger_classes:  # Classes that trigger saves (empty = all detections)
+    - "person"
+    - "cat"      # might catch: iguanas, large lizards
+    - "dog"      # might catch: coyotes
+    - "bird"     # will catch: roadrunner, quail, all birds
+    # Wildlife-adjacent that might be relevant:
+    - "bear"
+    - "horse"
+    - "sheep"
+    - "cow"
+    # Note: bananas, chairs, potted plants, etc. will still DISPLAY but won't save snapshots!
+  min_confidence: 0.30  # Lower for distant/small wildlife from high camera mount
+  cooldown_seconds: 45  # Seconds between saves for same class
+  save_annotated: true  # Save with bounding boxes drawn
+
+  # Video clip settings (only used if save_mode="clip")
+  clip_duration: 10  # Total clip duration in seconds
+  pre_buffer_seconds: 5  # Seconds of video before detection
+  fps: 30  # Frames per second for video clips

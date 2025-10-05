@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.Python
+venv/
+env/
+ENV/
+
+# PyTorch / ML Models
+*.pt
+*.pth
+*.onnx
+*.tflite
+*.pb
+*.h5
+*.keras
+*.weights
+
+# Data and outputs
+clips/
+training/datasets/*/images/
+training/datasets/*/labels/
+training/runs/
+*.jpg
+*.png
+*.mp4
+*.avi
+*.json
+!**/dataset.yaml
+!**/data.yaml
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+tmp/
+temp/
+
+# YOLO-World models (will be downloaded)
+yolov8*-world*.pt
+
+# Test outputs
+test_*.jpg
+test_*.png

@@ -1,0 +1,29 @@
+# Telescope Equipment Detection Dataset Configuration
+# YOLOv8 format
+
+# Dataset paths (relative to this file)
+path: .  # dataset root dir
+train: images/train  # train images
+val: images/val  # val images
+
+# Class names
+names:
+  0: telescope_ota  # Optical Tube Assembly (main telescope tube)
+  1: telescope_mount  # Mount head
+  2: tripod_leg  # Tripod legs (collision risk!)
+  3: counterweight  # Counterweight bar/weights
+  4: telescope_cover  # Telescope cover/cap
+  5: finder_scope  # Finder scope
+  6: focuser  # Focuser assembly
+
+# Number of classes
+nc: 7
+
+# Notes for annotation:
+# - telescope_ota: The main telescope tube body
+# - telescope_mount: The mount head that holds the telescope
+# - tripod_leg: Individual tripod legs (critical for collision detection)
+# - counterweight: The counterweight shaft and weights
+# - telescope_cover: Any covers protecting the telescope
+# - finder_scope: Small finder telescope
+# - focuser: The focusing mechanism on the telescope
