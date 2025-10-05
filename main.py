@@ -142,8 +142,9 @@ class TelescopeDetectionSystem:
                     logger.info("Loading iNaturalist species classifier...")
 
                     model_name = inat_config.get('model_name', 'eva02_large_patch14_clip_336.merged2b_ft_inat21')
-                    taxonomy_file = inat_config.get('taxonomy_file', 'models/inat2021_taxonomy_simple.json')
+                    taxonomy_file = inat_config.get('taxonomy_file', 'models/inat2021_taxonomy.json')
                     input_size = inat_config.get('input_size', 336)
+                    use_hierarchical = inat_config.get('use_hierarchical', True)
 
                     # Create universal classifier (handles all animals)
                     inat_classifier = SpeciesClassifier(
@@ -152,7 +153,8 @@ class TelescopeDetectionSystem:
                         device=detection_config['device'],
                         confidence_threshold=inat_config.get('confidence_threshold', 0.3),
                         taxonomy_file=taxonomy_file,
-                        input_size=input_size
+                        input_size=input_size,
+                        use_hierarchical=use_hierarchical
                     )
 
                     # Load the model (10,000 classes)
