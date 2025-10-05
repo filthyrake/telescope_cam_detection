@@ -12,13 +12,14 @@ camera:
   buffer_size: 1  # Keep at 1 for lowest latency
 
 detection:
-  # Model configuration
-  model: "yolov8x-worldv2.pt"  # Options: yolov8x.pt, yolov8x-worldv2.pt
+  # GroundingDINO Model configuration (Apache 2.0 license)
+  model:
+    config: "models/GroundingDINO_SwinT_OGC.py"
+    weights: "models/groundingdino_swint_ogc.pth"
   device: "cuda:0"
 
-  # YOLO-World specific settings (only used if model contains 'world')
-  use_yolo_world: true  # Enable YOLO-World open-vocabulary detection
-  yolo_world_classes:  # Custom classes for YOLO-World (text prompts)
+  # Open-vocabulary text prompts for GroundingDINO
+  text_prompts:
     - "person"
     - "coyote"
     - "rabbit"
@@ -40,13 +41,13 @@ detection:
     - "bobcat"
     - "fox"
 
-  # Two-stage detection pipeline
-  use_two_stage: true  # Enable two-stage detection (Stage 1: detection, Stage 2: species classification)
-  enable_species_classification: true  # Enable Stage 2 species classification (requires models)
+  # Two-stage detection pipeline (GroundingDINO + iNaturalist)
+  use_two_stage: false  # Disabled for now - test GroundingDINO first, then re-enable
+  enable_species_classification: false  # Can be re-enabled after testing base GroundingDINO
 
-  # Detection thresholds
-  confidence: 0.25  # Lower for distant/small wildlife (camera mounted high)
-  iou_threshold: 0.45
+  # GroundingDINO thresholds
+  box_threshold: 0.25  # Confidence for bounding boxes (similar to old confidence)
+  text_threshold: 0.25  # Confidence for text-image matching
 
   # Per-class confidence overrides (higher threshold = fewer false positives)
   class_confidence_overrides:
@@ -57,11 +58,6 @@ detection:
   # Typical sizes: tiny=50-200px², small bird/rabbit=200-1000px², coyote=1000-5000px²
   min_box_area: 50  # Minimum bounding box area in pixels² (~7x7 pixels) - catches small lizards
   max_detections: 300  # Maximum number of detections per frame
-
-  # Target classes (empty = detect ALL COCO classes, or list specific ones)
-  # Leave empty to see everything (including funny false positives)
-  # NOTE: Ignored if use_yolo_world=true (uses yolo_world_classes instead)
-  target_classes: []
 
 # Stage 2 Species Classification (fine-grained identification)
 species_classification:

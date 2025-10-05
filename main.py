@@ -16,7 +16,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from stream_capture import RTSPStreamCapture, create_rtsp_url
-from inference_engine import InferenceEngine, COCO_PERSON_ANIMAL_CLASSES
+from inference_engine import InferenceEngine
 from detection_processor import DetectionProcessor
 from web_server import WebServer
 from snapshot_saver import SnapshotSaver
@@ -179,23 +179,21 @@ class TelescopeDetectionSystem:
 
                 logger.info("Two-stage pipeline initialized")
 
-            # Initialize inference engine
+            # Initialize GroundingDINO inference engine
+            model_config_dict = detection_config.get('model', {})
+            text_prompts = detection_config.get('text_prompts', [])
 
-            # Determine target classes based on YOLO-World setting
-            if detection_config.get('use_yolo_world', False) and 'world' in detection_config['model'].lower():
-                target_classes = detection_config.get('yolo_world_classes', [])
-                logger.info(f"Using YOLO-World with {len(target_classes)} custom classes")
-            else:
-                target_classes = detection_config.get('target_classes')
+            logger.info(f"Using GroundingDINO with {len(text_prompts)} text prompts")
 
             self.inference_engine = InferenceEngine(
-                model_path=detection_config['model'],
+                model_config=model_config_dict.get('config', 'models/GroundingDINO_SwinT_OGC.py'),
+                model_weights=model_config_dict.get('weights', 'models/groundingdino_swint_ogc.pth'),
                 device=detection_config['device'],
-                conf_threshold=detection_config.get('confidence', 0.5),
-                iou_threshold=detection_config.get('iou_threshold', 0.45),
+                box_threshold=detection_config.get('box_threshold', 0.25),
+                text_threshold=detection_config.get('text_threshold', 0.25),
                 input_queue=self.frame_queue,
                 output_queue=self.inference_queue,
-                target_classes=target_classes if target_classes else None,
+                text_prompts=text_prompts,
                 min_box_area=detection_config.get('min_box_area', 0),
                 max_det=detection_config.get('max_detections', 300),
                 use_two_stage=two_stage_pipeline is not None,
@@ -203,7 +201,7 @@ class TelescopeDetectionSystem:
                 class_confidence_overrides=detection_config.get('class_confidence_overrides', {})
             )
 
-            logger.info("Inference engine initialized")
+            logger.info("GroundingDINO inference engine initialized")
 
             # Initialize snapshot saver (if enabled)
             snapshot_config = self.config.get('snapshots', {})

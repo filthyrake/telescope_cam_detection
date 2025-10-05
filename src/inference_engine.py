@@ -1,18 +1,19 @@
 """
 GPU Inference Engine
-Handles YOLOv8/YOLO-World object detection with NVIDIA A30 GPU optimization.
-Supports both single-stage and two-stage detection pipelines.
+Handles GroundingDINO object detection with NVIDIA A30 GPU optimization.
+Supports open-vocabulary detection with text prompts.
 """
 
 import torch
 import time
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from queue import Queue
 from threading import Thread, Event
 import numpy as np
-from ultralytics import YOLO
+import cv2
 from pathlib import Path
+from groundingdino.util.inference import Model
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,17 +23,19 @@ class InferenceEngine:
     """
     GPU-accelerated inference engine for object detection.
     Optimized for low latency on NVIDIA A30.
+    Uses GroundingDINO for open-vocabulary detection.
     """
 
     def __init__(
         self,
-        model_path: str,
+        model_config: str,
+        model_weights: str,
         device: str = "cuda:0",
-        conf_threshold: float = 0.5,
-        iou_threshold: float = 0.45,
+        box_threshold: float = 0.25,
+        text_threshold: float = 0.25,
         input_queue: Optional[Queue] = None,
         output_queue: Optional[Queue] = None,
-        target_classes: Optional[List[str]] = None,
+        text_prompts: Optional[List[str]] = None,
         min_box_area: int = 0,  # Minimum bounding box area (pixels²)
         max_det: int = 300,  # Maximum detections per image
         use_two_stage: bool = False,  # Enable two-stage detection
@@ -43,32 +46,39 @@ class InferenceEngine:
         Initialize inference engine.
 
         Args:
-            model_path: Path to YOLOv8/YOLO-World model weights
+            model_config: Path to GroundingDINO config file
+            model_weights: Path to GroundingDINO model weights
             device: Device to run inference on (cuda:0, cpu, etc.)
-            conf_threshold: Confidence threshold for detections
-            iou_threshold: IoU threshold for NMS
+            box_threshold: Confidence threshold for bounding boxes
+            text_threshold: Confidence threshold for text-image matching
             input_queue: Queue to receive frames from
             output_queue: Queue to send detections to
-            target_classes: List of class names to detect (None = all classes)
+            text_prompts: List of text prompts for open-vocabulary detection
+            min_box_area: Minimum bounding box area (pixels²)
+            max_det: Maximum detections per image
             use_two_stage: Enable two-stage detection pipeline
             two_stage_pipeline: TwoStageDetectionPipeline instance
+            class_confidence_overrides: Per-class confidence thresholds
         """
-        self.model_path = model_path
+        self.model_config = model_config
+        self.model_weights = model_weights
         self.device = device
-        self.conf_threshold = conf_threshold
-        self.iou_threshold = iou_threshold
+        self.box_threshold = box_threshold
+        self.text_threshold = text_threshold
         self.input_queue = input_queue
         self.output_queue = output_queue
-        self.target_classes = target_classes
+        self.text_prompts = text_prompts or []
         self.min_box_area = min_box_area
         self.max_det = max_det
         self.use_two_stage = use_two_stage
         self.two_stage_pipeline = two_stage_pipeline
         self.class_confidence_overrides = class_confidence_overrides or {}
 
-        self.model: Optional[YOLO] = None
+        # Create text prompt caption (period-separated)
+        self.caption = " . ".join(self.text_prompts) + " ."
+
+        self.model: Optional[Model] = None
         self.is_loaded = False
-        self.is_yolo_world = False
         self.stop_event = Event()
         self.inference_thread: Optional[Thread] = None
 
@@ -81,7 +91,7 @@ class InferenceEngine:
 
     def load_model(self) -> bool:
         """
-        Load YOLOv8/YOLO-World model and move to GPU.
+        Load GroundingDINO model and move to GPU.
 
         Returns:
             True if model loaded successfully, False otherwise
@@ -92,15 +102,15 @@ class InferenceEngine:
                 logger.info("Loading two-stage detection pipeline...")
                 if self.two_stage_pipeline.load_detector():
                     self.is_loaded = True
-                    self.is_yolo_world = True
                     logger.info("Two-stage pipeline loaded successfully")
                     return True
                 else:
                     logger.error("Failed to load two-stage pipeline")
                     return False
 
-            # Standard YOLO loading
-            logger.info(f"Loading model from {self.model_path}")
+            # Standard GroundingDINO loading
+            logger.info(f"Loading GroundingDINO model from {self.model_weights}")
+            logger.info(f"Using config: {self.model_config}")
             logger.info(f"Using device: {self.device}")
 
             # Check CUDA availability
@@ -108,23 +118,12 @@ class InferenceEngine:
                 logger.error("CUDA requested but not available")
                 return False
 
-            # Detect if this is a YOLO-World model
-            model_name = Path(self.model_path).stem.lower()
-            self.is_yolo_world = 'world' in model_name
-
-            # Load YOLO model
-            if self.is_yolo_world:
-                from ultralytics import YOLOWorld
-                self.model = YOLOWorld(self.model_path)
-                # Set custom classes if provided
-                if self.target_classes:
-                    self.model.set_classes(self.target_classes)
-                    logger.info(f"YOLO-World classes set: {self.target_classes}")
-            else:
-                self.model = YOLO(self.model_path)
-
-            # Move model to device
-            self.model.to(self.device)
+            # Load GroundingDINO model
+            self.model = Model(
+                model_config_path=self.model_config,
+                model_checkpoint_path=self.model_weights,
+                device=self.device
+            )
 
             # Log GPU info
             if torch.cuda.is_available():
@@ -132,18 +131,28 @@ class InferenceEngine:
                 gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
                 logger.info(f"GPU: {gpu_name} ({gpu_memory:.1f} GB)")
 
+            # Log text prompts
+            logger.info(f"Open-vocabulary prompts: {self.text_prompts}")
+            logger.info(f"Caption: {self.caption}")
+
             # Warm up the model with a dummy inference
             logger.info("Warming up model...")
             dummy_input = np.zeros((640, 640, 3), dtype=np.uint8)
-            _ = self.model(dummy_input, verbose=False)
+            _ = self.model.predict_with_caption(
+                image=dummy_input,
+                caption=self.caption,
+                box_threshold=self.box_threshold,
+                text_threshold=self.text_threshold
+            )
 
             self.is_loaded = True
-            model_type = "YOLO-World" if self.is_yolo_world else "YOLO"
-            logger.info(f"{model_type} model loaded successfully")
+            logger.info("GroundingDINO model loaded successfully")
             return True
 
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
 
     def start(self) -> bool:
@@ -227,6 +236,8 @@ class InferenceEngine:
 
             except Exception as e:
                 logger.error(f"Error in inference loop: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
                 time.sleep(0.1)
 
     def _run_inference(self, frame: np.ndarray) -> List[Dict[str, Any]]:
@@ -244,58 +255,68 @@ class InferenceEngine:
             result = self.two_stage_pipeline.detect(frame)
             return result.get('detections', [])
 
-        # Run YOLO inference
-        results = self.model(
-            frame,
-            conf=self.conf_threshold,
-            iou=self.iou_threshold,
-            max_det=self.max_det,
-            verbose=False
-        )[0]
+        # Run GroundingDINO inference
+        # Convert BGR to RGB
+        image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        # Predict with GroundingDINO
+        boxes, logits, phrases = self.model.predict_with_caption(
+            image=image_rgb,
+            caption=self.caption,
+            box_threshold=self.box_threshold,
+            text_threshold=self.text_threshold
+        )
 
         detections = []
 
-        # Extract detection results
-        if results.boxes is not None and len(results.boxes) > 0:
-            boxes = results.boxes.xyxy.cpu().numpy()  # [x1, y1, x2, y2]
-            confidences = results.boxes.conf.cpu().numpy()
-            class_ids = results.boxes.cls.cpu().numpy().astype(int)
+        # Convert boxes from normalized [0,1] to pixel coordinates
+        h, w = frame.shape[:2]
 
-            for box, conf, class_id in zip(boxes, confidences, class_ids):
-                class_name = results.names[class_id]
+        # GroundingDINO returns boxes in format [cx, cy, w, h] normalized
+        # We need to convert to [x1, y1, x2, y2] in pixels
+        for box, conf, phrase in zip(boxes, logits, phrases):
+            # Convert from [cx, cy, w, h] to [x1, y1, x2, y2]
+            cx, cy, box_w, box_h = box
+            x1 = (cx - box_w / 2) * w
+            y1 = (cy - box_h / 2) * h
+            x2 = (cx + box_w / 2) * w
+            y2 = (cy + box_h / 2) * h
 
-                # Filter by target classes if specified
-                if self.target_classes and class_name not in self.target_classes:
-                    continue
+            # Clean up phrase (remove periods and extra spaces)
+            class_name = phrase.strip().strip('.')
 
-                # Apply per-class confidence threshold if specified
-                class_conf_threshold = self.class_confidence_overrides.get(class_name, self.conf_threshold)
-                if conf < class_conf_threshold:
-                    continue
+            # Apply per-class confidence threshold if specified
+            class_conf_threshold = self.class_confidence_overrides.get(class_name, self.box_threshold)
+            if conf < class_conf_threshold:
+                continue
 
-                # Calculate bounding box area
-                box_width = box[2] - box[0]
-                box_height = box[3] - box[1]
-                box_area = box_width * box_height
+            # Calculate bounding box area
+            box_width = x2 - x1
+            box_height = y2 - y1
+            box_area = box_width * box_height
 
-                # Filter by minimum box area (skip tiny detections)
-                if self.min_box_area > 0 and box_area < self.min_box_area:
-                    continue
+            # Filter by minimum box area (skip tiny detections)
+            if self.min_box_area > 0 and box_area < self.min_box_area:
+                continue
 
-                detection = {
-                    'class_id': int(class_id),
-                    'class_name': class_name,
-                    'confidence': float(conf),
-                    'bbox': {
-                        'x1': float(box[0]),
-                        'y1': float(box[1]),
-                        'x2': float(box[2]),
-                        'y2': float(box[3]),
-                        'area': int(box_area)
-                    }
+            detection = {
+                'class_id': -1,  # GroundingDINO doesn't have class IDs
+                'class_name': class_name,
+                'confidence': float(conf),
+                'bbox': {
+                    'x1': float(x1),
+                    'y1': float(y1),
+                    'x2': float(x2),
+                    'y2': float(y2),
+                    'area': int(box_area)
                 }
+            }
 
-                detections.append(detection)
+            detections.append(detection)
+
+            # Stop if we hit max detections
+            if len(detections) >= self.max_det:
+                break
 
         return detections
 
@@ -328,15 +349,9 @@ class InferenceEngine:
             'fps': self.fps,
             'avg_inference_time_ms': self.avg_inference_time * 1000,
             'total_inferences': self.inference_count,
-            'conf_threshold': self.conf_threshold
+            'box_threshold': self.box_threshold,
+            'text_threshold': self.text_threshold
         }
-
-
-# COCO class names for reference
-COCO_PERSON_ANIMAL_CLASSES = [
-    'person', 'bicycle', 'car', 'motorcycle', 'bird', 'cat', 'dog', 'horse',
-    'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe'
-]
 
 
 if __name__ == "__main__":
@@ -344,7 +359,7 @@ if __name__ == "__main__":
     import cv2
     from queue import Queue
 
-    logger.info("Testing Inference Engine")
+    logger.info("Testing Inference Engine with GroundingDINO")
 
     # Check CUDA
     logger.info(f"CUDA available: {torch.cuda.is_available()}")
@@ -355,14 +370,19 @@ if __name__ == "__main__":
     input_queue = Queue(maxsize=2)
     output_queue = Queue(maxsize=10)
 
+    # Test prompts
+    text_prompts = ["person", "dog", "cat", "bird"]
+
     # Initialize engine
     engine = InferenceEngine(
-        model_path="yolov8n.pt",  # Will download automatically
+        model_config="models/GroundingDINO_SwinT_OGC.py",
+        model_weights="models/groundingdino_swint_ogc.pth",
         device="cuda:0" if torch.cuda.is_available() else "cpu",
-        conf_threshold=0.5,
+        box_threshold=0.25,
+        text_threshold=0.25,
         input_queue=input_queue,
         output_queue=output_queue,
-        target_classes=COCO_PERSON_ANIMAL_CLASSES
+        text_prompts=text_prompts
     )
 
     # Load model
