@@ -18,9 +18,18 @@ class DetectionApp {
         this.lastFpsUpdate = Date.now();
         this.fps = 0;
 
+        // Session statistics (cumulative)
+        this.sessionStats = {
+            totalDetections: 0,
+            peopleCount: 0,
+            animalCount: 0,
+            detectionsByClass: {}
+        };
+
         // Animal class names for categorization
         this.animalClasses = ['bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
-                              'elephant', 'bear', 'zebra', 'giraffe'];
+                              'elephant', 'bear', 'zebra', 'giraffe', 'coyote',
+                              'rabbit', 'lizard', 'fox', 'deer'];
 
         this.init();
     }
@@ -194,9 +203,6 @@ class DetectionApp {
         // Update frame ID
         document.getElementById('frameId').textContent = data.frame_id || '-';
 
-        // Update total detections
-        document.getElementById('totalDetections').textContent = data.total_detections || 0;
-
         // Update inference time
         const inferenceTime = data.inference_time_ms;
         if (inferenceTime !== undefined) {
@@ -210,19 +216,38 @@ class DetectionApp {
             this.updateLatencyIndicator(totalLatency);
         }
 
-        // Update detection counts
-        const counts = data.detection_counts || {};
-        let peopleCount = counts['person'] || 0;
-        let animalCount = 0;
+        // Update session statistics (cumulative)
+        const detections = data.detections || [];
+        if (detections.length > 0) {
+            // Count detections by class
+            detections.forEach(det => {
+                const className = det.class_name;
 
-        this.animalClasses.forEach(animal => {
-            if (counts[animal]) {
-                animalCount += counts[animal];
-            }
-        });
+                // Increment total
+                this.sessionStats.totalDetections++;
 
-        document.getElementById('peopleCount').textContent = peopleCount;
-        document.getElementById('animalCount').textContent = animalCount;
+                // Track by class
+                if (!this.sessionStats.detectionsByClass[className]) {
+                    this.sessionStats.detectionsByClass[className] = 0;
+                }
+                this.sessionStats.detectionsByClass[className]++;
+
+                // Count people
+                if (className === 'person') {
+                    this.sessionStats.peopleCount++;
+                }
+
+                // Count animals
+                if (this.animalClasses.includes(className)) {
+                    this.sessionStats.animalCount++;
+                }
+            });
+        }
+
+        // Display session statistics
+        document.getElementById('totalDetections').textContent = this.sessionStats.totalDetections;
+        document.getElementById('peopleCount').textContent = this.sessionStats.peopleCount;
+        document.getElementById('animalCount').textContent = this.sessionStats.animalCount;
 
         // Update detections list
         this.updateDetectionsList(data.detections || []);

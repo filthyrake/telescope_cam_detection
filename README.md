@@ -71,6 +71,36 @@ The system will:
 
 Access the web interface at: **http://localhost:8000**
 
+### 4. Run as a Service (Recommended)
+
+For production use, run the system as a systemd service that starts automatically on boot:
+
+```bash
+# Install the service
+sudo ./service.sh install
+
+# Start the service
+sudo ./service.sh start
+
+# Check status
+./service.sh status
+
+# View logs
+./service.sh logs -f
+```
+
+See [SERVICE_SETUP.md](SERVICE_SETUP.md) for complete documentation.
+
+**Quick Reference:**
+```bash
+sudo ./service.sh start    # Start service
+sudo ./service.sh stop     # Stop service
+sudo ./service.sh restart  # Restart service
+./service.sh status        # Check status
+./service.sh logs          # View recent logs
+./service.sh logs -f       # Follow logs live
+```
+
 ## Testing
 
 ### Test Camera Connection

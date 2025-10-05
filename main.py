@@ -20,6 +20,8 @@ from inference_engine import InferenceEngine, COCO_PERSON_ANIMAL_CLASSES
 from detection_processor import DetectionProcessor
 from web_server import WebServer
 from snapshot_saver import SnapshotSaver
+from two_stage_pipeline import TwoStageDetectionPipeline
+from species_classifier import SpeciesClassifier
 
 logging.basicConfig(
     level=logging.INFO,
@@ -117,9 +119,74 @@ class TelescopeDetectionSystem:
 
             logger.info("Stream capture initialized")
 
-            # Initialize inference engine
+            # Initialize two-stage pipeline (if enabled)
             detection_config = self.config['detection']
-            target_classes = detection_config.get('target_classes')
+            two_stage_pipeline = None
+
+            if detection_config.get('use_two_stage', False):
+                logger.info("Initializing two-stage detection pipeline...")
+
+                # Get species classification config
+                species_config = self.config.get('species_classification', {})
+                inat_config = species_config.get('inat_classifier', {})
+
+                # Initialize pipeline
+                two_stage_pipeline = TwoStageDetectionPipeline(
+                    yolo_model_path=detection_config['model'],
+                    device=detection_config['device'],
+                    enable_species_classification=detection_config.get('enable_species_classification', True),
+                    stage2_confidence_threshold=species_config.get('confidence_threshold', 0.3),
+                    stage1_confidence_threshold=detection_config.get('confidence', 0.25)
+                )
+
+                # Get YOLO-World classes if using YOLO-World
+                if detection_config.get('use_yolo_world', False):
+                    yolo_classes = detection_config.get('yolo_world_classes', [])
+                    two_stage_pipeline.detection_classes = yolo_classes
+                    logger.info(f"YOLO-World classes configured: {len(yolo_classes)} classes")
+
+                # Initialize iNaturalist species classifier
+                if detection_config.get('enable_species_classification', False):
+                    logger.info("Loading iNaturalist species classifier...")
+
+                    model_name = inat_config.get('model_name', 'eva02_large_patch14_clip_336.merged2b_ft_inat21')
+                    taxonomy_file = inat_config.get('taxonomy_file', 'models/inat2021_taxonomy_simple.json')
+                    input_size = inat_config.get('input_size', 336)
+
+                    # Create universal classifier (handles all animals)
+                    inat_classifier = SpeciesClassifier(
+                        model_name=model_name,
+                        checkpoint_path=None,  # Use pretrained from timm
+                        device=detection_config['device'],
+                        confidence_threshold=inat_config.get('confidence_threshold', 0.3),
+                        taxonomy_file=taxonomy_file,
+                        input_size=input_size
+                    )
+
+                    # Load the model (10,000 classes)
+                    if inat_classifier.load_model(num_classes=10000):
+                        # Add classifier for all animal groups
+                        # iNaturalist covers all species, so we use one universal classifier
+                        two_stage_pipeline.add_species_classifier('bird', inat_classifier)
+                        two_stage_pipeline.add_species_classifier('mammal', inat_classifier)
+                        two_stage_pipeline.add_species_classifier('reptile', inat_classifier)
+                        logger.info(f"✅ iNaturalist classifier loaded ({model_name})")
+                        logger.info(f"   Taxonomy: {taxonomy_file}")
+                        logger.info(f"   Species count: 10,000")
+                    else:
+                        logger.warning("Failed to load iNaturalist classifier, Stage 2 disabled")
+                        two_stage_pipeline = None
+
+                logger.info("Two-stage pipeline initialized")
+
+            # Initialize inference engine
+
+            # Determine target classes based on YOLO-World setting
+            if detection_config.get('use_yolo_world', False) and 'world' in detection_config['model'].lower():
+                target_classes = detection_config.get('yolo_world_classes', [])
+                logger.info(f"Using YOLO-World with {len(target_classes)} custom classes")
+            else:
+                target_classes = detection_config.get('target_classes')
 
             self.inference_engine = InferenceEngine(
                 model_path=detection_config['model'],
@@ -130,7 +197,10 @@ class TelescopeDetectionSystem:
                 output_queue=self.inference_queue,
                 target_classes=target_classes if target_classes else None,
                 min_box_area=detection_config.get('min_box_area', 0),
-                max_det=detection_config.get('max_detections', 300)
+                max_det=detection_config.get('max_detections', 300),
+                use_two_stage=two_stage_pipeline is not None,
+                two_stage_pipeline=two_stage_pipeline,
+                class_confidence_overrides=detection_config.get('class_confidence_overrides', {})
             )
 
             logger.info("Inference engine initialized")

@@ -27,7 +27,8 @@ class SpeciesClassifier:
         checkpoint_path: Optional[str] = None,
         device: str = "cuda",
         confidence_threshold: float = 0.3,
-        taxonomy_file: Optional[str] = None
+        taxonomy_file: Optional[str] = None,
+        input_size: int = 224
     ):
         """
         Initialize species classifier.
@@ -38,6 +39,7 @@ class SpeciesClassifier:
             device: Device to run on ('cuda' or 'cpu')
             confidence_threshold: Minimum confidence for classification
             taxonomy_file: Path to taxonomy mapping file
+            input_size: Input image size (224, 336, etc.)
         """
         self.model_name = model_name
         self.checkpoint_path = checkpoint_path
@@ -47,7 +49,7 @@ class SpeciesClassifier:
         self.taxonomy = {}
 
         # Image preprocessing settings
-        self.input_size = 224  # Standard for most models
+        self.input_size = input_size  # Configurable input size
         self.mean = [0.485, 0.456, 0.406]  # ImageNet normalization
         self.std = [0.229, 0.224, 0.225]
 
@@ -92,9 +94,16 @@ class SpeciesClassifier:
             True if loaded successfully
         """
         try:
+            # Handle HuggingFace hub models (format: hf-hub:org/model_name or hf_hub:org/model_name)
+            model_name = self.model_name
+            if self.model_name.startswith('timm/') or '/' in self.model_name:
+                # For HuggingFace models, use hf-hub: prefix
+                model_name = f"hf-hub:{self.model_name}"
+                logger.info(f"Loading from HuggingFace Hub: {model_name}")
+
             # Create model using timm
             self.model = timm.create_model(
-                self.model_name,
+                model_name,
                 pretrained=(self.checkpoint_path is None),
                 num_classes=num_classes
             )
