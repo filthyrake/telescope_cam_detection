@@ -16,11 +16,11 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from stream_capture import RTSPStreamCapture, create_rtsp_url
-from inference_engine import InferenceEngine
+from inference_engine_yolox import InferenceEngine  # YOLOX version (47x faster!)
 from detection_processor import DetectionProcessor
 from web_server import WebServer
 from snapshot_saver import SnapshotSaver
-from two_stage_pipeline import TwoStageDetectionPipeline
+from two_stage_pipeline_yolox import TwoStageDetectionPipeline  # YOLOX-compatible
 from species_classifier import SpeciesClassifier
 
 logging.basicConfig(
@@ -124,7 +124,7 @@ class TelescopeDetectionSystem:
             two_stage_pipeline = None
 
             if detection_config.get('use_two_stage', False):
-                logger.info("Initializing two-stage detection pipeline...")
+                logger.info("Initializing two-stage detection pipeline (YOLOX + iNaturalist)...")
 
                 # Get species classification config
                 species_config = self.config.get('species_classification', {})
@@ -132,18 +132,10 @@ class TelescopeDetectionSystem:
 
                 # Initialize pipeline
                 two_stage_pipeline = TwoStageDetectionPipeline(
-                    yolo_model_path=detection_config['model'],
-                    device=detection_config['device'],
                     enable_species_classification=detection_config.get('enable_species_classification', True),
                     stage2_confidence_threshold=species_config.get('confidence_threshold', 0.3),
-                    stage1_confidence_threshold=detection_config.get('confidence', 0.25)
+                    device=detection_config['device']
                 )
-
-                # Get YOLO-World classes if using YOLO-World
-                if detection_config.get('use_yolo_world', False):
-                    yolo_classes = detection_config.get('yolo_world_classes', [])
-                    two_stage_pipeline.detection_classes = yolo_classes
-                    logger.info(f"YOLO-World classes configured: {len(yolo_classes)} classes")
 
                 # Initialize iNaturalist species classifier
                 if detection_config.get('enable_species_classification', False):
@@ -179,29 +171,29 @@ class TelescopeDetectionSystem:
 
                 logger.info("Two-stage pipeline initialized")
 
-            # Initialize GroundingDINO inference engine
+            # Initialize YOLOX inference engine (Stage 1: Fast detection)
             model_config_dict = detection_config.get('model', {})
-            text_prompts = detection_config.get('text_prompts', [])
 
-            logger.info(f"Using GroundingDINO with {len(text_prompts)} text prompts")
+            logger.info(f"Using YOLOX (Apache 2.0) for Stage 1 detection")
+            logger.info(f"  Expected inference time: 11-21ms (47x faster than GroundingDINO)")
 
             self.inference_engine = InferenceEngine(
-                model_config=model_config_dict.get('config', 'models/GroundingDINO_SwinT_OGC.py'),
-                model_weights=model_config_dict.get('weights', 'models/groundingdino_swint_ogc.pth'),
+                model_name=model_config_dict.get('name', 'yolox-s'),
+                model_path=model_config_dict.get('weights', 'models/yolox/yolox_s.pth'),
                 device=detection_config['device'],
-                box_threshold=detection_config.get('box_threshold', 0.25),
-                text_threshold=detection_config.get('text_threshold', 0.25),
+                conf_threshold=detection_config.get('conf_threshold', 0.25),
+                nms_threshold=detection_config.get('nms_threshold', 0.45),
                 input_queue=self.frame_queue,
                 output_queue=self.inference_queue,
-                text_prompts=text_prompts,
                 min_box_area=detection_config.get('min_box_area', 0),
                 max_det=detection_config.get('max_detections', 300),
                 use_two_stage=two_stage_pipeline is not None,
                 two_stage_pipeline=two_stage_pipeline,
-                class_confidence_overrides=detection_config.get('class_confidence_overrides', {})
+                class_confidence_overrides=detection_config.get('class_confidence_overrides', {}),
+                wildlife_only=detection_config.get('wildlife_only', True)
             )
 
-            logger.info("GroundingDINO inference engine initialized")
+            logger.info("YOLOX inference engine initialized")
 
             # Initialize snapshot saver (if enabled)
             snapshot_config = self.config.get('snapshots', {})
