@@ -10,6 +10,7 @@ import numpy as np
 import time
 from yolox.exp import get_exp
 from yolox.utils import postprocess
+from src.coco_constants import GROUNDINGDINO_BASELINE_MS
 
 print("="*60)
 print("Testing YOLOX Baseline Inference")
@@ -66,8 +67,8 @@ print(f"="*60)
 print(f"Average: {avg_time*1000:.1f}ms ± {std_time*1000:.1f}ms")
 print(f"FPS: {fps:.1f}")
 print(f"")
-print(f"Compare to GroundingDINO: 560ms (1.8 FPS)")
-print(f"Speedup: {560/avg_time/1000:.1f}x faster")
+print(f"Compare to GroundingDINO: {GROUNDINGDINO_BASELINE_MS}ms (1.8 FPS)")
+print(f"Speedup: {GROUNDINGDINO_BASELINE_MS/(avg_time*1000):.1f}x faster")
 print(f"")
 print(f"Next: Convert to TensorRT for ~2-5x additional speedup")
 print(f"Expected after TensorRT: 5-15ms (65-200 FPS)")

@@ -12,36 +12,9 @@ import logging
 from typing import List, Dict, Any
 from yolox.exp import get_exp
 from yolox.utils import postprocess
+from src.coco_constants import COCO_CLASSES, WILDLIFE_CLASSES, MAMMAL_CLASS_IDS
 
 logger = logging.getLogger(__name__)
-
-# COCO class names (80 classes)
-COCO_CLASSES = [
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light",
-    "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
-    "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
-    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard",
-    "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple",
-    "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
-    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone",
-    "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
-    "hair drier", "toothbrush"
-]
-
-# Wildlife-relevant COCO classes (indices)
-WILDLIFE_CLASSES = {
-    0: "person",
-    14: "bird",
-    15: "cat",
-    16: "dog",
-    17: "horse",
-    18: "sheep",
-    19: "cow",
-    20: "elephant",
-    21: "bear",
-    22: "zebra",
-    23: "giraffe",
-}
 
 
 class YOLOXDetector:
@@ -229,7 +202,7 @@ class YOLOXDetector:
             return "person"
         elif class_id == 14:
             return "bird"
-        elif class_id in [15, 16, 17, 18, 19, 20, 21, 22, 23]:  # cat, dog, horse, etc.
+        elif class_id in MAMMAL_CLASS_IDS:
             return "mammal"
         else:
             return "other"

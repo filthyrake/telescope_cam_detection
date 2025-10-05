@@ -12,6 +12,7 @@ import numpy as np
 from typing import Dict, Any, List, Optional, Tuple
 
 from species_classifier import SpeciesClassifier
+from src.coco_constants import CLASS_ID_TO_CATEGORY
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -46,20 +47,8 @@ class TwoStageDetectionPipeline:
         # Species classifiers (will be added via add_species_classifier)
         self.species_classifiers: Dict[str, SpeciesClassifier] = {}
 
-        # Mapping from COCO classes to classifier categories
-        # YOLOX COCO class_id -> classifier category
-        self.class_id_to_category = {
-            14: "bird",         # bird
-            15: "mammal",       # cat
-            16: "mammal",       # dog
-            17: "mammal",       # horse
-            18: "mammal",       # sheep
-            19: "mammal",       # cow
-            20: "mammal",       # elephant
-            21: "mammal",       # bear
-            22: "mammal",       # zebra
-            23: "mammal",       # giraffe
-        }
+        # Use shared COCO class mapping for Stage 2 routing
+        self.class_id_to_category = CLASS_ID_TO_CATEGORY
 
         logger.info("Two-stage pipeline initialized (YOLOX + iNaturalist)")
 

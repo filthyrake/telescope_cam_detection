@@ -85,7 +85,7 @@ def draw_bounding_box(
     # Draw label if requested
     if draw_label:
         # Fallback logic: Show species if available, otherwise show Stage 1 class
-        if species and species_confidence is not None:
+        if species is not None and species_confidence is not None:
             label = f"{species} {species_confidence:.2f}"
         else:
             label = f"{class_name} {confidence:.2f}"
