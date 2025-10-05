@@ -61,3 +61,18 @@ yolov8*-world*.pt
 # Test outputs
 test_*.jpg
 test_*.png
+
+# YOLOX repository (external dependency)
+YOLOX/
+
+# Backup files
+*.backup
+
+# Experimental scripts
+convert_onnx_to_tensorrt.py
+export_to_onnx.py
+export_yolox_tensorrt.py
+profile_inference.py
+test_tensorrt_compile.py
+test_performance.py
+test_system_startup.py
