@@ -1,0 +1,33 @@
+[Unit]
+Description=Telescope Wildlife Detection System
+After=network.target
+
+[Service]
+Type=simple
+User=damen
+Group=damen
+WorkingDirectory=/home/damen/telescope_cam_detection
+Environment="PATH=/home/damen/telescope_cam_detection/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Run the main application
+ExecStart=/home/damen/telescope_cam_detection/venv/bin/python /home/damen/telescope_cam_detection/main.py
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telescope-detection
+
+# Resource limits (optional - adjust as needed)
+# Limit memory usage to 8GB (A30 has 24GB VRAM)
+# MemoryMax=8G
+
+# Security (optional - can be tightened)
+# NoNewPrivileges=true
+# PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

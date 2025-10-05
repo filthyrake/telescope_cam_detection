@@ -13,22 +13,67 @@ camera:
 
 detection:
   # Model configuration
-  model: "yolov8x.pt"  # Options: yolov8n, yolov8s, yolov8m, yolov8l, yolov8x
+  model: "yolov8x-worldv2.pt"  # Options: yolov8x.pt, yolov8x-worldv2.pt
   device: "cuda:0"
+
+  # YOLO-World specific settings (only used if model contains 'world')
+  use_yolo_world: true  # Enable YOLO-World open-vocabulary detection
+  yolo_world_classes:  # Custom classes for YOLO-World (text prompts)
+    - "person"
+    - "coyote"
+    - "rabbit"
+    - "ground squirrel"
+    - "roadrunner"
+    - "quail"
+    - "hawk"
+    - "raven"
+    - "dove"
+    - "lizard"
+    - "desert lizard"
+    - "small lizard"
+    - "reptile"
+    - "iguana"
+    - "tortoise"
+    - "snake"
+    - "deer"
+    - "javelina"
+    - "bobcat"
+    - "fox"
+
+  # Two-stage detection pipeline
+  use_two_stage: true  # Enable two-stage detection (Stage 1: detection, Stage 2: species classification)
+  enable_species_classification: true  # Enable Stage 2 species classification (requires models)
 
   # Detection thresholds
   confidence: 0.25  # Lower for distant/small wildlife (camera mounted high)
   iou_threshold: 0.45
 
+  # Per-class confidence overrides (higher threshold = fewer false positives)
+  class_confidence_overrides:
+    person: 0.60  # Much higher to reduce false "person" detections
+
   # Size filtering (better than just confidence for distant wildlife!)
   # Note: Inference runs at 1280x720 (921,600 total pixels)
   # Typical sizes: tiny=50-200px², small bird/rabbit=200-1000px², coyote=1000-5000px²
-  min_box_area: 100  # Minimum bounding box area in pixels² (~10x10 pixels at 720p)
+  min_box_area: 50  # Minimum bounding box area in pixels² (~7x7 pixels) - catches small lizards
   max_detections: 300  # Maximum number of detections per frame
 
   # Target classes (empty = detect ALL COCO classes, or list specific ones)
   # Leave empty to see everything (including funny false positives)
+  # NOTE: Ignored if use_yolo_world=true (uses yolo_world_classes instead)
   target_classes: []
+
+# Stage 2 Species Classification (fine-grained identification)
+species_classification:
+  enabled: true
+  confidence_threshold: 0.3  # Minimum confidence for species ID
+
+  # Universal iNaturalist model (covers 10,000 species)
+  inat_classifier:
+    model_name: "timm/eva02_large_patch14_clip_336.merged2b_ft_inat21"
+    taxonomy_file: "models/inat2021_taxonomy_simple.json"
+    input_size: 336  # EVA02 uses 336x336 input
+    confidence_threshold: 0.3
 
 web:
   host: "0.0.0.0"

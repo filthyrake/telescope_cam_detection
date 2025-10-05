@@ -1,160 +1,110 @@
-# Quick Start Guide
+# Telescope Detection System - Quick Start
 
-## 🚀 Phase 1 Implementation Complete!
-
-Your telescope detection system is ready to run. Here's what was built:
-
-### ✅ What's Working
-
-1. **RTSP Stream Capture** - Connects to your Reolink camera (10.0.8.18)
-2. **GPU Inference Engine** - YOLOv8 running on NVIDIA A30
-3. **Detection Processing** - Post-processes detections and tracks latency
-4. **Web Interface** - Real-time video with detection overlays
-5. **WebSocket Streaming** - Live detection data to browser
-
-### 🎯 Quick Test
-
-Before running the full system, test individual components:
+## Setup (One Time)
 
 ```bash
-# Activate environment
-source venv/bin/activate
+# 1. Install service
+sudo ./service.sh install
 
-# Test 1: Camera Connection (~30 seconds)
+# 2. Start service
+sudo ./service.sh start
+
+# 3. Access web interface
+# Open browser: http://localhost:8000
+```
+
+## Daily Commands
+
+```bash
+# Check if running
+./service.sh status
+
+# View live logs
+./service.sh logs -f
+
+# Restart after config changes
+sudo ./service.sh restart
+
+# Stop service
+sudo ./service.sh stop
+```
+
+## Configuration
+
+Edit settings: `nano config/config.yaml`
+
+After changes: `sudo ./service.sh restart`
+
+## Troubleshooting
+
+```bash
+# View error logs
+./service.sh logs | grep ERROR
+
+# Test camera connection
 python tests/test_camera_connection.py
 
-# Test 2: GPU Inference (~2 minutes)
-python tests/test_inference.py
-
-# Test 3: End-to-End Latency (~30 seconds)
-python tests/test_latency.py
-```
-
-### 🏃 Run the System
-
-```bash
-# Option 1: Use start script
-./start.sh
-
-# Option 2: Manual
-source venv/bin/activate
-python main.py
-```
-
-Then open browser to: **http://localhost:8000**
-
-### 📊 What You'll See
-
-- **Live video stream** from camera (1280x720 downscaled)
-- **Bounding boxes** around detected objects:
-  - Red boxes = People
-  - Orange boxes = Animals (cats, dogs, birds, etc.)
-  - Green boxes = Other objects
-- **Real-time statistics**:
-  - Total detections
-  - Inference time
-  - End-to-end latency
-  - Detection counts by type
-
-### 🎛️ Configuration
-
-Edit `config/config.yaml` to adjust:
-
-- **Model size**: Switch between yolov8n (fast) to yolov8x (accurate)
-- **Confidence**: Adjust detection threshold (0.0-1.0)
-- **Target classes**: Filter specific objects to detect
-- **Resolution**: Change target_width/height for speed/quality tradeoff
-
-### 🔧 Performance Expectations (Phase 1)
-
-- **Latency**: Target <200ms (will optimize to <100ms in Phase 2)
-- **FPS**: 15-30 FPS
-- **GPU Usage**: 40-60%
-- **RAM**: <4GB
-
-### 📝 Next Steps
-
-**Immediate:**
-1. Run tests to verify camera and GPU
-2. Start main application
-3. Check web interface
-4. Monitor latency in browser
-
-**Phase 2 (Future):**
-- TensorRT optimization for <100ms latency
-- GStreamer pipeline for lower capture latency
-- Performance dashboard
-
-**Phase 3 (Future):**
-- Custom telescope detection models
-- Collision detection logic
-- Zone-based alerts
-
-### 🐛 Troubleshooting
-
-**Camera won't connect:**
-```bash
-# Verify camera is reachable
-ping 10.0.8.18
-
-# Check RTSP port
-nc -zv 10.0.8.18 554
-```
-
-**High latency (>200ms):**
-- Switch to smaller model: `yolov8n.pt` instead of `yolov8x.pt`
-- Lower resolution in config: `target_width: 640, target_height: 480`
-
-**GPU not detected:**
-```bash
-# Check NVIDIA driver
+# Check GPU
 nvidia-smi
 
-# Verify PyTorch CUDA
-python -c "import torch; print(torch.cuda.is_available())"
+# Full service status
+systemctl status telescope_detection.service -l
 ```
 
-### 📁 Project Structure
+## File Locations
 
-```
-telescope_cam_detection/
-├── main.py              # Start here
-├── start.sh             # Quick start script
-├── config/
-│   └── config.yaml      # Main configuration
-├── src/                 # Core modules
-├── web/                 # Frontend files
-├── tests/               # Test scripts
-└── README.md            # Full documentation
-```
+- **Config**: `config/config.yaml`
+- **Saved clips**: `clips/`
+- **Logs**: `journalctl -u telescope_detection.service`
+- **Service file**: `/etc/systemd/system/telescope_detection.service`
 
-### 🎬 Example Run
+## Web Interface
 
+- **Local**: http://localhost:8000
+- **Network**: http://YOUR_IP:8000
+
+## Features
+
+### Stage 1: YOLO-World Detection
+- Detects: coyote, rabbit, quail, roadrunner, hawk, etc.
+- Real-time bounding boxes
+
+### Stage 2: iNaturalist Species ID
+- Fine-grained species classification
+- 10,000 species database
+- Example: "bird" → "Gambel's Quail"
+
+## Common Tasks
+
+### View Saved Wildlife Clips
 ```bash
-$ ./start.sh
-🔭 Starting Telescope Detection System...
-
-INFO - Configuration loaded successfully
-INFO - Stream capture initialized
-INFO - Inference engine initialized
-INFO - Detection processor initialized
-INFO - Starting web server on http://0.0.0.0:8000
-================================================================================
-System is running!
-Open browser to: http://localhost:8000
-Press Ctrl+C to stop
-================================================================================
+ls -lh clips/
+python scripts/view_snapshots.py
 ```
 
-### 💡 Tips
+### Update Code
+```bash
+sudo ./service.sh stop
+git pull
+source venv/bin/activate
+pip install -r requirements.txt
+sudo ./service.sh start
+```
 
-- **First run**: YOLOv8 model will auto-download (~50MB for yolov8n, ~150MB for yolov8x)
-- **Latency check**: Look at the green indicator in top-right of web UI
-- **Detection tuning**: Adjust confidence threshold if too many/few detections
-- **Night mode**: Camera's IR mode should work, may need lower confidence threshold
+### Change Camera Settings
+```bash
+nano config/config.yaml
+sudo ./service.sh restart
+```
 
----
+## Performance Metrics
 
-**Ready to start? Run:** `./start.sh`
+- **Stage 1 only**: ~20-25ms per frame
+- **Stage 1 + 2**: ~30-35ms per frame
+- **Expected FPS**: 30+ (real-time)
 
-**Questions? Check:** `README.md` for full documentation
+## Help
+
+- **Full docs**: See [SERVICE_SETUP.md](SERVICE_SETUP.md)
+- **Project info**: See [README.md](README.md)
+- **Stage 2 setup**: See [STAGE2_SETUP.md](STAGE2_SETUP.md)
