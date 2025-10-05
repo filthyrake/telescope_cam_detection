@@ -47,7 +47,9 @@ def draw_bounding_box(
     color: Tuple[int, int, int] = None,
     thickness: int = 3,
     font_scale: float = 0.7,
-    draw_label: bool = True
+    draw_label: bool = True,
+    species: str = None,
+    species_confidence: float = None
 ) -> np.ndarray:
     """
     Draw a single bounding box on a frame.
@@ -55,12 +57,14 @@ def draw_bounding_box(
     Args:
         frame: Image frame (numpy array)
         bbox: Bounding box dict with x1, y1, x2, y2
-        class_name: Name of detected class
-        confidence: Detection confidence (0-1)
+        class_name: Name of detected class (Stage 1)
+        confidence: Detection confidence (0-1, Stage 1)
         color: BGR color tuple (None = auto-select by class)
         thickness: Line thickness
         font_scale: Font size scale
         draw_label: Whether to draw label text
+        species: Species name from Stage 2 classifier (optional)
+        species_confidence: Species confidence from Stage 2 (optional)
 
     Returns:
         Frame with bounding box drawn (modifies in-place and returns)
@@ -80,7 +84,11 @@ def draw_bounding_box(
 
     # Draw label if requested
     if draw_label:
-        label = f"{class_name} {confidence:.2f}"
+        # Fallback logic: Show species if available, otherwise show Stage 1 class
+        if species and species_confidence is not None:
+            label = f"{species} {species_confidence:.2f}"
+        else:
+            label = f"{class_name} {confidence:.2f}"
 
         # Calculate text size for background
         (text_width, text_height), baseline = cv2.getTextSize(
@@ -144,6 +152,10 @@ def draw_detections(
         class_name = detection['class_name']
         confidence = detection['confidence']
 
+        # Extract Stage 2 species info if available
+        species = detection.get('species')
+        species_confidence = detection.get('species_confidence')
+
         draw_bounding_box(
             annotated_frame,
             bbox,
@@ -151,7 +163,9 @@ def draw_detections(
             confidence,
             thickness=thickness,
             font_scale=font_scale,
-            draw_label=draw_labels
+            draw_label=draw_labels,
+            species=species,
+            species_confidence=species_confidence
         )
 
     return annotated_frame

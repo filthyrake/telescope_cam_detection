@@ -12,14 +12,20 @@ camera:
   buffer_size: 1  # Keep at 1 for lowest latency
 
 detection:
-  # GroundingDINO Model configuration (Apache 2.0 license)
+  # YOLOX Model configuration (Apache 2.0 license)
+  # 47x faster than GroundingDINO (11-21ms vs 560ms)
   model:
-    config: "models/GroundingDINO_SwinT_OGC.py"
-    weights: "models/groundingdino_swint_ogc.pth"
+    name: "yolox-s"  # YOLOX-S variant (good speed/accuracy balance)
+    weights: "models/yolox/yolox_s.pth"
   device: "cuda:0"
 
-  # Open-vocabulary text prompts for GroundingDINO
-  # Comprehensive desert Southwest wildlife + human detection
+  # YOLOX detection thresholds
+  conf_threshold: 0.25  # Confidence threshold
+  nms_threshold: 0.45   # NMS IoU threshold
+  wildlife_only: true   # Filter to wildlife-relevant classes only (person, bird, cat, dog, horse, sheep, cow, bear, etc.)
+
+  # Legacy prompts (not used by YOLOX, kept for reference)
+  # YOLOX detects 80 COCO classes including: person, bird, cat, dog, horse, sheep, cow, bear, etc.
   text_prompts:
     # Humans and pets
     - "person"
@@ -114,13 +120,9 @@ detection:
     - "mammal"
     - "small animal"
 
-  # Two-stage detection pipeline (GroundingDINO + iNaturalist)
-  use_two_stage: false  # Feature currently disabled
-  enable_species_classification: false  # Feature currently disabled
-
-  # GroundingDINO thresholds
-  box_threshold: 0.25  # Confidence for bounding boxes (similar to old confidence)
-  text_threshold: 0.25  # Confidence for text-image matching
+  # Two-stage detection pipeline (YOLOX + iNaturalist)
+  use_two_stage: true  # Enable Stage 2 species classification
+  enable_species_classification: true  # Enable fine-grained species ID
 
   # Per-class confidence overrides (higher threshold = fewer false positives)
   class_confidence_overrides:
