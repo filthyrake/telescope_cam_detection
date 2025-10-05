@@ -1,6 +1,7 @@
 """
 GPU Inference Engine
-Handles YOLOv8 object detection with NVIDIA A30 GPU optimization.
+Handles YOLOv8/YOLO-World object detection with NVIDIA A30 GPU optimization.
+Supports both single-stage and two-stage detection pipelines.
 """
 
 import torch
@@ -11,6 +12,7 @@ from queue import Queue
 from threading import Thread, Event
 import numpy as np
 from ultralytics import YOLO
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,19 +34,24 @@ class InferenceEngine:
         output_queue: Optional[Queue] = None,
         target_classes: Optional[List[str]] = None,
         min_box_area: int = 0,  # Minimum bounding box area (pixels²)
-        max_det: int = 300  # Maximum detections per image
+        max_det: int = 300,  # Maximum detections per image
+        use_two_stage: bool = False,  # Enable two-stage detection
+        two_stage_pipeline: Optional[Any] = None,  # TwoStageDetectionPipeline instance
+        class_confidence_overrides: Optional[Dict[str, float]] = None  # Per-class confidence thresholds
     ):
         """
         Initialize inference engine.
 
         Args:
-            model_path: Path to YOLOv8 model weights
+            model_path: Path to YOLOv8/YOLO-World model weights
             device: Device to run inference on (cuda:0, cpu, etc.)
             conf_threshold: Confidence threshold for detections
             iou_threshold: IoU threshold for NMS
             input_queue: Queue to receive frames from
             output_queue: Queue to send detections to
             target_classes: List of class names to detect (None = all classes)
+            use_two_stage: Enable two-stage detection pipeline
+            two_stage_pipeline: TwoStageDetectionPipeline instance
         """
         self.model_path = model_path
         self.device = device
@@ -55,9 +62,13 @@ class InferenceEngine:
         self.target_classes = target_classes
         self.min_box_area = min_box_area
         self.max_det = max_det
+        self.use_two_stage = use_two_stage
+        self.two_stage_pipeline = two_stage_pipeline
+        self.class_confidence_overrides = class_confidence_overrides or {}
 
         self.model: Optional[YOLO] = None
         self.is_loaded = False
+        self.is_yolo_world = False
         self.stop_event = Event()
         self.inference_thread: Optional[Thread] = None
 
@@ -70,12 +81,25 @@ class InferenceEngine:
 
     def load_model(self) -> bool:
         """
-        Load YOLOv8 model and move to GPU.
+        Load YOLOv8/YOLO-World model and move to GPU.
 
         Returns:
             True if model loaded successfully, False otherwise
         """
         try:
+            # Use two-stage pipeline if enabled
+            if self.use_two_stage and self.two_stage_pipeline:
+                logger.info("Loading two-stage detection pipeline...")
+                if self.two_stage_pipeline.load_detector():
+                    self.is_loaded = True
+                    self.is_yolo_world = True
+                    logger.info("Two-stage pipeline loaded successfully")
+                    return True
+                else:
+                    logger.error("Failed to load two-stage pipeline")
+                    return False
+
+            # Standard YOLO loading
             logger.info(f"Loading model from {self.model_path}")
             logger.info(f"Using device: {self.device}")
 
@@ -84,8 +108,20 @@ class InferenceEngine:
                 logger.error("CUDA requested but not available")
                 return False
 
-            # Load YOLOv8 model
-            self.model = YOLO(self.model_path)
+            # Detect if this is a YOLO-World model
+            model_name = Path(self.model_path).stem.lower()
+            self.is_yolo_world = 'world' in model_name
+
+            # Load YOLO model
+            if self.is_yolo_world:
+                from ultralytics import YOLOWorld
+                self.model = YOLOWorld(self.model_path)
+                # Set custom classes if provided
+                if self.target_classes:
+                    self.model.set_classes(self.target_classes)
+                    logger.info(f"YOLO-World classes set: {self.target_classes}")
+            else:
+                self.model = YOLO(self.model_path)
 
             # Move model to device
             self.model.to(self.device)
@@ -102,7 +138,8 @@ class InferenceEngine:
             _ = self.model(dummy_input, verbose=False)
 
             self.is_loaded = True
-            logger.info("Model loaded successfully")
+            model_type = "YOLO-World" if self.is_yolo_world else "YOLO"
+            logger.info(f"{model_type} model loaded successfully")
             return True
 
         except Exception as e:
@@ -202,7 +239,12 @@ class InferenceEngine:
         Returns:
             List of detection dictionaries
         """
-        # Run YOLOv8 inference
+        # Use two-stage pipeline if enabled
+        if self.use_two_stage and self.two_stage_pipeline:
+            result = self.two_stage_pipeline.detect(frame)
+            return result.get('detections', [])
+
+        # Run YOLO inference
         results = self.model(
             frame,
             conf=self.conf_threshold,
@@ -224,6 +266,11 @@ class InferenceEngine:
 
                 # Filter by target classes if specified
                 if self.target_classes and class_name not in self.target_classes:
+                    continue
+
+                # Apply per-class confidence threshold if specified
+                class_conf_threshold = self.class_confidence_overrides.get(class_name, self.conf_threshold)
+                if conf < class_conf_threshold:
                     continue
 
                 # Calculate bounding box area

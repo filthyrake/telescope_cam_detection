@@ -1,0 +1,566 @@
+# API Reference
+
+Complete API documentation for the Telescope Detection System.
+
+## Base URL
+
+```
+http://localhost:8000
+```
+
+## HTTP Endpoints
+
+### GET `/`
+
+**Description**: Main web interface
+
+**Response**: HTML page with live detection view
+
+**Features**:
+- Real-time video feed with MJPEG
+- WebSocket connection for detections
+- Live bounding box overlay
+- Statistics panel
+- Link to clips gallery
+
+---
+
+### GET `/video_feed`
+
+**Description**: Motion JPEG video stream
+
+**Response**:
+```
+Content-Type: multipart/x-mixed-replace; boundary=frame
+```
+
+**Format**: Continuous JPEG frames
+
+**Frame Rate**: ~20-30 FPS (depends on camera capture rate)
+
+**Example Usage**:
+```html
+<img src="http://localhost:8000/video_feed" />
+```
+
+---
+
+### GET `/stats`
+
+**Description**: System performance statistics
+
+**Response**: `application/json`
+
+```json
+{
+  "stream_capture": {
+    "is_connected": true,
+    "fps": 29.5,
+    "dropped_frames": 12,
+    "total_frames": 15234
+  },
+  "inference_engine": {
+    "is_loaded": true,
+    "device": "cuda:0",
+    "fps": 28.3,
+    "avg_inference_time_ms": 32.1,
+    "total_inferences": 15100,
+    "conf_threshold": 0.25
+  },
+  "detection_processor": {
+    "processed_count": 15100,
+    "history_size": 30
+  },
+  "uptime_seconds": 3600,
+  "timestamp": 1696512345.123
+}
+```
+
+**HTTP Status**:
+- `200 OK`: Success
+- `500 Internal Server Error`: System error
+
+---
+
+### GET `/clips_list`
+
+**Description**: List all saved detection clips
+
+**Query Parameters**:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | int | 100 | Maximum clips to return |
+
+**Response**: `application/json`
+
+```json
+[
+  {
+    "filename": "bird_20251005_071214_813087_conf0.52.jpg",
+    "timestamp": "2025-10-05T07:12:14.813087",
+    "class": "bird",
+    "confidence": 0.52,
+    "size_bytes": 245678,
+    "has_annotated": true,
+    "has_metadata": true,
+    "metadata_file": "bird_20251005_071214_813087_conf0.52.json"
+  },
+  ...
+]
+```
+
+**HTTP Status**:
+- `200 OK`: Success
+- `500 Internal Server Error`: Error reading clips directory
+
+---
+
+### GET `/clips/{filename}`
+
+**Description**: Serve a specific clip file
+
+**Path Parameters**:
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `filename` | string | Clip filename (e.g., `bird_20251005_071214_813087_conf0.52.jpg`) |
+
+**Response**: `image/jpeg` or `application/json`
+
+**HTTP Status**:
+- `200 OK`: File found and served
+- `404 Not Found`: File does not exist
+- `403 Forbidden`: File outside clips directory
+
+**Example**:
+```
+GET /clips/bird_20251005_071214_813087_conf0.52.jpg
+Response: JPEG image binary
+```
+
+---
+
+### GET `/clips_browser`
+
+**Description**: Web-based clips gallery
+
+**Response**: HTML page
+
+**Features**:
+- Thumbnail grid of all clips
+- Lightbox view for full images
+- Filter by class
+- Sort by date
+- Shows confidence scores
+- Shows species names (Stage 2)
+
+---
+
+## WebSocket Endpoint
+
+### WS `/ws/detections`
+
+**Description**: Real-time detection stream
+
+**Protocol**: WebSocket (RFC 6455)
+
+**Connection**:
+```javascript
+const ws = new WebSocket('ws://localhost:8000/ws/detections');
+```
+
+**Message Type**: JSON text frames
+
+**Message Format**:
+```json
+{
+  "type": "detections",
+  "frame_id": 12345,
+  "timestamp": 1696512345.123,
+  "latency_ms": 32.5,
+  "inference_time_ms": 28.2,
+  "total_detections": 2,
+  "detection_counts": {
+    "bird": 1,
+    "rabbit": 1
+  },
+  "detections": [
+    {
+      "class_name": "bird",
+      "confidence": 0.85,
+      "bbox": {
+        "x1": 100,
+        "y1": 200,
+        "x2": 300,
+        "y2": 400,
+        "area": 80000
+      },
+      "stage1_class": "bird",
+      "stage2_enabled": true,
+      "species": "Gambel's Quail",
+      "species_confidence": 0.92,
+      "species_alternatives": [
+        {
+          "species": "California Quail",
+          "confidence": 0.78,
+          "class_id": 3621
+        },
+        {
+          "species": "Scaled Quail",
+          "confidence": 0.65,
+          "class_id": 3623
+        }
+      ],
+      "taxonomy_group": "bird"
+    },
+    {
+      "class_name": "rabbit",
+      "confidence": 0.72,
+      "bbox": {
+        "x1": 500,
+        "y1": 300,
+        "x2": 650,
+        "y2": 450,
+        "area": 22500
+      },
+      "stage1_class": "rabbit",
+      "stage2_enabled": true,
+      "species": "Desert Cottontail",
+      "species_confidence": 0.88,
+      "taxonomy_group": "mammal"
+    }
+  ]
+}
+```
+
+**Message Rate**: ~20-30 messages/second
+
+**Connection Lifecycle**:
+1. **Connect**: Client initiates WebSocket connection
+2. **Accept**: Server accepts and logs connection
+3. **Stream**: Server sends detection messages continuously
+4. **Disconnect**: Client closes or connection lost
+5. **Reconnect**: Client should reconnect on disconnect
+
+**Error Handling**:
+```javascript
+ws.onerror = (error) => {
+  console.error('WebSocket error:', error);
+};
+
+ws.onclose = () => {
+  console.log('WebSocket closed, reconnecting...');
+  setTimeout(() => connectWebSocket(), 1000);
+};
+```
+
+**Connection Limits**: No hard limit, but performance degrades with many clients
+
+---
+
+## Data Models
+
+### Detection Object
+
+```typescript
+interface Detection {
+  class_name: string;              // YOLO-World class
+  confidence: number;              // 0.0 - 1.0
+  bbox: BoundingBox;
+  stage1_class: string;            // Original detection class
+  stage2_enabled: boolean;         // Whether Stage 2 ran
+  species?: string;                // iNaturalist species name
+  species_confidence?: number;     // 0.0 - 1.0
+  species_alternatives?: AlternativeSpecies[];
+  taxonomy_group?: string;         // "bird" | "mammal" | "reptile"
+}
+
+interface BoundingBox {
+  x1: number;  // Top-left X
+  y1: number;  // Top-left Y
+  x2: number;  // Bottom-right X
+  y2: number;  // Bottom-right Y
+  area: number; // Pixels²
+}
+
+interface AlternativeSpecies {
+  species: string;
+  confidence: number;
+  class_id: number;
+}
+```
+
+### Clip Metadata
+
+```typescript
+interface ClipMetadata {
+  timestamp: string;              // ISO 8601
+  class_name: string;
+  confidence: number;
+  bbox: BoundingBox;
+  species?: string;
+  species_confidence?: number;
+  frame_shape: [number, number, number];  // [height, width, channels]
+}
+```
+
+---
+
+## Client Libraries
+
+### JavaScript/TypeScript
+
+**Connect to WebSocket**:
+```javascript
+class DetectionClient {
+  constructor(url = 'ws://localhost:8000/ws/detections') {
+    this.url = url;
+    this.ws = null;
+    this.onDetection = null;
+  }
+
+  connect() {
+    this.ws = new WebSocket(this.url);
+
+    this.ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (this.onDetection) {
+        this.onDetection(data);
+      }
+    };
+
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    this.ws.onclose = () => {
+      console.log('Disconnected, reconnecting in 1s...');
+      setTimeout(() => this.connect(), 1000);
+    };
+  }
+
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+    }
+  }
+}
+
+// Usage
+const client = new DetectionClient();
+client.onDetection = (data) => {
+  console.log(`Detected ${data.total_detections} objects`);
+  data.detections.forEach(det => {
+    console.log(`- ${det.class_name}: ${det.confidence.toFixed(2)}`);
+    if (det.species) {
+      console.log(`  Species: ${det.species} (${det.species_confidence.toFixed(2)})`);
+    }
+  });
+};
+client.connect();
+```
+
+**Fetch Statistics**:
+```javascript
+async function getStats() {
+  const response = await fetch('http://localhost:8000/stats');
+  const stats = await response.json();
+  console.log(`FPS: ${stats.inference_engine.fps.toFixed(1)}`);
+  console.log(`Latency: ${stats.inference_engine.avg_inference_time_ms.toFixed(1)}ms`);
+  return stats;
+}
+```
+
+**List Clips**:
+```javascript
+async function getClips(limit = 50) {
+  const response = await fetch(`http://localhost:8000/clips_list?limit=${limit}`);
+  const clips = await response.json();
+  return clips;
+}
+```
+
+---
+
+### Python
+
+**WebSocket Client**:
+```python
+import asyncio
+import websockets
+import json
+
+async def listen_detections():
+    uri = "ws://localhost:8000/ws/detections"
+
+    async with websockets.connect(uri) as websocket:
+        while True:
+            message = await websocket.recv()
+            data = json.loads(message)
+
+            print(f"Detected {data['total_detections']} objects")
+            for det in data['detections']:
+                print(f"- {det['class_name']}: {det['confidence']:.2f}")
+                if 'species' in det:
+                    print(f"  Species: {det['species']} ({det['species_confidence']:.2f})")
+
+# Run
+asyncio.run(listen_detections())
+```
+
+**HTTP Client**:
+```python
+import requests
+
+def get_stats():
+    response = requests.get('http://localhost:8000/stats')
+    return response.json()
+
+def get_clips(limit=50):
+    response = requests.get(f'http://localhost:8000/clips_list?limit={limit}')
+    return response.json()
+
+# Usage
+stats = get_stats()
+print(f"FPS: {stats['inference_engine']['fps']:.1f}")
+
+clips = get_clips(limit=10)
+for clip in clips:
+    print(f"{clip['timestamp']}: {clip['class']} ({clip['confidence']:.2f})")
+```
+
+---
+
+## Rate Limits
+
+**No hard rate limits**, but consider:
+
+- **WebSocket**: Each client consumes ~5 KB/s
+- **MJPEG Stream**: Each client consumes ~2-4 Mbps
+- **HTTP Requests**: No limit, but be reasonable
+
+**Recommendations**:
+- Limit WebSocket clients to 5-10 for best performance
+- Use HTTP polling sparingly (max 1 req/second)
+- MJPEG streams are resource-intensive
+
+---
+
+## Authentication
+
+**Current**: None (open access)
+
+**Recommendations**:
+- Use nginx reverse proxy with HTTP basic auth
+- Add API key support
+- Implement OAuth2 for production
+
+---
+
+## CORS
+
+**Current**: No CORS headers (same-origin only)
+
+**To enable CORS**, modify `src/web_server.py`:
+```python
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Or specific origins
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+---
+
+## Error Responses
+
+### HTTP Errors
+
+```json
+{
+  "detail": "Error message here"
+}
+```
+
+**Status Codes**:
+- `200 OK`: Success
+- `404 Not Found`: Resource not found
+- `500 Internal Server Error`: Server error
+
+### WebSocket Errors
+
+WebSocket errors are logged but not sent to clients. Check server logs for details.
+
+---
+
+## Performance Tips
+
+1. **Use WebSocket for real-time data** (not HTTP polling)
+2. **Limit concurrent MJPEG streams** (max 2-3 clients)
+3. **Fetch clips list with limit** to avoid large responses
+4. **Cache statistics** if polling frequently
+5. **Use thumbnail images** when displaying many clips
+
+---
+
+## Examples
+
+### Full Web Client Example
+
+See `web/index.html` for complete working example with:
+- MJPEG video display
+- WebSocket detection overlay
+- Real-time bounding boxes
+- Species labels
+- Statistics display
+
+### Python Monitoring Script
+
+```python
+#!/usr/bin/env python3
+"""Monitor telescope detection system."""
+
+import asyncio
+import websockets
+import json
+from datetime import datetime
+
+async def monitor():
+    uri = "ws://localhost:8000/ws/detections"
+
+    async with websockets.connect(uri) as ws:
+        print("Connected to detection stream")
+
+        while True:
+            msg = await ws.recv()
+            data = json.loads(msg)
+
+            if data['total_detections'] > 0:
+                timestamp = datetime.fromtimestamp(data['timestamp'])
+                print(f"\n[{timestamp}] {data['total_detections']} detections:")
+
+                for det in data['detections']:
+                    species = det.get('species', det['class_name'])
+                    conf = det.get('species_confidence', det['confidence'])
+                    print(f"  • {species} ({conf:.1%})")
+
+if __name__ == "__main__":
+    asyncio.run(monitor())
+```
+
+---
+
+## Changelog
+
+### v1.0 (2025-10-05)
+- Initial API documentation
+- WebSocket detection stream
+- HTTP endpoints for stats and clips
+- Two-stage detection with species classification
+
+---
+
+**Document Version**: 1.0
+**Last Updated**: 2025-10-05
