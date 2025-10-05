@@ -9,12 +9,13 @@ Real-time object detection system for **telescope collision prevention** and **w
 **Dual Purpose System**:
 1. **Telescope Safety** (Primary Goal): Detect telescope equipment parts (tube, mount, tripod legs) and potential collision hazards (people, animals). Prevent accidents with telescope equipment by alerting when objects are too close to tripod legs or moving telescope components.
 
-2. **Wildlife Monitoring** (Secondary Goal): Monitor desert animals (coyotes, rabbits, quail, roadrunners, lizards, etc.) using YOLO-World open-vocabulary detection.
+2. **Wildlife Monitoring** (Secondary Goal): Monitor desert animals (coyotes, rabbits, quail, roadrunners, lizards, etc.) using GroundingDINO open-vocabulary detection with 93 comprehensive text prompts.
 
 **Current Status**:
-- Wildlife detection: **ACTIVE** (using YOLO-World)
-- Telescope detection: **IN TRAINING** (custom model requires annotated dataset)
+- Wildlife detection: **ACTIVE** (using GroundingDINO - Apache 2.0 license)
+- Telescope detection: **PLANNED** (custom model requires annotated dataset)
 - Collision detection logic: **FRAMEWORK READY** (config placeholders exist)
+- License: **MIT** (all dependencies Apache 2.0 or MIT compatible)
 
 **Camera Setup**: Mounted overlooking backyard telescope setup and surrounding desert terrain
 
@@ -102,10 +103,13 @@ RTSP Camera → Stream Capture → Frame Queue → Inference Engine → Detectio
 
 **Low-Latency Frame Pipeline**: Uses Queue size=1-2 and aggressive frame dropping to process only the latest frames, target <100ms end-to-end latency.
 
-**Two-Stage Detection (Optional)**:
-- Stage 1: YOLO-World detects broad categories ("bird", "mammal", "reptile")
-- Stage 2: Species classifier identifies specific species ("Gambel's Quail")
-- Currently: Stage 1 only (Stage 2 framework exists but needs trained models)
+**Detection Pipeline**:
+- **Stage 1**: GroundingDINO open-vocabulary detection with 93 text prompts
+  - Comprehensive desert wildlife: mammals, birds, reptiles, amphibians
+  - Specific species: "zebra-tailed lizard", "gambel's quail", "desert iguana", etc.
+- **Stage 2 (Optional)**: iNaturalist species classifier for fine-grained ID
+  - Framework ready but disabled for initial testing
+  - Can be re-enabled after GroundingDINO validation
 
 **Snapshot Cooldown System**: Prevents duplicate saves using per-class cooldown timers (default 45s).
 
@@ -114,21 +118,24 @@ RTSP Camera → Stream Capture → Frame Queue → Inference Engine → Detectio
 **Main Config**: `config/config.yaml`
 
 Critical settings:
-- `detection.model`: Currently using `yolov8x-worldv2.pt` (YOLO-World for wildlife)
-  - **Future**: Switch to `models/telescope_custom.pt` once trained
-- `detection.use_yolo_world`: true (enables open-vocabulary detection)
-- `detection.yolo_world_classes`: List of 17 desert species text prompts
-- `detection.confidence`: 0.25 (lower for distant animals/telescope parts)
-- `detection.min_box_area`: 100px² (filters tiny false positives)
+- `detection.model.config`: `models/GroundingDINO_SwinT_OGC.py` (Apache 2.0)
+- `detection.model.weights`: `models/groundingdino_swint_ogc.pth` (662MB)
+- `detection.text_prompts`: List of 93 comprehensive wildlife + human prompts
+- `detection.box_threshold`: 0.25 (confidence for bounding boxes)
+- `detection.text_threshold`: 0.25 (confidence for text-image matching)
+- `detection.min_box_area`: 50px² (catches small distant lizards)
 - `snapshots.enabled`: true (saves detections to clips/)
 - `snapshots.trigger_classes`: Which animals trigger saves
 - `detection_zones`: **PLANNED** - Define danger zones around telescope equipment
 - `collision_detection.enabled`: **PLANNED** - Enable proximity alerts
 
 **Model Selection Strategy**:
-- **YOLO-World** (`yolov8x-worldv2.pt`): For wildlife using text prompts (no training needed)
-- **Custom YOLOv8** (`telescope_custom.pt`): For telescope parts (requires training on 7 classes)
-- **Dual Model Setup** (future): Run both models simultaneously - YOLO-World for wildlife, custom model for telescope equipment
+- **GroundingDINO** (Apache 2.0): For wildlife using 93 text prompts (no training needed)
+  - Open-vocabulary detection with natural language
+  - Supports specific species names: "desert iguana", "zebra-tailed lizard"
+- **Custom Model** (future): For telescope parts (requires training on 7 classes)
+  - Will need to train separate model or fine-tune GroundingDINO
+- **License**: All components MIT/Apache 2.0 compatible for open source release
 
 **Telescope Detection Classes** (training/datasets/telescope_equipment/classes.yaml):
 ```yaml
@@ -192,9 +199,9 @@ Critical settings:
 - No more false "person" detections on covered telescopes
 
 ### Adding New Wildlife Detection Classes
-1. Edit `config/config.yaml` → `detection.yolo_world_classes`
-2. Add text prompt for new animal (e.g., "javelina", "bobcat")
-3. Restart system (no training needed with YOLO-World)
+1. Edit `config/config.yaml` → `detection.text_prompts`
+2. Add text prompt for new animal (e.g., "coati", "ringtail")
+3. Restart system (no training needed with GroundingDINO open-vocabulary)
 
 ### Implementing Collision Detection Logic
 
@@ -405,3 +412,24 @@ Direct integration with INDI/ASCOM telescope control software for emergency stop
 **Use Case**: Auto-stop telescope slew if collision risk detected
 **Platforms**: INDI (Linux), ASCOM (Windows)
 **Safety**: Requires hardware safety interlocks
+
+---
+
+## Credits & Licenses
+
+This project is licensed under the **MIT License**. All dependencies use permissive licenses compatible with MIT.
+
+### Core Dependencies
+
+- **GroundingDINO** (Apache 2.0) - https://github.com/IDEA-Research/GroundingDINO
+  - Open-vocabulary object detection
+- **iNaturalist/EVA02** (Apache 2.0) - https://github.com/huggingface/pytorch-image-models  
+  - 10,000 species classification
+- **PyTorch** (BSD-3-Clause) - https://pytorch.org/
+  - Deep learning framework
+- **OpenCV** (Apache 2.0) - https://opencv.org/
+  - Computer vision library
+- **FastAPI** (MIT) - https://fastapi.tiangolo.com/
+  - Web framework
+
+All components are MIT/Apache 2.0/BSD compatible.

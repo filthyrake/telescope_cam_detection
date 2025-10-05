@@ -19,27 +19,100 @@ detection:
   device: "cuda:0"
 
   # Open-vocabulary text prompts for GroundingDINO
+  # Comprehensive desert Southwest wildlife + human detection
   text_prompts:
+    # Humans and pets
     - "person"
+    - "dog"
+    - "cat"
+
+    # Desert mammals (predators)
     - "coyote"
+    - "bobcat"
+    - "fox"
+    - "mountain lion"
+    - "puma"
+    - "skunk"
+    - "raccoon"
+
+    # Desert mammals (prey/herbivores)
     - "rabbit"
+    - "cottontail"
+    - "jackrabbit"
     - "ground squirrel"
+    - "pack rat"
+    - "kangaroo rat"
+    - "mouse"
+    - "deer"
+    - "mule deer"
+    - "javelina"
+    - "peccary"
+
+    # Birds (raptors)
+    - "hawk"
+    - "red-tailed hawk"
+    - "owl"
+    - "great horned owl"
+    - "barn owl"
+    - "falcon"
+    - "kestrel"
+    - "vulture"
+    - "turkey vulture"
+    - "eagle"
+
+    # Birds (ground dwellers)
     - "roadrunner"
     - "quail"
-    - "hawk"
+    - "gambel's quail"
+
+    # Birds (common)
     - "raven"
+    - "crow"
     - "dove"
+    - "mourning dove"
+    - "hummingbird"
+    - "sparrow"
+    - "finch"
+    - "jay"
+    - "woodpecker"
+    - "thrush"
+    - "mockingbird"
+    - "cardinal"
+    - "oriole"
+
+    # Reptiles (lizards)
     - "lizard"
     - "desert lizard"
     - "small lizard"
-    - "reptile"
     - "iguana"
-    - "tortoise"
+    - "desert iguana"
+    - "chuckwalla"
+    - "collared lizard"
+    - "horned lizard"
+    - "gecko"
+    - "zebra-tailed lizard"
+
+    # Reptiles (snakes and tortoises)
     - "snake"
-    - "deer"
-    - "javelina"
-    - "bobcat"
-    - "fox"
+    - "rattlesnake"
+    - "gopher snake"
+    - "king snake"
+    - "tortoise"
+    - "desert tortoise"
+
+    # Amphibians
+    - "toad"
+    - "frog"
+
+    # Arthropods (if visible at distance)
+    - "scorpion"
+    - "tarantula"
+
+    # General categories (fallback)
+    - "reptile"
+    - "bird"
+    - "mammal"
+    - "small animal"
 
   # Two-stage detection pipeline (GroundingDINO + iNaturalist)
   use_two_stage: false  # Disabled for now - test GroundingDINO first, then re-enable
