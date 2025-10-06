@@ -49,7 +49,7 @@ install_service() {
     check_root
 
     # Get current user (the one who ran sudo)
-    REAL_USER="${SUDO_USER:-$USER}"
+    SERVICE_USER="${SUDO_USER:-$USER}"
 
     # Check if template exists
     if [ ! -f "$PROJECT_DIR/$SERVICE_FILE.template" ]; then
@@ -58,8 +58,8 @@ install_service() {
     fi
 
     # Generate service file from template
-    print_info "Generating service file for user: $REAL_USER"
-    sed -e "s|{{USER}}|$REAL_USER|g" \
+    print_info "Generating service file for user: $SERVICE_USER"
+    sed -e "s|{{USER}}|$SERVICE_USER|g" \
         -e "s|{{PROJECT_DIR}}|$PROJECT_DIR|g" \
         "$PROJECT_DIR/$SERVICE_FILE.template" > "$PROJECT_DIR/$SERVICE_FILE"
     print_success "Service file generated"
