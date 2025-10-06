@@ -81,11 +81,14 @@ journalctl -u telescope_detection.service -b -f
 
 ### Service Configuration
 
-- **Service file**: `telescope_detection.service`
+- **Service template**: `telescope_detection.service.template`
+- **Generated file**: `telescope_detection.service` (auto-generated, not tracked in git)
 - **Installed to**: `/etc/systemd/system/telescope_detection.service`
-- **Runs as**: User `damen` (change in service file if needed)
-- **Working directory**: `/home/damen/telescope_cam_detection`
+- **Runs as**: Automatically uses the user who runs `sudo ./service.sh install`
+- **Working directory**: Automatically uses the current project directory
 - **Python executable**: Uses venv at `./venv/bin/python`
+
+The service file is generated from a template during installation, automatically configuring paths and user settings for your system.
 
 ### Restart Policy
 
@@ -158,37 +161,42 @@ Common issues:
 
 If you need to change service settings:
 
-1. **Edit the service file**:
+1. **Edit the service template**:
    ```bash
-   nano telescope_detection.service
+   nano telescope_detection.service.template
    ```
 
-2. **Reinstall the service**:
+2. **Reinstall the service** (regenerates from template):
    ```bash
    sudo ./service.sh uninstall
    sudo ./service.sh install
    ```
 
-Or manually:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart telescope_detection.service
-```
+The install script automatically fills in `{{USER}}` and `{{PROJECT_DIR}}` placeholders with your actual username and project path.
 
 ## Advanced Configuration
 
 ### Change User
 
-Edit `telescope_detection.service` and change:
+The service automatically runs as the user who executes `sudo ./service.sh install`. If you need to run as a different user:
+
+1. **Switch to that user** and run the install:
+   ```bash
+   su - otheruser
+   cd /path/to/telescope_cam_detection
+   sudo ./service.sh install
+   ```
+
+Or manually edit `telescope_detection.service.template` before installing:
 ```ini
-User=YOUR_USERNAME
-Group=YOUR_USERNAME
-WorkingDirectory=/path/to/your/telescope_cam_detection
+User={{USER}}    # Will be replaced with actual username
+Group={{USER}}
+WorkingDirectory={{PROJECT_DIR}}  # Will be replaced with actual path
 ```
 
 ### Resource Limits
 
-Uncomment and adjust in `telescope_detection.service`:
+Uncomment and adjust in `telescope_detection.service.template`, then reinstall:
 ```ini
 # Limit memory usage
 MemoryMax=8G
@@ -199,7 +207,7 @@ CPUQuota=400%  # 4 cores max
 
 ### Environment Variables
 
-Add environment variables in `telescope_detection.service`:
+Add environment variables in `telescope_detection.service.template`, then reinstall:
 ```ini
 Environment="CUDA_VISIBLE_DEVICES=0"
 Environment="TZ=America/Phoenix"
