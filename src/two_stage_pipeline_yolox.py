@@ -2,17 +2,20 @@
 Two-Stage Detection Pipeline - YOLOX Version
 Stage 1: YOLOX for fast detection (11-21ms)
 Stage 2: iNaturalist for species classification (~20-30ms)
-Total: 30-50ms end-to-end
+Stage 2 Enhancement (optional): Real-ESRGAN + CLAHE + bilateral (~1s)
+Total: 30-50ms (no enhancement) or ~1s (with Real-ESRGAN)
 """
 
 import cv2
 import torch
 import logging
 import numpy as np
+import time
 from typing import Dict, Any, List, Optional, Tuple
 
 from species_classifier import SpeciesClassifier
 from src.coco_constants import CLASS_ID_TO_CATEGORY
+from src.image_enhancement import ImageEnhancer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,6 +34,7 @@ class TwoStageDetectionPipeline:
         enable_species_classification: bool = True,
         stage2_confidence_threshold: float = 0.3,
         device: str = "cuda:0",
+        enhancement_config: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize two-stage pipeline.
@@ -39,6 +43,7 @@ class TwoStageDetectionPipeline:
             enable_species_classification: Whether to run Stage 2
             stage2_confidence_threshold: Min confidence for species classification
             device: Device to run on
+            enhancement_config: Image enhancement config (e.g., {"method": "realesrgan", ...})
         """
         self.enable_species_classification = enable_species_classification
         self.stage2_confidence_threshold = stage2_confidence_threshold
@@ -49,6 +54,21 @@ class TwoStageDetectionPipeline:
 
         # Use shared COCO class mapping for Stage 2 routing
         self.class_id_to_category = CLASS_ID_TO_CATEGORY
+
+        # Image enhancement (optional)
+        self.enhancer = None
+        if enhancement_config and enhancement_config.get('enabled', False):
+            try:
+                logger.info(f"Initializing image enhancer: method={enhancement_config.get('method', 'none')}")
+                self.enhancer = ImageEnhancer(**enhancement_config)
+                logger.info("✓ Image enhancer loaded")
+            except Exception as e:
+                logger.error(f"Failed to load image enhancer: {e}")
+                logger.warning("Continuing without image enhancement")
+
+        # Performance tracking
+        self.enhancement_times = []
+        self.classification_times = []
 
         logger.info("Two-stage pipeline initialized (YOLOX + iNaturalist)")
 
@@ -122,12 +142,30 @@ class TwoStageDetectionPipeline:
             detection['species_confidence'] = 0.0
             return detection
 
+        # Apply image enhancement if configured
+        if self.enhancer is not None:
+            try:
+                enhancement_start = time.time()
+                crop = self.enhancer.enhance(crop)
+                enhancement_time = (time.time() - enhancement_start) * 1000
+                self.enhancement_times.append(enhancement_time)
+
+                # Log enhancement time periodically
+                if len(self.enhancement_times) % 10 == 0:
+                    avg_enhancement = np.mean(self.enhancement_times[-10:])
+                    logger.info(f"Enhancement avg (last 10): {avg_enhancement:.1f}ms")
+            except Exception as e:
+                logger.error(f"Enhancement failed, using original crop: {e}")
+
         # Run species classification
         classifier = self.species_classifiers[category]
 
         try:
+            classification_start = time.time()
             # classifier.classify() returns List[Dict[str, Any]]
             results = classifier.classify(crop, top_k=1)
+            classification_time = (time.time() - classification_start) * 1000
+            self.classification_times.append(classification_time)
 
             if results and len(results) > 0:
                 # Get top prediction
@@ -193,8 +231,23 @@ class TwoStageDetectionPipeline:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get pipeline statistics"""
-        return {
+        stats = {
             'stage2_enabled': self.enable_species_classification,
             'classifiers_loaded': list(self.species_classifiers.keys()),
             'num_classifiers': len(self.species_classifiers),
+            'enhancement_enabled': self.enhancer is not None,
         }
+
+        # Add enhancement statistics if available
+        if self.enhancer is not None:
+            stats['enhancement_method'] = self.enhancer.method
+            if self.enhancement_times:
+                stats['avg_enhancement_ms'] = float(np.mean(self.enhancement_times))
+                stats['enhancement_count'] = len(self.enhancement_times)
+
+        # Add classification statistics if available
+        if self.classification_times:
+            stats['avg_classification_ms'] = float(np.mean(self.classification_times))
+            stats['classification_count'] = len(self.classification_times)
+
+        return stats

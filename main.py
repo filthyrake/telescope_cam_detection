@@ -129,12 +129,14 @@ class TelescopeDetectionSystem:
                 # Get species classification config
                 species_config = self.config.get('species_classification', {})
                 inat_config = species_config.get('inat_classifier', {})
+                enhancement_config = species_config.get('enhancement', {})
 
                 # Initialize pipeline
                 two_stage_pipeline = TwoStageDetectionPipeline(
                     enable_species_classification=detection_config.get('enable_species_classification', True),
                     stage2_confidence_threshold=species_config.get('confidence_threshold', 0.3),
-                    device=detection_config['device']
+                    device=detection_config['device'],
+                    enhancement_config=enhancement_config if enhancement_config else None
                 )
 
                 # Initialize iNaturalist species classifier
