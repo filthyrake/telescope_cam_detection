@@ -7,7 +7,7 @@ import asyncio
 import json
 import time
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pathlib import Path
 import cv2
 import numpy as np
@@ -30,7 +30,7 @@ class WebServer:
     def __init__(
         self,
         detection_queue: Optional[Any] = None,
-        frame_sources: Optional[list] = None,
+        frame_sources: Optional[List[Any]] = None,
         host: str = "0.0.0.0",
         port: int = 8000
     ):

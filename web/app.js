@@ -128,8 +128,10 @@ class DetectionApp {
             }
         });
 
-        // Disable grid view if only one camera
-        if (this.cameras.length <= 1) {
+        // Hide grid view button if no cameras, disable if only one camera
+        if (this.cameras.length === 0) {
+            viewModeBtn.style.display = 'none';
+        } else if (this.cameras.length === 1) {
             viewModeBtn.disabled = true;
             viewModeBtn.style.opacity = '0.5';
             viewModeBtn.style.cursor = 'not-allowed';
