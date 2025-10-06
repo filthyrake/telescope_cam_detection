@@ -17,14 +17,13 @@ COCO_CLASSES = [
 ]
 
 # Wildlife-relevant COCO classes (class_id -> name)
+# Desert wildlife: person, bird, cat (bobcat/wild), dog (coyote/fox), bear
+# Removed farm animals: horse, sheep, cow (cause false positives on cacti/bushes)
 WILDLIFE_CLASSES = {
     0: "person",
     14: "bird",
-    15: "cat",
-    16: "dog",
-    17: "horse",
-    18: "sheep",
-    19: "cow",
+    15: "cat",      # Can match bobcat, wild cats
+    16: "dog",      # Can match coyote, fox
     20: "elephant",
     21: "bear",
     22: "zebra",
@@ -34,11 +33,8 @@ WILDLIFE_CLASSES = {
 # Mapping from COCO class_id to classifier category for Stage 2
 CLASS_ID_TO_CATEGORY = {
     14: "bird",         # bird
-    15: "mammal",       # cat
-    16: "mammal",       # dog
-    17: "mammal",       # horse
-    18: "mammal",       # sheep
-    19: "mammal",       # cow
+    15: "mammal",       # cat (bobcat, wild cats)
+    16: "mammal",       # dog (coyote, fox)
     20: "mammal",       # elephant
     21: "mammal",       # bear
     22: "mammal",       # zebra
@@ -46,7 +42,7 @@ CLASS_ID_TO_CATEGORY = {
 }
 
 # Mammal class IDs (extracted from WILDLIFE_CLASSES for easy filtering)
-MAMMAL_CLASS_IDS = [15, 16, 17, 18, 19, 20, 21, 22, 23]
+MAMMAL_CLASS_IDS = [15, 16, 20, 21, 22, 23]
 
 # Performance baseline constants
 GROUNDINGDINO_BASELINE_MS = 560  # Original GroundingDINO inference time
