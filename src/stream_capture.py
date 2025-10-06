@@ -235,15 +235,15 @@ def create_rtsp_url(
     password: str = "",
     stream_type: str = "main",
     protocol: str = "rtsp",
-    camera_id: str = "default"
+    camera_id: Optional[str] = None
 ) -> str:
     """
     Create stream URL for Reolink camera with various protocol options.
 
     Args:
         camera_ip: IP address of the camera (or Neolink host for 'neolink' protocol)
-        username: Camera username
-        password: Camera password
+        username: Camera username (ignored for neolink protocol)
+        password: Camera password (ignored for neolink protocol)
         stream_type: 'main' for high quality or 'sub' for lower quality
         protocol: Protocol to use:
             - 'rtsp' or 'rtsp-udp': Standard RTSP over UDP (default)
@@ -252,21 +252,23 @@ def create_rtsp_url(
             - 'h265': H.265/HEVC encoding (if camera supports)
             - 'neolink': Neolink RTSP bridge (best quality for E1 Pro)
                          Note: For neolink, camera_ip should be the Neolink host
-                         (e.g., '127.0.0.1' if running locally), not the camera's IP
-        camera_id: Camera ID (required for neolink protocol)
+                         (e.g., '127.0.0.1' if running locally), not the camera's IP.
+                         For neolink, username and password are ignored in the URL as
+                         Neolink authenticates upstream.
+        camera_id: Camera ID (required for neolink protocol, ignored for others)
 
     Returns:
         Stream URL string
 
     Raises:
-        ValueError: If neolink protocol is used with invalid camera_id
+        ValueError: If neolink protocol is used without a valid camera_id
     """
     protocol = protocol.lower()
 
     # Neolink RTSP bridge (best quality for E1 Pro WiFi cameras)
     if protocol == "neolink":
         # Validate camera_id for neolink protocol
-        if not camera_id or camera_id == "default":
+        if not camera_id:
             raise ValueError(
                 "Neolink protocol requires a valid camera_id. "
                 "Camera ID must match the name configured in neolink-config.toml"

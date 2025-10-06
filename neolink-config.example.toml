@@ -6,7 +6,7 @@
 name = "cam2"  # Must match camera ID in config.yaml
 username = "admin"  # Replace with your camera username
 password = "YOUR_PASSWORD_HERE"  # Replace with your camera password
-address = "10.0.2.47:9000"  # Replace with your camera IP (port 9000 is Reolink Baichuan protocol)
+address = "CAMERA_IP:9000"  # Replace CAMERA_IP with your camera's IP address (port 9000 is Reolink Baichuan protocol)
 
 # Stream settings
 [cameras.streams]
