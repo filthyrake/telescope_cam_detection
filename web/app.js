@@ -1,5 +1,5 @@
 /**
- * Telescope Detection System - Frontend Application
+ * Backyard Computer Vision System - Frontend Application
  * Handles WebSocket connection and canvas rendering
  */
 
