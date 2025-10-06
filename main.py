@@ -131,6 +131,10 @@ class TelescopeDetectionSystem:
                 inat_config = species_config.get('inat_classifier', {})
                 enhancement_config = species_config.get('enhancement', {})
 
+                # Pass device to enhancement config if not specified
+                if enhancement_config and 'device' not in enhancement_config:
+                    enhancement_config['device'] = detection_config['device']
+
                 # Initialize pipeline
                 two_stage_pipeline = TwoStageDetectionPipeline(
                     enable_species_classification=detection_config.get('enable_species_classification', True),

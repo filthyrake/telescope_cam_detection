@@ -6,6 +6,13 @@ Option B: Real-ESRGAN + CLAHE + Bilateral Denoising
 - Real-ESRGAN 4x upscaling for small/distant animals
 - CLAHE for contrast enhancement
 - Bilateral filtering for denoising while preserving edges
+
+Dependencies:
+    pip install realesrgan basicsr facexlib gfpgan
+
+Note: basicsr may require torchvision compatibility patch for newer versions.
+If you encounter "No module named 'torchvision.transforms.functional_tensor'",
+patch the import in basicsr/data/degradations.py to use functional instead.
 """
 
 import cv2
@@ -32,7 +39,7 @@ class ImageEnhancer:
     def __init__(
         self,
         method: str = "realesrgan",
-        device: str = "cuda:0",
+        device: Optional[str] = None,
         realesrgan_model_path: Optional[str] = None,
         realesrgan_scale: int = 4,
         realesrgan_tile: int = 512,
@@ -49,7 +56,7 @@ class ImageEnhancer:
 
         Args:
             method: Enhancement method ("none", "clahe", "realesrgan")
-            device: Device for Real-ESRGAN inference
+            device: Device for Real-ESRGAN inference (auto-detects if None)
             realesrgan_model_path: Path to Real-ESRGAN model weights
             realesrgan_scale: Upscaling factor (2, 3, or 4)
             realesrgan_tile: Tile size for processing (0 = no tiling)
@@ -62,7 +69,11 @@ class ImageEnhancer:
             bilateral_sigma_space: Bilateral filter space sigma
         """
         self.method = method
-        self.device = device
+        # Auto-detect device if not specified
+        if device is None:
+            self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        else:
+            self.device = device
 
         # Real-ESRGAN settings
         self.realesrgan_model_path = realesrgan_model_path
@@ -218,50 +229,6 @@ class ImageEnhancer:
         else:
             logger.warning(f"Unknown enhancement method: {self.method}, returning original")
             return image
-
-    def should_enhance(self, image: np.ndarray, min_size: int = 64) -> bool:
-        """
-        Determine if image should be enhanced.
-
-        Small images benefit most from enhancement.
-        Large clear images may not need it.
-
-        Args:
-            image: Input image
-            min_size: Minimum size to consider "small"
-
-        Returns:
-            True if enhancement recommended
-        """
-        h, w = image.shape[:2]
-
-        # Always enhance small images
-        if h < min_size or w < min_size:
-            return True
-
-        # For method="clahe", always enhance (fast enough)
-        if self.method == "clahe":
-            return True
-
-        # For method="realesrgan", only enhance if small or low contrast
-        if self.method == "realesrgan":
-            # Check if image is low contrast (benefit from CLAHE)
-            if len(image.shape) == 3:
-                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            else:
-                gray = image
-
-            std_dev = np.std(gray)
-            if std_dev < 30:  # Low contrast threshold
-                return True
-
-            # Don't enhance large, high-contrast images
-            if h > 300 and w > 300 and std_dev > 50:
-                return False
-
-            return True
-
-        return False
 
 
 # Standalone test function

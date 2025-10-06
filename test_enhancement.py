@@ -81,11 +81,16 @@ def test_enhancement_methods():
     if Path(model_path).exists():
         logger.info("\n4. Testing method='realesrgan' (Real-ESRGAN 4x + CLAHE + bilateral)...")
 
+        # Check CUDA availability
+        import torch
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        logger.info(f"   Using device: {device}")
+
         try:
             enhancer_esrgan = ImageEnhancer(
                 method="realesrgan",
                 realesrgan_model_path=model_path,
-                device="cuda:0"
+                device=device
             )
 
             start = time.time()

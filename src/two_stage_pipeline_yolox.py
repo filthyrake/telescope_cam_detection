@@ -69,6 +69,8 @@ class TwoStageDetectionPipeline:
         # Performance tracking
         self.enhancement_times = []
         self.classification_times = []
+        self.last_perf_log_time = time.time()
+        self.perf_log_interval = 30.0  # Log performance stats every 30 seconds
 
         logger.info("Two-stage pipeline initialized (YOLOX + iNaturalist)")
 
@@ -150,10 +152,14 @@ class TwoStageDetectionPipeline:
                 enhancement_time = (time.time() - enhancement_start) * 1000
                 self.enhancement_times.append(enhancement_time)
 
-                # Log enhancement time periodically
-                if len(self.enhancement_times) % 10 == 0:
-                    avg_enhancement = np.mean(self.enhancement_times[-10:])
-                    logger.info(f"Enhancement avg (last 10): {avg_enhancement:.1f}ms")
+                # Log enhancement performance periodically (time-based)
+                current_time = time.time()
+                if current_time - self.last_perf_log_time >= self.perf_log_interval:
+                    if self.enhancement_times:
+                        recent_count = min(len(self.enhancement_times), 10)
+                        avg_enhancement = np.mean(self.enhancement_times[-recent_count:])
+                        logger.info(f"Enhancement performance (last {recent_count}): {avg_enhancement:.1f}ms avg")
+                    self.last_perf_log_time = current_time
             except Exception as e:
                 logger.error(f"Enhancement failed, using original crop: {e}")
 
