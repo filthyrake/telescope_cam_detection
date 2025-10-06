@@ -1,5 +1,5 @@
 /**
- * Telescope Detection System - Frontend Application
+ * Backyard Computer Vision System - Frontend Application
  * Handles WebSocket connection and canvas rendering
  */
 
@@ -10,6 +10,12 @@ class DetectionApp {
         this.ctx = this.canvas.getContext('2d');
         this.img = new Image();
         this.videoStream = null;
+
+        // Multi-camera support
+        this.cameras = [];
+        this.currentCameraId = null;
+        this.viewMode = 'single'; // 'single' or 'grid'
+        this.gridImages = {}; // Store image elements for grid view
 
         // State
         this.latestDetections = null;
@@ -34,12 +40,164 @@ class DetectionApp {
         this.init();
     }
 
-    init() {
+    async init() {
         console.log('Initializing Detection App');
         this.setupCanvas();
         this.setupFullscreen();
+        await this.fetchCameras();
+        this.setupCameraSelector();
+        this.setupViewModeToggle();
         this.connectWebSocket();
         this.startVideoStream();
+    }
+
+    async fetchCameras() {
+        try {
+            const response = await fetch('/cameras');
+            const data = await response.json();
+            this.cameras = data.cameras || [];
+            console.log('Available cameras:', this.cameras);
+
+            // Set default camera to first one
+            if (this.cameras.length > 0) {
+                this.currentCameraId = this.cameras[0].id;
+            }
+        } catch (e) {
+            console.error('Failed to fetch cameras:', e);
+            // Fallback to default camera
+            this.currentCameraId = 'cam1';
+        }
+    }
+
+    setupCameraSelector() {
+        const selector = document.getElementById('cameraSelect');
+
+        // Clear existing options
+        selector.innerHTML = '';
+
+        // Populate with available cameras
+        if (this.cameras.length === 0) {
+            selector.innerHTML = '<option value="">No cameras available</option>';
+            return;
+        }
+
+        this.cameras.forEach(camera => {
+            const option = document.createElement('option');
+            option.value = camera.id;
+            option.textContent = `${camera.name} (${camera.is_connected ? 'Connected' : 'Disconnected'})`;
+            selector.appendChild(option);
+        });
+
+        // Set initial selection
+        selector.value = this.currentCameraId;
+
+        // Handle camera change
+        selector.addEventListener('change', (e) => {
+            this.switchCamera(e.target.value);
+        });
+    }
+
+    switchCamera(cameraId) {
+        console.log('Switching to camera:', cameraId);
+        this.currentCameraId = cameraId;
+
+        // Update video stream
+        const videoUrl = `${window.location.protocol}//${window.location.host}/video/feed/${cameraId}`;
+        this.img.src = videoUrl;
+
+        // Update camera name display
+        const camera = this.cameras.find(c => c.id === cameraId);
+        if (camera) {
+            document.getElementById('cameraName').textContent = camera.name;
+        }
+    }
+
+    setupViewModeToggle() {
+        const viewModeBtn = document.getElementById('viewModeBtn');
+        const cameraSelect = document.getElementById('cameraSelect');
+
+        viewModeBtn.addEventListener('click', () => {
+            if (this.viewMode === 'single') {
+                this.switchViewMode('grid');
+                viewModeBtn.textContent = '📹 Single View';
+                cameraSelect.disabled = true;
+            } else {
+                this.switchViewMode('single');
+                viewModeBtn.textContent = '📊 Grid View';
+                cameraSelect.disabled = false;
+            }
+        });
+
+        // Hide grid view button if no cameras, disable if only one camera
+        if (this.cameras.length === 0) {
+            viewModeBtn.style.display = 'none';
+        } else if (this.cameras.length === 1) {
+            viewModeBtn.disabled = true;
+            viewModeBtn.style.opacity = '0.5';
+            viewModeBtn.style.cursor = 'not-allowed';
+            viewModeBtn.title = 'Grid view requires multiple cameras';
+        }
+    }
+
+    switchViewMode(mode) {
+        console.log('Switching to view mode:', mode);
+        this.viewMode = mode;
+
+        const singleView = document.getElementById('singleView');
+        const gridView = document.getElementById('gridView');
+
+        if (mode === 'grid') {
+            // Hide single view, show grid
+            singleView.style.display = 'none';
+            gridView.style.display = 'block';
+            this.setupGridView();
+        } else {
+            // Hide grid, show single view
+            gridView.style.display = 'none';
+            singleView.style.display = 'grid';
+        }
+    }
+
+    setupGridView() {
+        const gridContainer = document.getElementById('cameraGrid');
+
+        // Clear existing grid
+        gridContainer.innerHTML = '';
+
+        // Apply grid class based on number of cameras
+        gridContainer.className = `camera-grid grid-${this.cameras.length}`;
+
+        // Create grid items for each camera
+        this.cameras.forEach(camera => {
+            const gridItem = document.createElement('div');
+            gridItem.className = 'grid-camera-item';
+            gridItem.id = `grid-${camera.id}`;
+
+            // Create image element for video stream
+            const img = document.createElement('img');
+            img.src = `${window.location.protocol}//${window.location.host}/video/feed/${camera.id}`;
+            img.alt = camera.name;
+
+            // Create status indicator
+            const status = document.createElement('div');
+            status.className = `grid-camera-status ${camera.is_connected ? '' : 'disconnected'}`;
+
+            // Create label
+            const label = document.createElement('div');
+            label.className = 'grid-camera-label';
+            label.textContent = camera.name;
+
+            // Assemble grid item
+            gridItem.appendChild(img);
+            gridItem.appendChild(status);
+            gridItem.appendChild(label);
+            gridContainer.appendChild(gridItem);
+
+            // Store image reference
+            this.gridImages[camera.id] = img;
+        });
+
+        console.log(`Grid view created with ${this.cameras.length} cameras`);
     }
 
     setupCanvas() {
@@ -162,6 +320,12 @@ class DetectionApp {
             console.log('Connection message:', data.message);
         } else if (data.type === 'detections') {
             this.latestDetections = data;
+
+            // Update camera name from detection if available
+            if (data.camera_name) {
+                document.getElementById('cameraName').textContent = data.camera_name;
+            }
+
             this.updateUI(data);
             this.updateFPS();
         } else if (data.type === 'heartbeat') {
@@ -170,8 +334,10 @@ class DetectionApp {
     }
 
     startVideoStream() {
-        // Load video stream from MJPEG endpoint
-        const videoUrl = `${window.location.protocol}//${window.location.host}/video/feed`;
+        // Load video stream from MJPEG endpoint for current camera
+        const videoUrl = this.currentCameraId
+            ? `${window.location.protocol}//${window.location.host}/video/feed/${this.currentCameraId}`
+            : `${window.location.protocol}//${window.location.host}/video/feed`;
 
         this.img.onload = () => {
             this.drawFrame();
@@ -179,6 +345,14 @@ class DetectionApp {
 
         // Start loading the video stream
         this.img.src = videoUrl;
+
+        // Update camera name display
+        if (this.currentCameraId) {
+            const camera = this.cameras.find(c => c.id === this.currentCameraId);
+            if (camera) {
+                document.getElementById('cameraName').textContent = camera.name;
+            }
+        }
 
         // Alternative: Use fetch API for frame-by-frame streaming
         // this.streamFrames();

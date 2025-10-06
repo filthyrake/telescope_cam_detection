@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Telescope Detection System - Main Application
+Backyard Computer Vision System - Main Application
 Integrates all components for real-time detection monitoring.
 """
 
@@ -45,16 +45,16 @@ class TelescopeDetectionSystem:
         self.config_path = config_path
         self.config = None
 
-        # Components
-        self.stream_capture = None
-        self.inference_engine = None
-        self.detection_processor = None
+        # Components (now lists for multi-camera support)
+        self.stream_captures = []  # List of RTSPStreamCapture instances
+        self.inference_engines = []  # List of InferenceEngine instances
+        self.detection_processors = []  # List of DetectionProcessor instances
         self.web_server = None
 
-        # Queues for inter-component communication
-        self.frame_queue = None
-        self.inference_queue = None
-        self.detection_queue = None
+        # Queues for inter-component communication (per-camera)
+        self.frame_queues = []  # List of frame queues
+        self.inference_queues = []  # List of inference queues
+        self.detection_queue = None  # Single queue for all detections
 
         # Shutdown flag
         self.shutdown_requested = False
@@ -90,140 +90,63 @@ class TelescopeDetectionSystem:
             True if all components initialized successfully, False otherwise
         """
         try:
-            # Create queues
-            frame_queue_size = self.config.get('performance', {}).get('frame_queue_size', 2)
+            # Create shared detection queue
             detection_queue_size = self.config.get('performance', {}).get('detection_queue_size', 10)
-
-            self.frame_queue = Queue(maxsize=frame_queue_size)
-            self.inference_queue = Queue(maxsize=detection_queue_size)
             self.detection_queue = Queue(maxsize=detection_queue_size)
 
-            logger.info("Queues created")
+            logger.info("Shared detection queue created")
 
-            # Initialize RTSP stream capture
-            camera_config = self.config['camera']
-            rtsp_url = create_rtsp_url(
-                camera_ip=camera_config['ip'],
-                username=camera_config['username'],
-                password=camera_config['password'],
-                stream_type=camera_config.get('stream', 'main')
-            )
+            # Get cameras from config
+            cameras_config = self.config.get('cameras', [])
+            if not cameras_config:
+                logger.error('No cameras configured in config.yaml. Expected "cameras" array with at least one camera entry.')
+                return False
 
-            self.stream_capture = RTSPStreamCapture(
-                rtsp_url=rtsp_url,
-                frame_queue=self.frame_queue,
-                target_width=camera_config.get('target_width', 1280),
-                target_height=camera_config.get('target_height', 720),
-                buffer_size=camera_config.get('buffer_size', 1)
-            )
+            # Filter to only enabled cameras
+            enabled_cameras = [cam for cam in cameras_config if cam.get('enabled', True)]
+            if not enabled_cameras:
+                logger.error("No enabled cameras found in configuration")
+                return False
 
-            logger.info("Stream capture initialized")
+            logger.info(f"Initializing {len(enabled_cameras)} camera(s)...")
 
-            # Initialize two-stage pipeline (if enabled)
-            detection_config = self.config['detection']
-            two_stage_pipeline = None
+            # Initialize components for each camera
+            for camera_config in enabled_cameras:
+                camera_id = camera_config.get('id', 'default')
+                camera_name = camera_config.get('name', 'Default Camera')
 
-            if detection_config.get('use_two_stage', False):
-                logger.info("Initializing two-stage detection pipeline (YOLOX + iNaturalist)...")
+                logger.info(f"Setting up camera: {camera_name} (ID: {camera_id})")
 
-                # Get species classification config
-                species_config = self.config.get('species_classification', {})
-                inat_config = species_config.get('inat_classifier', {})
-                enhancement_config = species_config.get('enhancement', {})
+                # Create per-camera queues
+                frame_queue_size = self.config.get('performance', {}).get('frame_queue_size', 2)
+                frame_queue = Queue(maxsize=frame_queue_size)
+                inference_queue = Queue(maxsize=detection_queue_size)
 
-                # Pass device to enhancement config if not specified
-                if enhancement_config and 'device' not in enhancement_config:
-                    enhancement_config['device'] = detection_config['device']
+                self.frame_queues.append(frame_queue)
+                self.inference_queues.append(inference_queue)
 
-                # Initialize pipeline
-                two_stage_pipeline = TwoStageDetectionPipeline(
-                    enable_species_classification=detection_config.get('enable_species_classification', True),
-                    stage2_confidence_threshold=species_config.get('confidence_threshold', 0.3),
-                    device=detection_config['device'],
-                    enhancement_config=enhancement_config if enhancement_config else None
+                # Initialize RTSP stream capture for this camera
+                rtsp_url = create_rtsp_url(
+                    camera_ip=camera_config['ip'],
+                    username=camera_config['username'],
+                    password=camera_config['password'],
+                    stream_type=camera_config.get('stream', 'main')
                 )
 
-                # Initialize iNaturalist species classifier
-                if detection_config.get('enable_species_classification', False):
-                    logger.info("Loading iNaturalist species classifier...")
+                stream_capture = RTSPStreamCapture(
+                    rtsp_url=rtsp_url,
+                    frame_queue=frame_queue,
+                    target_width=camera_config.get('target_width', 1280),
+                    target_height=camera_config.get('target_height', 720),
+                    buffer_size=camera_config.get('buffer_size', 1),
+                    camera_id=camera_id,
+                    camera_name=camera_name
+                )
 
-                    model_name = inat_config.get('model_name', 'eva02_large_patch14_clip_336.merged2b_ft_inat21')
-                    taxonomy_file = inat_config.get('taxonomy_file', 'models/inat2021_taxonomy.json')
-                    input_size = inat_config.get('input_size', 336)
-                    use_hierarchical = inat_config.get('use_hierarchical', True)
+                self.stream_captures.append(stream_capture)
+                logger.info(f"  [{camera_id}] Stream capture initialized")
 
-                    # Get geographic filter settings
-                    geo_filter_config = species_config.get('geographic_filter', {})
-                    enable_geo_filter = geo_filter_config.get('enabled', False)
-                    allowed_species = geo_filter_config.get('allowed_species', [])
-
-                    if enable_geo_filter:
-                        logger.info(f"Geographic filtering enabled with {len(allowed_species)} allowed species")
-
-                    # Create universal classifier (handles all animals)
-                    inat_classifier = SpeciesClassifier(
-                        model_name=model_name,
-                        checkpoint_path=None,  # Use pretrained from timm
-                        device=detection_config['device'],
-                        confidence_threshold=inat_config.get('confidence_threshold', 0.3),
-                        taxonomy_file=taxonomy_file,
-                        input_size=input_size,
-                        use_hierarchical=use_hierarchical,
-                        allowed_species=allowed_species,
-                        enable_geographic_filter=enable_geo_filter
-                    )
-
-                    # Load the model (10,000 classes)
-                    if inat_classifier.load_model(num_classes=10000):
-                        # Add classifier for all animal groups
-                        # iNaturalist covers all species, so we use one universal classifier
-                        two_stage_pipeline.add_species_classifier('bird', inat_classifier)
-                        two_stage_pipeline.add_species_classifier('mammal', inat_classifier)
-                        two_stage_pipeline.add_species_classifier('reptile', inat_classifier)
-                        logger.info(f"✅ iNaturalist classifier loaded ({model_name})")
-                        logger.info(f"   Taxonomy: {taxonomy_file}")
-                        logger.info(f"   Species count: 10,000")
-                    else:
-                        logger.warning("Failed to load iNaturalist classifier, Stage 2 disabled")
-                        two_stage_pipeline = None
-
-                logger.info("Two-stage pipeline initialized")
-
-            # Initialize YOLOX inference engine (Stage 1: Fast detection)
-            model_config_dict = detection_config.get('model', {})
-            input_size = detection_config.get('input_size', [640, 640])
-            input_size_tuple = tuple(input_size)
-
-            logger.info(f"Using YOLOX (Apache 2.0) for Stage 1 detection")
-            if input_size_tuple == (640, 640):
-                logger.info(f"  Expected inference time: 11-21ms (47x faster than GroundingDINO)")
-            elif input_size_tuple == (1280, 1280):
-                logger.info(f"  Expected inference time: 50-100ms (better for small/distant wildlife)")
-            elif input_size_tuple == (1920, 1920):
-                logger.info(f"  Expected inference time: 150-250ms (maximum detail for tiny IR wildlife)")
-            else:
-                logger.info(f"  Input size: {input_size_tuple}")
-
-            self.inference_engine = InferenceEngine(
-                model_name=model_config_dict.get('name', 'yolox-s'),
-                model_path=model_config_dict.get('weights', 'models/yolox/yolox_s.pth'),
-                device=detection_config['device'],
-                conf_threshold=detection_config.get('conf_threshold', 0.25),
-                nms_threshold=detection_config.get('nms_threshold', 0.45),
-                input_size=input_size_tuple,
-                input_queue=self.frame_queue,
-                output_queue=self.inference_queue,
-                min_box_area=detection_config.get('min_box_area', 0),
-                max_det=detection_config.get('max_detections', 300),
-                use_two_stage=two_stage_pipeline is not None,
-                two_stage_pipeline=two_stage_pipeline,
-                class_confidence_overrides=detection_config.get('class_confidence_overrides', {}),
-                wildlife_only=detection_config.get('wildlife_only', True)
-            )
-
-            logger.info("YOLOX inference engine initialized")
-
-            # Initialize snapshot saver (if enabled)
+            # Initialize shared snapshot saver (if enabled)
             snapshot_config = self.config.get('snapshots', {})
             snapshot_saver = None
 
@@ -239,38 +162,140 @@ class TelescopeDetectionSystem:
                     fps=30,
                     save_annotated=snapshot_config.get('save_annotated', True)
                 )
-                logger.info("Snapshot saver initialized")
+                logger.info("Shared snapshot saver initialized")
 
-            # Initialize detection processor
-            history_size = self.config.get('performance', {}).get('history_size', 30)
+            # Get detection config for pipeline setup
+            detection_config = self.config['detection']
+            use_two_stage = detection_config.get('use_two_stage', False)
 
-            self.detection_processor = DetectionProcessor(
-                input_queue=self.inference_queue,
-                output_queue=self.detection_queue,
-                detection_history_size=history_size,
-                snapshot_saver=snapshot_saver,
-                frame_source=self.stream_capture
-            )
+            if use_two_stage:
+                logger.info("Per-camera two-stage detection pipeline enabled (YOLOX + iNaturalist)")
+                logger.info("Each camera will have its own Stage 2 pipeline for thread-safe parallel processing")
 
-            logger.info("Detection processor initialized")
+            # Initialize YOLOX inference engine parameters
+            model_config_dict = detection_config.get('model', {})
+            input_size = detection_config.get('input_size', [640, 640])
+            input_size_tuple = tuple(input_size)
 
-            # Initialize web server
+            logger.info(f"Using YOLOX (Apache 2.0) for Stage 1 detection")
+            if input_size_tuple == (640, 640):
+                logger.info(f"  Expected inference time: 11-21ms (47x faster than GroundingDINO)")
+            elif input_size_tuple == (1280, 1280):
+                logger.info(f"  Expected inference time: 50-100ms (better for small/distant wildlife)")
+            elif input_size_tuple == (1920, 1920):
+                logger.info(f"  Expected inference time: 150-250ms (maximum detail for tiny IR wildlife)")
+            else:
+                logger.info(f"  Input size: {input_size_tuple}")
+
+            # Create inference engines and detection processors for each camera
+            for i, camera_config in enumerate(enabled_cameras):
+                camera_id = camera_config.get('id', 'default')
+                stream_capture = self.stream_captures[i]
+                frame_queue = self.frame_queues[i]
+                inference_queue = self.inference_queues[i]
+
+                # Initialize per-camera two-stage pipeline (if enabled)
+                camera_two_stage_pipeline = None
+                if use_two_stage:
+                    logger.info(f"  [{camera_id}] Initializing Stage 2 pipeline...")
+
+                    # Get species classification config
+                    species_config = self.config.get('species_classification', {})
+                    inat_config = species_config.get('inat_classifier', {})
+                    enhancement_config = species_config.get('enhancement', {})
+
+                    # Pass device to enhancement config if not specified
+                    if enhancement_config and 'device' not in enhancement_config:
+                        enhancement_config['device'] = detection_config['device']
+
+                    # Initialize pipeline for this camera
+                    camera_two_stage_pipeline = TwoStageDetectionPipeline(
+                        enable_species_classification=detection_config.get('enable_species_classification', True),
+                        stage2_confidence_threshold=species_config.get('confidence_threshold', 0.3),
+                        device=detection_config['device'],
+                        enhancement_config=enhancement_config if enhancement_config else None
+                    )
+
+                    # Initialize iNaturalist species classifier for this camera
+                    if detection_config.get('enable_species_classification', False):
+                        model_name = inat_config.get('model_name', 'eva02_large_patch14_clip_336.merged2b_ft_inat21')
+                        taxonomy_file = inat_config.get('taxonomy_file', 'models/inat2021_taxonomy.json')
+                        input_size_inat = inat_config.get('input_size', 336)
+                        use_hierarchical = inat_config.get('use_hierarchical', True)
+
+                        # Get geographic filter settings
+                        geo_filter_config = species_config.get('geographic_filter', {})
+                        enable_geo_filter = geo_filter_config.get('enabled', False)
+                        allowed_species = geo_filter_config.get('allowed_species', [])
+
+                        # Create classifier instance for this camera
+                        inat_classifier = SpeciesClassifier(
+                            model_name=model_name,
+                            checkpoint_path=None,  # Use pretrained from timm
+                            device=detection_config['device'],
+                            confidence_threshold=inat_config.get('confidence_threshold', 0.3),
+                            taxonomy_file=taxonomy_file,
+                            input_size=input_size_inat,
+                            use_hierarchical=use_hierarchical,
+                            allowed_species=allowed_species,
+                            enable_geographic_filter=enable_geo_filter
+                        )
+
+                        # Load the model (10,000 classes)
+                        if inat_classifier.load_model(num_classes=10000):
+                            # Add classifier for all animal groups
+                            # iNaturalist covers all species, so we use one universal classifier
+                            camera_two_stage_pipeline.add_species_classifier('bird', inat_classifier)
+                            camera_two_stage_pipeline.add_species_classifier('mammal', inat_classifier)
+                            camera_two_stage_pipeline.add_species_classifier('reptile', inat_classifier)
+                            logger.info(f"  [{camera_id}] ✅ iNaturalist classifier loaded")
+                        else:
+                            logger.warning(f"  [{camera_id}] Failed to load iNaturalist classifier, Stage 2 disabled")
+                            camera_two_stage_pipeline = None
+
+                # Initialize YOLOX inference engine for this camera
+                inference_engine = InferenceEngine(
+                    model_name=model_config_dict.get('name', 'yolox-s'),
+                    model_path=model_config_dict.get('weights', 'models/yolox/yolox_s.pth'),
+                    device=detection_config['device'],
+                    conf_threshold=detection_config.get('conf_threshold', 0.25),
+                    nms_threshold=detection_config.get('nms_threshold', 0.45),
+                    input_size=input_size_tuple,
+                    input_queue=frame_queue,
+                    output_queue=inference_queue,
+                    min_box_area=detection_config.get('min_box_area', 0),
+                    max_det=detection_config.get('max_detections', 300),
+                    use_two_stage=camera_two_stage_pipeline is not None,
+                    two_stage_pipeline=camera_two_stage_pipeline,
+                    class_confidence_overrides=detection_config.get('class_confidence_overrides', {}),
+                    wildlife_only=detection_config.get('wildlife_only', True)
+                )
+
+                self.inference_engines.append(inference_engine)
+                logger.info(f"  [{camera_id}] YOLOX inference engine initialized")
+
+                # Initialize detection processor for this camera
+                history_size = self.config.get('performance', {}).get('history_size', 30)
+
+                detection_processor = DetectionProcessor(
+                    input_queue=inference_queue,
+                    output_queue=self.detection_queue,  # All cameras write to shared detection queue
+                    detection_history_size=history_size,
+                    snapshot_saver=snapshot_saver,  # Shared snapshot saver
+                    frame_source=stream_capture
+                )
+
+                self.detection_processors.append(detection_processor)
+                logger.info(f"  [{camera_id}] Detection processor initialized")
+
+            logger.info(f"All {len(enabled_cameras)} camera pipeline(s) initialized successfully")
+
+            # Initialize web server (passes multiple frame sources)
             web_config = self.config['web']
-
-            # Create a wrapper to provide latest frame to web server
-            class FrameSource:
-                def __init__(self, capture):
-                    self.capture = capture
-                    self.latest_frame = None
-
-                def update(self):
-                    # This would be called periodically to update latest frame
-                    # For now, web server will get frames from video feed endpoint
-                    pass
 
             self.web_server = WebServer(
                 detection_queue=self.detection_queue,
-                frame_source=self.stream_capture,  # Pass stream capture for video
+                frame_sources=self.stream_captures,  # Pass list of stream captures
                 host=web_config.get('host', '0.0.0.0'),
                 port=web_config.get('port', 8000)
             )
@@ -291,37 +316,53 @@ class TelescopeDetectionSystem:
             True if all components started successfully, False otherwise
         """
         try:
-            logger.info("Starting Telescope Detection System...")
+            logger.info("Starting Backyard Computer Vision System...")
 
-            # Start stream capture
-            if not self.stream_capture.start():
-                logger.error("Failed to start stream capture")
-                return False
+            # Start all stream captures
+            for i, stream_capture in enumerate(self.stream_captures):
+                if not stream_capture.start():
+                    logger.error(f"Failed to start stream capture {i}")
+                    # Stop previously started captures
+                    for j in range(i):
+                        self.stream_captures[j].stop()
+                    return False
 
-            logger.info("Stream capture started")
+            logger.info(f"All {len(self.stream_captures)} stream capture(s) started")
 
-            # Start inference engine
-            if not self.inference_engine.start():
-                logger.error("Failed to start inference engine")
-                self.stream_capture.stop()
-                return False
+            # Start all inference engines
+            for i, inference_engine in enumerate(self.inference_engines):
+                if not inference_engine.start():
+                    logger.error(f"Failed to start inference engine {i}")
+                    # Stop previously started components
+                    for j in range(i):
+                        self.inference_engines[j].stop()
+                    for stream_capture in self.stream_captures:
+                        stream_capture.stop()
+                    return False
 
-            logger.info("Inference engine started")
+            logger.info(f"All {len(self.inference_engines)} inference engine(s) started")
 
-            # Start detection processor
-            if not self.detection_processor.start():
-                logger.error("Failed to start detection processor")
-                self.stream_capture.stop()
-                self.inference_engine.stop()
-                return False
+            # Start all detection processors
+            for i, detection_processor in enumerate(self.detection_processors):
+                if not detection_processor.start():
+                    logger.error(f"Failed to start detection processor {i}")
+                    # Stop previously started components
+                    for j in range(i):
+                        self.detection_processors[j].stop()
+                    for inference_engine in self.inference_engines:
+                        inference_engine.stop()
+                    for stream_capture in self.stream_captures:
+                        stream_capture.stop()
+                    return False
 
-            logger.info("Detection processor started")
+            logger.info(f"All {len(self.detection_processors)} detection processor(s) started")
 
             # Start web server (blocking)
             logger.info(f"Starting web server on http://{self.config['web']['host']}:{self.config['web']['port']}")
             logger.info("=" * 80)
             logger.info("System is running!")
             logger.info(f"Open browser to: http://localhost:{self.config['web']['port']}")
+            logger.info(f"Monitoring {len(self.stream_captures)} camera(s)")
             logger.info("Press Ctrl+C to stop")
             logger.info("=" * 80)
 
@@ -337,16 +378,22 @@ class TelescopeDetectionSystem:
 
     def stop(self):
         """Stop all system components gracefully."""
-        logger.info("Stopping Telescope Detection System...")
+        logger.info("Stopping Backyard Computer Vision System...")
 
-        if self.detection_processor:
-            self.detection_processor.stop()
+        # Stop all detection processors
+        for detection_processor in self.detection_processors:
+            if detection_processor:
+                detection_processor.stop()
 
-        if self.inference_engine:
-            self.inference_engine.stop()
+        # Stop all inference engines
+        for inference_engine in self.inference_engines:
+            if inference_engine:
+                inference_engine.stop()
 
-        if self.stream_capture:
-            self.stream_capture.stop()
+        # Stop all stream captures
+        for stream_capture in self.stream_captures:
+            if stream_capture:
+                stream_capture.stop()
 
         logger.info("System stopped")
 
@@ -355,25 +402,30 @@ class TelescopeDetectionSystem:
         logger.info("=" * 80)
         logger.info("System Statistics:")
 
-        if self.stream_capture:
-            stats = self.stream_capture.get_stats()
-            logger.info(f"  Stream Capture:")
-            logger.info(f"    - Connected: {stats['is_connected']}")
-            logger.info(f"    - FPS: {stats['fps']:.1f}")
-            logger.info(f"    - Dropped frames: {stats['dropped_frames']}")
+        # Print stats for each camera
+        for i, stream_capture in enumerate(self.stream_captures):
+            if stream_capture:
+                stats = stream_capture.get_stats()
+                logger.info(f"  Camera {i} ({stream_capture.camera_name}):")
+                logger.info(f"    Stream Capture:")
+                logger.info(f"      - Connected: {stats['is_connected']}")
+                logger.info(f"      - FPS: {stats['fps']:.1f}")
+                logger.info(f"      - Dropped frames: {stats['dropped_frames']}")
 
-        if self.inference_engine:
-            stats = self.inference_engine.get_stats()
-            logger.info(f"  Inference Engine:")
-            logger.info(f"    - Device: {stats['device']}")
-            logger.info(f"    - FPS: {stats['fps']:.1f}")
-            logger.info(f"    - Avg inference time: {stats['avg_inference_time_ms']:.1f}ms")
+        for i, inference_engine in enumerate(self.inference_engines):
+            if inference_engine:
+                stats = inference_engine.get_stats()
+                logger.info(f"    Inference Engine:")
+                logger.info(f"      - Device: {stats['device']}")
+                logger.info(f"      - FPS: {stats['fps']:.1f}")
+                logger.info(f"      - Avg inference time: {stats['avg_inference_time_ms']:.1f}ms")
 
-        if self.detection_processor:
-            stats = self.detection_processor.get_stats()
-            logger.info(f"  Detection Processor:")
-            logger.info(f"    - Processed: {stats['processed_count']}")
-            logger.info(f"    - History size: {stats['history_size']}")
+        for i, detection_processor in enumerate(self.detection_processors):
+            if detection_processor:
+                stats = detection_processor.get_stats()
+                logger.info(f"    Detection Processor:")
+                logger.info(f"      - Processed: {stats['processed_count']}")
+                logger.info(f"      - History size: {stats['history_size']}")
 
         logger.info("=" * 80)
 
