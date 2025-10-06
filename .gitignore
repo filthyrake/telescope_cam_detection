@@ -76,3 +76,9 @@ profile_inference.py
 test_tensorrt_compile.py
 test_performance.py
 test_system_startup.py
+
+# Credentials (NEVER commit these!)
+camera_credentials.yaml
+credentials.yaml
+.env
+*.credentials.yaml
