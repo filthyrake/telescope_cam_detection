@@ -189,6 +189,8 @@ class TelescopeDetectionSystem:
                 logger.info(f"  Expected inference time: 11-21ms (47x faster than GroundingDINO)")
             elif input_size_tuple == (1280, 1280):
                 logger.info(f"  Expected inference time: 50-100ms (better for small/distant wildlife)")
+            elif input_size_tuple == (1920, 1920):
+                logger.info(f"  Expected inference time: 150-250ms (maximum detail for tiny IR wildlife)")
             else:
                 logger.info(f"  Input size: {input_size_tuple}")
 
