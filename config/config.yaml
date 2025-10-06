@@ -7,8 +7,8 @@ camera:
   stream: "main"  # Options: "main" (2K) or "sub" (lower resolution)
 
   # Frame processing
-  target_width: 1280
-  target_height: 720
+  target_width: 1920  # Increased for better small object detection
+  target_height: 1080  # Increased for better small object detection
   buffer_size: 1  # Keep at 1 for lowest latency
 
 detection:
@@ -22,7 +22,8 @@ detection:
   # YOLOX input size (larger = better for small objects, but slower)
   # 640x640: ~11-21ms (fast, standard)
   # 1280x1280: ~50-100ms (slower, better for small/distant wildlife)
-  input_size: [1280, 1280]  # [height, width]
+  # 1920x1920: ~150-250ms (slow, maximum detail for tiny IR wildlife)
+  input_size: [1920, 1920]  # [height, width]
 
   # YOLOX detection thresholds
   conf_threshold: 0.05  # Confidence threshold (extremely low for tiny/distant wildlife in IR)
@@ -135,8 +136,8 @@ detection:
     bird: 0.55    # High threshold - telescope covers falsely detected as birds
 
   # Size filtering (better than just confidence for distant wildlife!)
-  # Note: Inference runs at 1280x720 (921,600 total pixels)
-  # Typical sizes: tiny=50-200px², small bird/rabbit=200-1000px², coyote=1000-5000px²
+  # Note: Inference runs at 1920x1920 (3,686,400 total pixels)
+  # Typical sizes at this resolution: tiny=50-200px², small bird/rabbit=200-1000px², coyote=1000-5000px²
   min_box_area: 20  # Minimum bounding box area in pixels² (~4.5x4.5 pixels) - catches very small/distant animals
   max_detections: 300  # Maximum number of detections per frame
 
