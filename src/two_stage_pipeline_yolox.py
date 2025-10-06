@@ -202,16 +202,21 @@ class TwoStageDetectionPipeline:
                 confidence = top_result['confidence']
                 taxonomic_level = top_result.get('taxonomic_level', 'species')
 
-                # Note: Hierarchical mode accepts confidence >= 0.1 (class level)
-                # This is intentional - lower confidence returns coarser taxonomic levels
-                # (e.g., "Mammalia (class)" at 0.15 instead of null)
-                # Original stage2_confidence_threshold is enforced at classifier level
-                detection['species'] = species_name
-                detection['species_confidence'] = float(confidence)
-                detection['stage2_category'] = category
-                detection['taxonomic_level'] = taxonomic_level
-
-                logger.debug(f"Classified as {species_name} ({taxonomic_level}, conf: {confidence:.2f})")
+                # Filter out vague order/class level classifications (Option 2)
+                # Only accept species, genus, or family level identifications
+                if taxonomic_level in ['order', 'class']:
+                    logger.debug(f"Rejected vague classification: {species_name} ({taxonomic_level}, conf: {confidence:.2f})")
+                    detection['species'] = None
+                    detection['species_confidence'] = 0.0
+                    detection['stage2_category'] = category
+                    detection['taxonomic_level'] = None
+                else:
+                    # Accept specific identifications (species, genus, family)
+                    detection['species'] = species_name
+                    detection['species_confidence'] = float(confidence)
+                    detection['stage2_category'] = category
+                    detection['taxonomic_level'] = taxonomic_level
+                    logger.debug(f"Classified as {species_name} ({taxonomic_level}, conf: {confidence:.2f})")
             else:
                 # No results above threshold
                 detection['species'] = None
