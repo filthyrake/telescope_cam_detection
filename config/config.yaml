@@ -25,9 +25,9 @@ detection:
   input_size: [1280, 1280]  # [height, width]
 
   # YOLOX detection thresholds
-  conf_threshold: 0.10  # Confidence threshold (very low for tiny/distant wildlife)
+  conf_threshold: 0.05  # Confidence threshold (extremely low for tiny/distant wildlife in IR)
   nms_threshold: 0.45   # NMS IoU threshold
-  wildlife_only: true   # Filter to wildlife-relevant classes only (person, bird, cat, dog, horse, sheep, cow, bear, etc.)
+  wildlife_only: true   # Filter to wildlife-relevant classes only
 
   # Legacy prompts (not used by YOLOX, kept for reference)
   # YOLOX detects 80 COCO classes including: person, bird, cat, dog, horse, sheep, cow, bear, etc.
@@ -132,7 +132,7 @@ detection:
   # Per-class confidence overrides (higher threshold = fewer false positives)
   class_confidence_overrides:
     person: 0.60  # Much higher to reduce false "person" detections
-    bird: 0.45    # Reduce false bird detections (telescope covers, shadows, etc.)
+    bird: 0.55    # High threshold - telescope covers falsely detected as birds
 
   # Size filtering (better than just confidence for distant wildlife!)
   # Note: Inference runs at 1280x720 (921,600 total pixels)
