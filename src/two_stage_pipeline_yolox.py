@@ -60,8 +60,28 @@ class TwoStageDetectionPipeline:
         if enhancement_config and enhancement_config.get('enabled', False):
             try:
                 logger.info(f"Initializing image enhancer: method={enhancement_config.get('method', 'none')}")
-                # Filter out 'enabled' key before passing to ImageEnhancer
-                enhancer_params = {k: v for k, v in enhancement_config.items() if k != 'enabled'}
+
+                # Flatten nested config structure for ImageEnhancer
+                enhancer_params = {
+                    'method': enhancement_config.get('method', 'none'),
+                    'device': enhancement_config.get('device', self.device)
+                }
+
+                # Add Real-ESRGAN params with realesrgan_ prefix
+                if 'realesrgan' in enhancement_config:
+                    for key, value in enhancement_config['realesrgan'].items():
+                        enhancer_params[f'realesrgan_{key}'] = value
+
+                # Add CLAHE params with clahe_ prefix
+                if 'clahe' in enhancement_config:
+                    for key, value in enhancement_config['clahe'].items():
+                        enhancer_params[f'clahe_{key}'] = value
+
+                # Add bilateral params with bilateral_ prefix
+                if 'bilateral' in enhancement_config:
+                    for key, value in enhancement_config['bilateral'].items():
+                        enhancer_params[f'bilateral_{key}'] = value
+
                 self.enhancer = ImageEnhancer(**enhancer_params)
                 logger.info("✓ Image enhancer loaded")
             except Exception as e:
