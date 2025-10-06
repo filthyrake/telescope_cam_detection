@@ -61,8 +61,8 @@ class SpeciesClassifier:
             'species': 0.5,    # Full species name (e.g., "Desert Cottontail")
             'genus': 0.4,      # Genus (e.g., "Sylvilagus")
             'family': 0.3,     # Family (e.g., "Leporidae")
-            'order': 0.2,      # Order (e.g., "Lagomorpha")
-            'class': 0.1,      # Class (e.g., "Mammalia")
+            'order': 0.3,      # Order (e.g., "Lagomorpha") - raised from 0.2
+            'class': 0.2,      # Class (e.g., "Mammalia") - raised from 0.1
         }
 
         # Load taxonomy if provided
