@@ -75,12 +75,47 @@
 
         .video-overlay {
             position: absolute;
-            top: 10px;
+            top: 30px;
             left: 10px;
             background-color: rgba(0, 0, 0, 0.7);
             padding: 10px;
             border-radius: 5px;
             font-size: 0.9em;
+        }
+
+        .fullscreen-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 2px solid #00ff88;
+            color: #00ff88;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .fullscreen-btn:hover {
+            background-color: rgba(0, 255, 136, 0.2);
+            transform: scale(1.05);
+        }
+
+        .video-container:fullscreen {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #000;
+        }
+
+        .video-container:fullscreen #videoCanvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
 
         .stats-panel {
@@ -203,12 +238,13 @@
         </header>
 
         <div class="main-content">
-            <div class="video-container">
+            <div class="video-container" id="videoContainer">
                 <canvas id="videoCanvas"></canvas>
                 <div class="video-overlay" id="videoOverlay">
                     <div>Frame: <span id="frameId">-</span></div>
                     <div>FPS: <span id="fps">-</span></div>
                 </div>
+                <button class="fullscreen-btn" id="fullscreenBtn">⛶ Fullscreen</button>
             </div>
 
             <div class="stats-panel">
