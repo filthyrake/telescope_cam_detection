@@ -161,6 +161,165 @@ species_classification:
     #   >= 0.2: Order (e.g., "Lagomorpha")
     #   >= 0.1: Class (e.g., "Mammalia", "Aves", "Reptilia")
 
+  # Geographic filtering (Mojave Desert species whitelist)
+  geographic_filter:
+    enabled: true  # Enable geographic filtering to remove impossible detections
+    # Mojave Desert wildlife species (common names as they appear in iNaturalist)
+    # This whitelist prevents false positives like penguins, kangaroos, polar bears, etc.
+    allowed_species:
+      # === MAMMALS ===
+      - "Coyote"
+      - "Desert Cottontail"
+      - "Black-tailed Jackrabbit"
+      - "Antelope Jackrabbit"
+      - "White-tailed Antelope Squirrel"
+      - "Harris's Antelope Squirrel"
+      - "Round-tailed Ground Squirrel"
+      - "Rock Squirrel"
+      - "Bobcat"
+      - "Mountain Lion"
+      - "Cougar"
+      - "Gray Fox"
+      - "Kit Fox"
+      - "Mule Deer"
+      - "Collared Peccary"
+      - "Javelina"
+      - "Desert Bighorn Sheep"
+      - "Ringtail"
+      - "American Badger"
+      - "Striped Skunk"
+      - "Western Spotted Skunk"
+      - "Desert Woodrat"
+      - "Merriam's Kangaroo Rat"
+      - "Desert Kangaroo Rat"
+      - "Desert Pocket Mouse"
+      - "Cactus Mouse"
+      - "Southern Grasshopper Mouse"
+      - "Desert Shrew"
+      - "California Leaf-nosed Bat"
+      - "Mexican Free-tailed Bat"
+      - "Pallid Bat"
+
+      # === BIRDS ===
+      - "Gambel's Quail"
+      - "Greater Roadrunner"
+      - "Cactus Wren"
+      - "Curve-billed Thrasher"
+      - "Le Conte's Thrasher"
+      - "Bendire's Thrasher"
+      - "Red-tailed Hawk"
+      - "Harris's Hawk"
+      - "Cooper's Hawk"
+      - "Sharp-shinned Hawk"
+      - "Golden Eagle"
+      - "Great Horned Owl"
+      - "Barn Owl"
+      - "Burrowing Owl"
+      - "Elf Owl"
+      - "Western Screech-Owl"
+      - "Turkey Vulture"
+      - "Black Vulture"
+      - "Common Raven"
+      - "Chihuahuan Raven"
+      - "American Crow"
+      - "Mourning Dove"
+      - "White-winged Dove"
+      - "Inca Dove"
+      - "Common Ground Dove"
+      - "Gila Woodpecker"
+      - "Ladder-backed Woodpecker"
+      - "Gilded Flicker"
+      - "Northern Flicker"
+      - "Verdin"
+      - "Black-throated Sparrow"
+      - "White-crowned Sparrow"
+      - "House Finch"
+      - "Lesser Goldfinch"
+      - "Phainopepla"
+      - "Loggerhead Shrike"
+      - "Northern Mockingbird"
+      - "Costa's Hummingbird"
+      - "Anna's Hummingbird"
+      - "Black-chinned Hummingbird"
+      - "Rufous Hummingbird"
+      - "Rock Wren"
+      - "Canyon Wren"
+      - "Black-tailed Gnatcatcher"
+      - "Blue-gray Gnatcatcher"
+      - "Say's Phoebe"
+      - "Ash-throated Flycatcher"
+      - "Vermilion Flycatcher"
+      - "Horned Lark"
+
+      # === REPTILES ===
+      - "Desert Iguana"
+      - "Common Chuckwalla"
+      - "Chuckwalla"
+      - "Desert Spiny Lizard"
+      - "Clark's Spiny Lizard"
+      - "Zebra-tailed Lizard"
+      - "Greater Earless Lizard"
+      - "Desert Horned Lizard"
+      - "Flat-tailed Horned Lizard"
+      - "Long-nosed Leopard Lizard"
+      - "Collared Lizard"
+      - "Desert Collared Lizard"
+      - "Common Side-blotched Lizard"
+      - "Desert Night Lizard"
+      - "Western Banded Gecko"
+      - "Desert Banded Gecko"
+      - "Mediterranean Gecko"
+      - "Western Diamondback Rattlesnake"
+      - "Mojave Rattlesnake"
+      - "Sidewinder"
+      - "Speckled Rattlesnake"
+      - "Gopher Snake"
+      - "Gophersnake"
+      - "Common Kingsnake"
+      - "California Kingsnake"
+      - "Long-nosed Snake"
+      - "Coachwhip"
+      - "Red Coachwhip"
+      - "Glossy Snake"
+      - "Western Patch-nosed Snake"
+      - "Desert Tortoise"
+      - "Mohave Desert Tortoise"
+
+      # === AMPHIBIANS ===
+      - "Couch's Spadefoot"
+      - "Great Basin Spadefoot"
+      - "Red-spotted Toad"
+      - "Sonoran Desert Toad"
+      - "Colorado River Toad"
+
+      # === ARTHROPODS (large, visible) ===
+      - "Desert Hairy Scorpion"
+      - "Arizona Bark Scorpion"
+      - "Desert Blonde Tarantula"
+      - "Tarantula"
+
+      # === DOMESTIC/INTRODUCED ===
+      - "Domestic Dog"
+      - "Domestic Cat"
+      - "Human"
+      - "Person"
+      # Note: Excluded "Horse", "Cattle", "Cow" - extremely unlikely in residential backyard
+
+      # === TAXONOMIC GROUPS (fallback categories) ===
+      - "Mammalia"
+      - "Aves"
+      - "Reptilia"
+      - "Amphibia"
+      - "Squamata"  # Lizards and snakes
+      - "Rodentia"
+      - "Carnivora"
+      - "Artiodactyla"  # Deer, javelina
+      - "Passeriformes"  # Perching birds
+      - "Falconiformes"  # Raptors
+      - "Columbiformes"  # Doves
+      - "Galliformes"  # Quail
+      - "Strigiformes"  # Owls
+
   # Image enhancement (pre-process crops before classification)
   # Improves accuracy on IR/night vision, small/distant animals
   enhancement:
