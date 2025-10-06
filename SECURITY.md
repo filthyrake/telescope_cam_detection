@@ -1,35 +1,19 @@
 # Security Policy
 
-## Supported Versions
-
-We release patches for security vulnerabilities for the following versions:
-
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.x.x   | :white_check_mark: |
-| < 1.0   | :x:                |
-
 ## Reporting a Vulnerability
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+**Please don't report security vulnerabilities through public GitHub issues.**
 
-If you discover a security vulnerability within this project, please send an email to the repository owner. All security vulnerabilities will be promptly addressed.
+If you find a security issue, please email me or open a private security advisory on GitHub. I'll do my best to address it, but full disclosure: this is a hobby project and I can't guarantee specific response times or patching schedules. I'll help where I can!
 
-Please include the following information in your report:
+If possible, please include:
 
-- Type of vulnerability
-- Full path of the affected source file(s)
-- Location of the affected code (tag/branch/commit or direct URL)
-- Step-by-step instructions to reproduce the issue
-- Proof-of-concept or exploit code (if possible)
-- Impact of the issue, including how an attacker might exploit it
+- Description of the vulnerability
+- Steps to reproduce
+- Affected files/code
+- Potential impact
 
-### What to Expect
-
-- You will receive an acknowledgment within 48 hours
-- We will investigate and provide an estimated timeline for a fix
-- We will keep you informed of the progress
-- You will be credited in the security advisory (unless you prefer to remain anonymous)
+I'll try to keep you updated and will credit you in any fix (unless you'd prefer to stay anonymous).
 
 ## Security Best Practices for Deployment
 
@@ -119,20 +103,13 @@ NoNewPrivileges=true
 
 ### Planned Security Improvements
 
+Maybe someday:
+
 - [ ] Add web UI authentication (OAuth2, basic auth)
 - [ ] HTTPS support for web interface
 - [ ] Config validation schema
 - [ ] Encrypted storage for sensitive clips
 - [ ] Audit logging for all detection events
-
-## Security Disclosure Policy
-
-We follow responsible disclosure practices:
-
-1. Report received → Acknowledged within 48h
-2. Investigation → Timeline provided within 7 days
-3. Fix developed → Patch released ASAP
-4. Public disclosure → After users have time to update (typically 30 days)
 
 ## Security Resources
 
@@ -142,4 +119,4 @@ We follow responsible disclosure practices:
 
 ## Questions?
 
-If you have questions about this security policy, please open a GitHub Discussion in the Security category.
+Have questions about security? Open a GitHub Discussion or issue and I'll help if I can.
