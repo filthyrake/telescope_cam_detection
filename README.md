@@ -10,7 +10,7 @@ Real-time object detection system for monitoring astronomical telescopes and des
 
 ## Features
 
-- **Ultra-fast detection**: YOLOX inference at 11-21ms (47x faster than previous system)
+- **Ultra-fast detection**: YOLOX inference at 11-21ms
 - **Multi-camera support**: Monitor from multiple angles simultaneously
 - **80 COCO classes**: Including all wildlife-relevant categories (person, bird, cat, dog, bear, etc.)
 - **Optional species classification**: iNaturalist Stage 2 for fine-grained species ID (10,000 species)
@@ -23,17 +23,7 @@ Real-time object detection system for monitoring astronomical telescopes and des
 
 ## Screenshots & Demo
 
-### Web Interface
-
-![Web UI Demo](docs/images/web_ui_demo.png)
-*Real-time detection with live video feed and bounding box overlays*
-
-### Detection Examples
-
-![Wildlife Detection](docs/images/detection_example.png)
-*Multi-camera wildlife detection with species classification*
-
-> **Note**: Demo screenshots coming soon! The web interface includes:
+> **Note**: The web interface includes:
 > - Live RTSP video streams from multiple cameras
 > - Real-time detection overlays with confidence scores
 > - Species classification labels (when Stage 2 enabled)
