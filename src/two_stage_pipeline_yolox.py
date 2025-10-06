@@ -233,14 +233,15 @@ class TwoStageDetectionPipeline:
                 # Filter out vague taxonomic level classifications (Option 2)
                 # Only accept specific identifications (species, genus, family)
                 if taxonomic_level in self.rejected_taxonomic_levels:
-                    logger.debug(f"Rejected vague classification: {species_name} ({taxonomic_level}, conf: {confidence:.2f})")
+                    logger.info(f"Stage 2: Rejected vague classification: {species_name} ({taxonomic_level}, conf: {confidence:.2f})")
                     self._set_detection_species_fields(detection, None, 0.0, category, None)
                 else:
                     # Accept specific identifications
                     self._set_detection_species_fields(detection, species_name, confidence, category, taxonomic_level)
-                    logger.debug(f"Classified as {species_name} ({taxonomic_level}, conf: {confidence:.2f})")
+                    logger.info(f"Stage 2: Classified as {species_name} ({taxonomic_level}, conf: {confidence:.2f})")
             else:
                 # No results above threshold
+                logger.info(f"Stage 2: No results above threshold for {class_name} (category: {category})")
                 self._set_detection_species_fields(detection, None, 0.0, category, None)
 
         except Exception as e:
