@@ -1,0 +1,84 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+clips/
+*.jpg
+*.png
+*.mp4
+*.avi
+
+# Models (download at runtime)
+models/
+*.pt
+*.pth
+*.onnx
+*.tflite
+
+# Config (mount as volumes)
+config/config.yaml
+camera_credentials.yaml
+*.credentials.yaml
+
+# Documentation (not needed in container)
+docs/
+*.md
+!README.md
+
+# Training data (large files)
+training/datasets/
+training/runs/
+
+# Tests (not needed in production)
+tests/
+test_*.py
+
+# Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# GitHub
+.github/
+
+# Backup files
+*.backup
+*.bak
+*.tmp
+
+# Local dev files
+.env
+.env.local
+temp/
+tmp/

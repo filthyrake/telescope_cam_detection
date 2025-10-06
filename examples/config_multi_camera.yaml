@@ -1,0 +1,104 @@
+# Multi-Camera Configuration Example
+# Monitor from multiple angles with per-camera overrides
+
+cameras:
+  # High-mounted overview camera
+  - id: "cam1"
+    name: "Overview Camera"
+    ip: "192.168.1.100"  # UPDATE: Replace with your camera IP
+    stream: "main"
+    enabled: true
+    protocol: "rtsp-tcp"
+    target_width: 1920
+    target_height: 1080
+    buffer_size: 1
+
+    # Lower thresholds for distant objects
+    detection_overrides:
+      conf_threshold: 0.15
+      min_box_area: 20
+
+  # Ground-level detail camera
+  - id: "cam2"
+    name: "Ground Level Camera"
+    ip: "192.168.1.101"  # UPDATE: Replace with your second camera IP
+    stream: "main"
+    enabled: true
+    protocol: "rtsp-tcp"
+    target_width: 2560
+    target_height: 1440
+    buffer_size: 1
+
+    # Higher thresholds for close-up objects
+    detection_overrides:
+      conf_threshold: 0.30
+      min_box_area: 100
+
+      # Per-class overrides for this camera
+      class_confidence_overrides:
+        person: 0.80
+        bird: 0.60
+
+detection:
+  model:
+    name: "yolox-s"
+    weights: "models/yolox/yolox_s.pth"
+  device: "cuda:0"
+
+  input_size: [1280, 1280]
+  conf_threshold: 0.20  # Global default (cameras can override)
+  nms_threshold: 0.45
+  wildlife_only: true
+
+  # Enable two-stage for better species ID
+  use_two_stage: true
+  enable_species_classification: true
+
+  # Global per-class overrides
+  class_confidence_overrides:
+    person: 0.75
+    bird: 0.55
+
+  min_box_area: 50
+  max_detections: 200
+
+# Stage 2 species classification
+species_classification:
+  enabled: true
+  confidence_threshold: 0.3
+
+  preprocessing:
+    crop_padding_percent: 20
+    min_crop_size: 64
+
+  inat_classifier:
+    model_name: "timm/eva02_large_patch14_clip_336.merged2b_ft_inat21"
+    taxonomy_file: "models/inat2021_taxonomy.json"
+    input_size: 336
+    confidence_threshold: 0.3
+    use_hierarchical: true
+
+  geographic_filter:
+    enabled: true
+
+web:
+  host: "0.0.0.0"
+  port: 8000
+
+performance:
+  frame_queue_size: 2
+  detection_queue_size: 10
+  history_size: 50
+
+snapshots:
+  enabled: true
+  save_mode: "image"
+  output_dir: "clips"
+  trigger_classes:
+    - "person"
+    - "cat"
+    - "dog"
+    - "bird"
+  min_confidence: 0.30
+  cooldown_seconds: 45
+  save_annotated: true
