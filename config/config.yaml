@@ -16,14 +16,14 @@ cameras:
     target_height: 1080  # Increased for better small object detection
     buffer_size: 1  # Keep at 1 for lowest latency
 
-  # Second camera (ground level - needs different thresholds)
+  # Second camera (ground level - Reolink E1 Pro with better resolution)
   - id: "cam2"
     name: "Secondary View"
     ip: "10.0.2.47"
     stream: "main"
     enabled: true
-    target_width: 1920
-    target_height: 1080
+    target_width: 2560  # E1 Pro native resolution (better quality for Stage 2)
+    target_height: 1440
     buffer_size: 1
 
     # Per-camera detection overrides (optional - overrides global settings)
@@ -38,6 +38,12 @@ cameras:
         bird: 0.60      # Higher than global 0.55
         cat: 0.65       # Ground-level cats are easier to detect
         dog: 0.65       # Ground-level dogs are easier to detect
+
+    # Stage 2 preprocessing overrides (optional - improves species classification)
+    # Higher resolution crops with padding give iNaturalist better context
+    stage2_preprocessing:
+      crop_padding_percent: 40  # Add 40% padding around detection bbox (vs global 20%)
+      min_crop_size: 100        # Skip Stage 2 if crop smaller than 100x100 pixels
 
 detection:
   # YOLOX Model configuration (Apache 2.0 license)
@@ -174,6 +180,12 @@ detection:
 species_classification:
   enabled: true
   confidence_threshold: 0.3  # Minimum confidence for species ID
+
+  # Stage 2 Preprocessing (global defaults)
+  # Improves crop quality for better species identification
+  preprocessing:
+    crop_padding_percent: 20  # Add 20% padding around detection bbox for context
+    min_crop_size: 64         # Skip Stage 2 if crop smaller than 64x64 pixels
 
   # Universal iNaturalist model (covers 10,000 species)
   inat_classifier:
