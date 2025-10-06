@@ -1,0 +1,61 @@
+# Single Camera Configuration Example
+# Simple setup for one camera with balanced performance
+
+cameras:
+  - id: "cam1"
+    name: "Main Camera"
+    ip: "192.168.1.100"  # UPDATE: Replace with your camera IP
+    stream: "main"
+    enabled: true
+    protocol: "rtsp-tcp"  # TCP for reliability
+
+    # Frame processing
+    target_width: 1920
+    target_height: 1080
+    buffer_size: 1
+
+detection:
+  # YOLOX Model configuration
+  model:
+    name: "yolox-s"  # Balanced speed/accuracy
+    weights: "models/yolox/yolox_s.pth"
+  device: "cuda:0"
+
+  # Detection settings
+  input_size: [640, 640]  # Standard resolution for good performance
+  conf_threshold: 0.25    # Standard confidence
+  nms_threshold: 0.45
+  wildlife_only: true
+
+  # Two-stage detection
+  use_two_stage: false  # Disable Stage 2 for simplicity
+  enable_species_classification: false
+
+  # Size filtering
+  min_box_area: 50
+  max_detections: 100
+
+web:
+  host: "0.0.0.0"
+  port: 8000
+
+performance:
+  frame_queue_size: 2
+  detection_queue_size: 10
+  history_size: 30
+
+# Snapshot saving
+snapshots:
+  enabled: true
+  save_mode: "image"
+  output_dir: "clips"
+
+  trigger_classes:
+    - "person"
+    - "cat"
+    - "dog"
+    - "bird"
+
+  min_confidence: 0.30
+  cooldown_seconds: 45
+  save_annotated: true

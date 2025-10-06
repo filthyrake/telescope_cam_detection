@@ -1,0 +1,73 @@
+# Low Latency Configuration Example
+# Maximum speed, minimal latency
+# Good for real-time monitoring and constrained hardware
+
+cameras:
+  - id: "cam1"
+    name: "Fast Camera"
+    ip: "192.168.1.100"  # UPDATE: Replace with your camera IP
+    stream: "sub"  # Use lower resolution stream
+    enabled: true
+    protocol: "rtsp-tcp"
+
+    # Lower resolution for speed
+    target_width: 640
+    target_height: 480
+    buffer_size: 1
+
+detection:
+  # Use fastest YOLOX model
+  model:
+    name: "yolox-nano"  # Fastest, lowest latency
+    weights: "models/yolox/yolox_nano.pth"
+  device: "cuda:0"
+
+  # Small input size for speed
+  input_size: [416, 416]  # Minimal for maximum speed
+  conf_threshold: 0.35    # Higher to reduce false positives
+  nms_threshold: 0.45
+  wildlife_only: true
+
+  # Disable two-stage for speed
+  use_two_stage: false
+  enable_species_classification: false
+
+  # Less sensitive filtering
+  min_box_area: 100
+  max_detections: 50
+
+web:
+  host: "0.0.0.0"
+  port: 8000
+
+performance:
+  # Minimal queue sizes
+  frame_queue_size: 1
+  detection_queue_size: 5
+  history_size: 10
+
+snapshots:
+  enabled: true
+  save_mode: "image"  # Images only, no video
+  output_dir: "clips"
+
+  trigger_classes:
+    - "person"
+    - "cat"
+    - "dog"
+
+  min_confidence: 0.40  # Higher for fewer saves
+  cooldown_seconds: 60
+  save_annotated: true
+
+# Expected Performance:
+# - Inference: 5-8ms (YOLOX-Nano)
+# - Total latency: 10-20ms end-to-end
+# - FPS: 50-100 FPS
+# - VRAM: ~500MB-1GB
+#
+# Trade-offs:
+# - Lower accuracy on small/distant objects
+# - No species classification
+# - Reduced detection sensitivity
+# - But MUCH faster response time!

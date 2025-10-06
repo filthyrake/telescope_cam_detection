@@ -1,0 +1,100 @@
+# High Performance Configuration Example
+# Maximum accuracy, larger models, higher resolution
+# Requires powerful GPU (RTX 3090, A30, A100, etc.)
+
+cameras:
+  - id: "cam1"
+    name: "High Resolution Camera"
+    ip: "192.168.1.100"  # UPDATE: Replace with your camera IP
+    stream: "main"  # Use highest quality stream
+    enabled: true
+    protocol: "rtsp-tcp"
+
+    # Maximum resolution for best detail
+    target_width: 2560
+    target_height: 1440
+    buffer_size: 1
+
+detection:
+  # Use larger YOLOX model for best accuracy
+  model:
+    name: "yolox-x"  # Highest accuracy (slower)
+    weights: "models/yolox/yolox_x.pth"
+  device: "cuda:0"
+
+  # Maximum resolution inference
+  input_size: [1920, 1920]  # Large for small object detection
+  conf_threshold: 0.10  # Very sensitive
+  nms_threshold: 0.45
+  wildlife_only: true
+
+  # Enable two-stage classification
+  use_two_stage: true
+  enable_species_classification: true
+
+  # Minimal size filtering (catch everything)
+  min_box_area: 10
+  max_detections: 500
+
+# Stage 2 with maximum preprocessing
+species_classification:
+  enabled: true
+  confidence_threshold: 0.2  # Lower for more classifications
+
+  preprocessing:
+    crop_padding_percent: 40  # Maximum context
+    min_crop_size: 32
+
+  inat_classifier:
+    model_name: "timm/eva02_large_patch14_clip_336.merged2b_ft_inat21"
+    taxonomy_file: "models/inat2021_taxonomy.json"
+    input_size: 336
+    confidence_threshold: 0.2
+    use_hierarchical: true
+
+  geographic_filter:
+    enabled: true
+
+  # Enable image enhancement for better accuracy
+  enhancement:
+    enabled: true
+    method: "realesrgan"  # Super-resolution upscaling
+
+    realesrgan:
+      model_path: "models/enhancement/RealESRGAN_x4plus.pth"
+      scale: 4
+      tile: 512
+      tile_pad: 10
+      half: false
+
+web:
+  host: "0.0.0.0"
+  port: 8000
+
+performance:
+  frame_queue_size: 2
+  detection_queue_size: 20
+  history_size: 100
+
+snapshots:
+  enabled: true
+  save_mode: "clip"  # Video clips for better review
+  output_dir: "clips"
+
+  trigger_classes: []  # Save all detections
+
+  min_confidence: 0.20  # Lower threshold
+  cooldown_seconds: 30
+  save_annotated: true
+
+  # Video clip settings
+  clip_duration: 15
+  pre_buffer_seconds: 7
+  fps: 30
+
+# Expected Performance:
+# - Inference: 80-120ms (YOLOX-X)
+# - Stage 2: +50-100ms (with enhancement)
+# - Total: ~150-250ms per frame
+# - FPS: 4-7 FPS (quality over speed)
+# - VRAM: ~8-10GB

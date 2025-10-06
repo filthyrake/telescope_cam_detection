@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  telescope-detection:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: telescope-detection:latest
+    container_name: telescope_detection
+
+    # GPU access (requires nvidia-docker2 or Docker with NVIDIA Container Toolkit)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    # Port mapping
+    ports:
+      - "8000:8000"  # Web UI
+
+    # Volume mounts
+    volumes:
+      # Configuration files (READ-ONLY for security)
+      - ./config/config.yaml:/app/config/config.yaml:ro
+      - ./camera_credentials.yaml:/app/camera_credentials.yaml:ro
+
+      # Persistent data directories
+      - ./logs:/app/logs              # Log files
+      - ./clips:/app/clips            # Saved detection clips
+      - ./models:/app/models          # Downloaded models (cached)
+
+      # Optional: Training data (if using custom models)
+      # - ./training:/app/training
+
+    # Environment variables
+    environment:
+      # Python configuration
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+
+      # CUDA configuration (optional, for debugging)
+      # - CUDA_VISIBLE_DEVICES=0
+
+      # Logging level (DEBUG, INFO, WARNING, ERROR)
+      - LOG_LEVEL=INFO
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Network mode (host mode for better RTSP performance)
+    # Comment out if you prefer bridge networking
+    network_mode: host
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    # Resource limits (adjust based on your system)
+    # mem_limit: 8g
+    # mem_reservation: 4g
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Optional: Nginx reverse proxy with HTTPS (production setup)
+# Uncomment to add HTTPS support
+#  nginx:
+#    image: nginx:alpine
+#    container_name: telescope_nginx
+#    ports:
+#      - "443:443"
+#      - "80:80"
+#    volumes:
+#      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+#      - ./ssl:/etc/nginx/ssl:ro
+#    depends_on:
+#      - telescope-detection
+#    restart: unless-stopped
+
+networks:
+  default:
+    driver: bridge
