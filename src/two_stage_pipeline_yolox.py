@@ -134,27 +134,30 @@ class TwoStageDetectionPipeline:
                 top_result = results[0]
                 species_name = top_result['species']
                 confidence = top_result['confidence']
+                taxonomic_level = top_result.get('taxonomic_level', 'species')
 
-                # Check confidence threshold
-                if confidence >= self.stage2_confidence_threshold:
-                    detection['species'] = species_name
-                    detection['species_confidence'] = float(confidence)
-                    detection['stage2_category'] = category
-                    logger.debug(f"Classified as {species_name} (conf: {confidence:.2f})")
-                else:
-                    detection['species'] = None
-                    detection['species_confidence'] = float(confidence)
-                    detection['stage2_category'] = category
+                # Note: Hierarchical mode accepts confidence >= 0.1 (class level)
+                # This is intentional - lower confidence returns coarser taxonomic levels
+                # (e.g., "Mammalia (class)" at 0.15 instead of null)
+                # Original stage2_confidence_threshold is enforced at classifier level
+                detection['species'] = species_name
+                detection['species_confidence'] = float(confidence)
+                detection['stage2_category'] = category
+                detection['taxonomic_level'] = taxonomic_level
+
+                logger.debug(f"Classified as {species_name} ({taxonomic_level}, conf: {confidence:.2f})")
             else:
                 # No results above threshold
                 detection['species'] = None
                 detection['species_confidence'] = 0.0
                 detection['stage2_category'] = category
+                detection['taxonomic_level'] = None
 
         except Exception as e:
             logger.error(f"Species classification failed: {e}")
             detection['species'] = None
             detection['species_confidence'] = 0.0
+            detection['taxonomic_level'] = None
 
         return detection
 

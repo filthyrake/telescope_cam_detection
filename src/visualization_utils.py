@@ -49,7 +49,8 @@ def draw_bounding_box(
     font_scale: float = 0.7,
     draw_label: bool = True,
     species: str = None,
-    species_confidence: float = None
+    species_confidence: float = None,
+    taxonomic_level: str = None
 ) -> np.ndarray:
     """
     Draw a single bounding box on a frame.
@@ -65,6 +66,7 @@ def draw_bounding_box(
         draw_label: Whether to draw label text
         species: Species name from Stage 2 classifier (optional)
         species_confidence: Species confidence from Stage 2 (optional)
+        taxonomic_level: Taxonomic level from Stage 2 (e.g., "species", "genus", "family", "class")
 
     Returns:
         Frame with bounding box drawn (modifies in-place and returns)
@@ -86,7 +88,11 @@ def draw_bounding_box(
     if draw_label:
         # Fallback logic: Show species if available, otherwise show Stage 1 class
         if species is not None and species_confidence is not None:
-            label = f"{species} {species_confidence:.2f}"
+            # Add taxonomic level indicator for hierarchical fallback
+            if taxonomic_level and taxonomic_level != "species":
+                label = f"{species} ({taxonomic_level}) {species_confidence:.2f}"
+            else:
+                label = f"{species} {species_confidence:.2f}"
         else:
             label = f"{class_name} {confidence:.2f}"
 
@@ -155,6 +161,7 @@ def draw_detections(
         # Extract Stage 2 species info if available
         species = detection.get('species')
         species_confidence = detection.get('species_confidence')
+        taxonomic_level = detection.get('taxonomic_level')
 
         draw_bounding_box(
             annotated_frame,
@@ -165,7 +172,8 @@ def draw_detections(
             font_scale=font_scale,
             draw_label=draw_labels,
             species=species,
-            species_confidence=species_confidence
+            species_confidence=species_confidence,
+            taxonomic_level=taxonomic_level
         )
 
     return annotated_frame

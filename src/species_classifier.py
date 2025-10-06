@@ -28,7 +28,8 @@ class SpeciesClassifier:
         device: str = "cuda",
         confidence_threshold: float = 0.3,
         taxonomy_file: Optional[str] = None,
-        input_size: int = 224
+        input_size: int = 224,
+        use_hierarchical: bool = True
     ):
         """
         Initialize species classifier.
@@ -40,6 +41,7 @@ class SpeciesClassifier:
             confidence_threshold: Minimum confidence for classification
             taxonomy_file: Path to taxonomy mapping file
             input_size: Input image size (224, 336, etc.)
+            use_hierarchical: Use hierarchical taxonomy fallback
         """
         self.model_name = model_name
         self.checkpoint_path = checkpoint_path
@@ -47,17 +49,29 @@ class SpeciesClassifier:
         self.confidence_threshold = confidence_threshold
         self.model = None
         self.taxonomy = {}
+        self.use_hierarchical = use_hierarchical
 
         # Image preprocessing settings
         self.input_size = input_size  # Configurable input size
         self.mean = [0.485, 0.456, 0.406]  # ImageNet normalization
         self.std = [0.229, 0.224, 0.225]
 
+        # Hierarchical taxonomy thresholds
+        self.hierarchy_thresholds = {
+            'species': 0.5,    # Full species name (e.g., "Desert Cottontail")
+            'genus': 0.4,      # Genus (e.g., "Sylvilagus")
+            'family': 0.3,     # Family (e.g., "Leporidae")
+            'order': 0.2,      # Order (e.g., "Lagomorpha")
+            'class': 0.1,      # Class (e.g., "Mammalia")
+        }
+
         # Load taxonomy if provided
         if taxonomy_file:
             self._load_taxonomy(taxonomy_file)
 
         logger.info(f"SpeciesClassifier initialized: {model_name}")
+        if use_hierarchical:
+            logger.info("  Hierarchical taxonomy fallback enabled")
 
     def _load_taxonomy(self, taxonomy_file: str):
         """
@@ -82,6 +96,73 @@ class SpeciesClassifier:
                 logger.warning(f"Taxonomy file not found: {taxonomy_file}")
         except Exception as e:
             logger.error(f"Failed to load taxonomy: {e}")
+
+    def get_hierarchical_label(self, class_id: int, confidence: float) -> Tuple[str, str]:
+        """
+        Get appropriate taxonomic label based on confidence level.
+
+        Args:
+            class_id: Predicted class ID
+            confidence: Prediction confidence
+
+        Returns:
+            Tuple of (label, taxonomic_level) e.g., ("Mammalia", "class")
+        """
+        if not self.use_hierarchical:
+            # Just return species name
+            tax_entry = self.taxonomy.get(str(class_id), {})
+            if isinstance(tax_entry, str):
+                return (tax_entry, "species")
+            elif isinstance(tax_entry, dict):
+                # Try common_name, then name, then fallback
+                label = tax_entry.get('common_name') or tax_entry.get('name')
+                if label:
+                    return (label, "species")
+                else:
+                    return (f"species_{class_id}", "species")
+            else:
+                # Unexpected type, fallback
+                return (f"species_{class_id}", "species")
+
+        # Get taxonomy entry
+        tax_entry = self.taxonomy.get(str(class_id), {})
+
+        # Handle simple taxonomy (just strings)
+        if isinstance(tax_entry, str):
+            return (tax_entry, "species")
+
+        # Hierarchical fallback based on confidence
+        if confidence >= self.hierarchy_thresholds['species']:
+            # High confidence: return common name or scientific name
+            label = tax_entry.get('common_name') or tax_entry.get('name', f"species_{class_id}")
+            return (label, "species")
+
+        elif confidence >= self.hierarchy_thresholds['genus']:
+            # Medium-high: return genus
+            genus = tax_entry.get('genus', '')
+            if genus:
+                return (genus, "genus")
+
+        elif confidence >= self.hierarchy_thresholds['family']:
+            # Medium: return family
+            family = tax_entry.get('family', '')
+            if family:
+                return (family, "family")
+
+        elif confidence >= self.hierarchy_thresholds['order']:
+            # Medium-low: return order
+            order = tax_entry.get('order', '')
+            if order:
+                return (order, "order")
+
+        elif confidence >= self.hierarchy_thresholds['class']:
+            # Low: return class (e.g., "Mammalia", "Aves", "Reptilia")
+            cls = tax_entry.get('class', '')
+            if cls:
+                return (cls, "class")
+
+        # Too low confidence - return null
+        return (None, None)
 
     def load_model(self, num_classes: int = 1000) -> bool:
         """
@@ -181,18 +262,27 @@ class SpeciesClassifier:
             # Get top K predictions
             top_probs, top_indices = torch.topk(probs[0], top_k)
 
-            # Format results
+            # Format results with hierarchical taxonomy
             results = []
             for prob, idx in zip(top_probs, top_indices):
                 prob = prob.item()
                 idx = idx.item()
 
-                if prob >= self.confidence_threshold:
-                    species_name = self.taxonomy.get(idx, f"species_{idx}")
+                # For hierarchical mode, allow lower threshold (class level = 0.1)
+                # For non-hierarchical mode, enforce standard threshold
+                min_threshold = 0.1 if self.use_hierarchical else self.confidence_threshold
+                if prob < min_threshold:
+                    continue
+
+                # Get hierarchical label based on confidence
+                label, tax_level = self.get_hierarchical_label(idx, prob)
+
+                if label is not None:
                     results.append({
-                        'species': species_name,
+                        'species': label,
                         'confidence': prob,
-                        'class_id': idx
+                        'class_id': idx,
+                        'taxonomic_level': tax_level  # e.g., "species", "genus", "family", "order", "class"
                     })
 
             return results
