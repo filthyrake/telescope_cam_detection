@@ -188,6 +188,24 @@
             border-color: #ff44ff;
         }
 
+        .camera-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 255, 136, 0.9);
+            color: #1a1a1a;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.8em;
+            font-weight: bold;
+            border: 2px solid #00ff88;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+        }
+
+        .clip-card {
+            position: relative;
+        }
+
         .loading {
             text-align: center;
             padding: 50px;
@@ -327,7 +345,11 @@
 
         <div class="filters">
             <div class="filter-group">
-                <label>Filter by:</label>
+                <label>Camera:</label>
+                <select id="filter-camera">
+                    <option value="all">All Cameras</option>
+                </select>
+                <label>Class:</label>
                 <select id="filter-class">
                     <option value="all">All Classes</option>
                 </select>
@@ -363,6 +385,7 @@
     <script>
         let allClips = [];
         let currentFilter = 'all';
+        let currentCameraFilter = 'all';
         let currentSort = 'newest';
         let searchTerm = '';
 
@@ -406,8 +429,9 @@
             }
         }
 
-        // Update filter dropdown
+        // Update filter dropdowns
         function updateFilters() {
+            // Update class filter
             const classes = new Set();
             allClips.forEach(clip => {
                 if (clip.metadata && clip.metadata.detections) {
@@ -423,11 +447,37 @@
                 option.textContent = className.charAt(0).toUpperCase() + className.slice(1);
                 filterSelect.appendChild(option);
             });
+
+            // Update camera filter
+            const cameras = new Map();
+            allClips.forEach(clip => {
+                if (clip.metadata && clip.metadata.camera_id) {
+                    const cameraId = clip.metadata.camera_id;
+                    const cameraName = clip.metadata.camera_name || cameraId;
+                    cameras.set(cameraId, cameraName);
+                }
+            });
+
+            const cameraFilterSelect = document.getElementById('filter-camera');
+            cameraFilterSelect.innerHTML = '<option value="all">All Cameras</option>';
+            Array.from(cameras.entries()).sort((a, b) => a[0].localeCompare(b[0])).forEach(([id, name]) => {
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = name;
+                cameraFilterSelect.appendChild(option);
+            });
         }
 
         // Filter and sort clips
         function getFilteredClips() {
             let filtered = [...allClips];
+
+            // Filter by camera
+            if (currentCameraFilter !== 'all') {
+                filtered = filtered.filter(clip => {
+                    return clip.metadata?.camera_id === currentCameraFilter;
+                });
+            }
 
             // Filter by class
             if (currentFilter !== 'all') {
@@ -480,12 +530,14 @@
                 const detections = clip.metadata?.detections || [];
                 const counts = clip.metadata?.detection_counts || {};
                 const latency = clip.metadata?.latency_ms || 0;
+                const cameraName = clip.metadata?.camera_name || clip.metadata?.camera_id || 'Unknown';
 
                 // Use annotated image for display if available, otherwise use raw
                 const displayUrl = clip.annotated_url || clip.url;
 
                 return `
                     <div class="clip-card" onclick="openModal('${displayUrl}', ${JSON.stringify(clip).replace(/"/g, '&quot;')})">
+                        <div class="camera-badge">📹 ${cameraName}</div>
                         <img class="clip-image" src="${displayUrl}" alt="${clip.filename}" loading="lazy">
                         <div class="clip-info">
                             <div class="clip-title">${clip.filename.split('_')[0].toUpperCase()}</div>
@@ -513,8 +565,11 @@
             const date = new Date(clip.timestamp * 1000);
             const detections = clip.metadata?.detections || [];
 
+            const cameraName = clip.metadata?.camera_name || clip.metadata?.camera_id || 'Unknown';
+
             modalInfo.innerHTML = `
                 <h3>${clip.filename}</h3>
+                <p><strong>Camera:</strong> ${cameraName}</p>
                 <p><strong>Date:</strong> ${date.toLocaleString()}</p>
                 <p><strong>Latency:</strong> ${(clip.metadata?.latency_ms || 0).toFixed(1)}ms</p>
                 <h4 style="color: #00ff88; margin-top: 15px;">Detections:</h4>
@@ -537,6 +592,11 @@
         }
 
         // Event listeners
+        document.getElementById('filter-camera').addEventListener('change', (e) => {
+            currentCameraFilter = e.target.value;
+            renderClips();
+        });
+
         document.getElementById('filter-class').addEventListener('change', (e) => {
             currentFilter = e.target.value;
             renderClips();
