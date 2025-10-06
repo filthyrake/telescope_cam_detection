@@ -39,6 +39,7 @@ class InferenceEngine:
         use_two_stage: bool = False,
         two_stage_pipeline: Optional[Any] = None,
         class_confidence_overrides: Optional[Dict[str, float]] = None,
+        class_size_constraints: Optional[Dict[str, Dict[str, int]]] = None,
         wildlife_only: bool = True,
         **kwargs  # Ignore extra params from old config
     ):
@@ -59,6 +60,7 @@ class InferenceEngine:
             use_two_stage: Enable two-stage detection (YOLOX → iNaturalist)
             two_stage_pipeline: TwoStageDetectionPipeline instance
             class_confidence_overrides: Per-class confidence thresholds
+            class_size_constraints: Per-class min/max box area constraints (e.g., {'bird': {'max': 15000}})
             wildlife_only: Filter to wildlife-relevant classes only
         """
         self.model_name = model_name
@@ -74,6 +76,7 @@ class InferenceEngine:
         self.use_two_stage = use_two_stage
         self.two_stage_pipeline = two_stage_pipeline
         self.class_confidence_overrides = class_confidence_overrides or {}
+        self.class_size_constraints = class_size_constraints or {}
         self.wildlife_only = wildlife_only
 
         self.detector: Optional[YOLOXDetector] = None
@@ -227,7 +230,7 @@ class InferenceEngine:
         # Stage 1: Run YOLOX detection
         detections = self.detector.detect(frame)
 
-        # Filter by confidence overrides
+        # Filter by confidence overrides and size constraints
         filtered_detections = []
         for det in detections:
             class_name = det['class_name']
@@ -239,9 +242,17 @@ class InferenceEngine:
             if confidence < class_threshold:
                 continue
 
-            # Filter by minimum box area
+            # Filter by minimum box area (global)
             if self.min_box_area > 0 and box_area < self.min_box_area:
                 continue
+
+            # Filter by per-class size constraints
+            if class_name in self.class_size_constraints:
+                constraints = self.class_size_constraints[class_name]
+                if 'min' in constraints and box_area < constraints['min']:
+                    continue
+                if 'max' in constraints and box_area > constraints['max']:
+                    continue
 
             filtered_detections.append(det)
 

@@ -17,6 +17,16 @@ cameras:
     target_height: 1080  # Increased for better small object detection
     buffer_size: 1  # Keep at 1 for lowest latency
 
+    # Per-camera detection overrides
+    detection_overrides:
+      # Per-class size constraints (filter detections by bounding box area)
+      # Format: {min: pixels², max: pixels²}
+      # At 1920x1080 resolution: total pixels = 2,073,600
+      # Typical bird at distance: 200-5000px² | Large bird/hawk: 5000-8000px²
+      class_size_constraints:
+        bird:
+          max: 8000  # Max ~89x89 pixels - filters large false positives
+
   # Second camera (ground level - Reolink E1 Pro with better resolution)
   - id: "cam2"
     name: "Secondary View"
