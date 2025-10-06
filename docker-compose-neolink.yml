@@ -1,0 +1,11 @@
+services:
+  neolink:
+    image: quantumentangledandy/neolink:latest
+    container_name: neolink
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./neolink-config.toml:/etc/neolink.toml:ro
+    environment:
+      - TZ=America/Los_Angeles
+      - RUST_LOG=neolink=info

@@ -79,6 +79,7 @@ camera_credentials.yaml
 credentials.yaml
 .env
 *.credentials.yaml
+neolink-config.toml
 
 # Configuration with private IPs (use config.yaml.example to create)
 config/config.yaml
