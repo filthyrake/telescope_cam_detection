@@ -164,75 +164,13 @@ class TelescopeDetectionSystem:
                 )
                 logger.info("Shared snapshot saver initialized")
 
-            # Initialize two-stage pipeline (shared across all cameras, if enabled)
+            # Get detection config for pipeline setup
             detection_config = self.config['detection']
-            two_stage_pipeline = None
+            use_two_stage = detection_config.get('use_two_stage', False)
 
-            if detection_config.get('use_two_stage', False):
-                logger.info("Initializing two-stage detection pipeline (YOLOX + iNaturalist)...")
-
-                # Get species classification config
-                species_config = self.config.get('species_classification', {})
-                inat_config = species_config.get('inat_classifier', {})
-                enhancement_config = species_config.get('enhancement', {})
-
-                # Pass device to enhancement config if not specified
-                if enhancement_config and 'device' not in enhancement_config:
-                    enhancement_config['device'] = detection_config['device']
-
-                # Initialize pipeline
-                two_stage_pipeline = TwoStageDetectionPipeline(
-                    enable_species_classification=detection_config.get('enable_species_classification', True),
-                    stage2_confidence_threshold=species_config.get('confidence_threshold', 0.3),
-                    device=detection_config['device'],
-                    enhancement_config=enhancement_config if enhancement_config else None
-                )
-
-                # Initialize iNaturalist species classifier
-                if detection_config.get('enable_species_classification', False):
-                    logger.info("Loading iNaturalist species classifier...")
-
-                    model_name = inat_config.get('model_name', 'eva02_large_patch14_clip_336.merged2b_ft_inat21')
-                    taxonomy_file = inat_config.get('taxonomy_file', 'models/inat2021_taxonomy.json')
-                    input_size = inat_config.get('input_size', 336)
-                    use_hierarchical = inat_config.get('use_hierarchical', True)
-
-                    # Get geographic filter settings
-                    geo_filter_config = species_config.get('geographic_filter', {})
-                    enable_geo_filter = geo_filter_config.get('enabled', False)
-                    allowed_species = geo_filter_config.get('allowed_species', [])
-
-                    if enable_geo_filter:
-                        logger.info(f"Geographic filtering enabled with {len(allowed_species)} allowed species")
-
-                    # Create universal classifier (handles all animals)
-                    inat_classifier = SpeciesClassifier(
-                        model_name=model_name,
-                        checkpoint_path=None,  # Use pretrained from timm
-                        device=detection_config['device'],
-                        confidence_threshold=inat_config.get('confidence_threshold', 0.3),
-                        taxonomy_file=taxonomy_file,
-                        input_size=input_size,
-                        use_hierarchical=use_hierarchical,
-                        allowed_species=allowed_species,
-                        enable_geographic_filter=enable_geo_filter
-                    )
-
-                    # Load the model (10,000 classes)
-                    if inat_classifier.load_model(num_classes=10000):
-                        # Add classifier for all animal groups
-                        # iNaturalist covers all species, so we use one universal classifier
-                        two_stage_pipeline.add_species_classifier('bird', inat_classifier)
-                        two_stage_pipeline.add_species_classifier('mammal', inat_classifier)
-                        two_stage_pipeline.add_species_classifier('reptile', inat_classifier)
-                        logger.info(f"✅ iNaturalist classifier loaded ({model_name})")
-                        logger.info(f"   Taxonomy: {taxonomy_file}")
-                        logger.info(f"   Species count: 10,000")
-                    else:
-                        logger.warning("Failed to load iNaturalist classifier, Stage 2 disabled")
-                        two_stage_pipeline = None
-
-                logger.info("Two-stage pipeline initialized")
+            if use_two_stage:
+                logger.info("Per-camera two-stage detection pipeline enabled (YOLOX + iNaturalist)")
+                logger.info("Each camera will have its own Stage 2 pipeline for thread-safe parallel processing")
 
             # Initialize YOLOX inference engine parameters
             model_config_dict = detection_config.get('model', {})
@@ -256,6 +194,65 @@ class TelescopeDetectionSystem:
                 frame_queue = self.frame_queues[i]
                 inference_queue = self.inference_queues[i]
 
+                # Initialize per-camera two-stage pipeline (if enabled)
+                camera_two_stage_pipeline = None
+                if use_two_stage:
+                    logger.info(f"  [{camera_id}] Initializing Stage 2 pipeline...")
+
+                    # Get species classification config
+                    species_config = self.config.get('species_classification', {})
+                    inat_config = species_config.get('inat_classifier', {})
+                    enhancement_config = species_config.get('enhancement', {})
+
+                    # Pass device to enhancement config if not specified
+                    if enhancement_config and 'device' not in enhancement_config:
+                        enhancement_config['device'] = detection_config['device']
+
+                    # Initialize pipeline for this camera
+                    camera_two_stage_pipeline = TwoStageDetectionPipeline(
+                        enable_species_classification=detection_config.get('enable_species_classification', True),
+                        stage2_confidence_threshold=species_config.get('confidence_threshold', 0.3),
+                        device=detection_config['device'],
+                        enhancement_config=enhancement_config if enhancement_config else None
+                    )
+
+                    # Initialize iNaturalist species classifier for this camera
+                    if detection_config.get('enable_species_classification', False):
+                        model_name = inat_config.get('model_name', 'eva02_large_patch14_clip_336.merged2b_ft_inat21')
+                        taxonomy_file = inat_config.get('taxonomy_file', 'models/inat2021_taxonomy.json')
+                        input_size_inat = inat_config.get('input_size', 336)
+                        use_hierarchical = inat_config.get('use_hierarchical', True)
+
+                        # Get geographic filter settings
+                        geo_filter_config = species_config.get('geographic_filter', {})
+                        enable_geo_filter = geo_filter_config.get('enabled', False)
+                        allowed_species = geo_filter_config.get('allowed_species', [])
+
+                        # Create classifier instance for this camera
+                        inat_classifier = SpeciesClassifier(
+                            model_name=model_name,
+                            checkpoint_path=None,  # Use pretrained from timm
+                            device=detection_config['device'],
+                            confidence_threshold=inat_config.get('confidence_threshold', 0.3),
+                            taxonomy_file=taxonomy_file,
+                            input_size=input_size_inat,
+                            use_hierarchical=use_hierarchical,
+                            allowed_species=allowed_species,
+                            enable_geographic_filter=enable_geo_filter
+                        )
+
+                        # Load the model (10,000 classes)
+                        if inat_classifier.load_model(num_classes=10000):
+                            # Add classifier for all animal groups
+                            # iNaturalist covers all species, so we use one universal classifier
+                            camera_two_stage_pipeline.add_species_classifier('bird', inat_classifier)
+                            camera_two_stage_pipeline.add_species_classifier('mammal', inat_classifier)
+                            camera_two_stage_pipeline.add_species_classifier('reptile', inat_classifier)
+                            logger.info(f"  [{camera_id}] ✅ iNaturalist classifier loaded")
+                        else:
+                            logger.warning(f"  [{camera_id}] Failed to load iNaturalist classifier, Stage 2 disabled")
+                            camera_two_stage_pipeline = None
+
                 # Initialize YOLOX inference engine for this camera
                 inference_engine = InferenceEngine(
                     model_name=model_config_dict.get('name', 'yolox-s'),
@@ -268,8 +265,8 @@ class TelescopeDetectionSystem:
                     output_queue=inference_queue,
                     min_box_area=detection_config.get('min_box_area', 0),
                     max_det=detection_config.get('max_detections', 300),
-                    use_two_stage=two_stage_pipeline is not None,
-                    two_stage_pipeline=two_stage_pipeline,
+                    use_two_stage=camera_two_stage_pipeline is not None,
+                    two_stage_pipeline=camera_two_stage_pipeline,
                     class_confidence_overrides=detection_config.get('class_confidence_overrides', {}),
                     wildlife_only=detection_config.get('wildlife_only', True)
                 )
