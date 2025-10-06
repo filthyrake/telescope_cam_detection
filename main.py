@@ -181,9 +181,16 @@ class TelescopeDetectionSystem:
 
             # Initialize YOLOX inference engine (Stage 1: Fast detection)
             model_config_dict = detection_config.get('model', {})
+            input_size = detection_config.get('input_size', [640, 640])
+            input_size_tuple = tuple(input_size)
 
             logger.info(f"Using YOLOX (Apache 2.0) for Stage 1 detection")
-            logger.info(f"  Expected inference time: 11-21ms (47x faster than GroundingDINO)")
+            if input_size_tuple == (640, 640):
+                logger.info(f"  Expected inference time: 11-21ms (47x faster than GroundingDINO)")
+            elif input_size_tuple == (1280, 1280):
+                logger.info(f"  Expected inference time: 50-100ms (better for small/distant wildlife)")
+            else:
+                logger.info(f"  Input size: {input_size_tuple}")
 
             self.inference_engine = InferenceEngine(
                 model_name=model_config_dict.get('name', 'yolox-s'),
@@ -191,6 +198,7 @@ class TelescopeDetectionSystem:
                 device=detection_config['device'],
                 conf_threshold=detection_config.get('conf_threshold', 0.25),
                 nms_threshold=detection_config.get('nms_threshold', 0.45),
+                input_size=input_size_tuple,
                 input_queue=self.frame_queue,
                 output_queue=self.inference_queue,
                 min_box_area=detection_config.get('min_box_area', 0),
