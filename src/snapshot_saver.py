@@ -156,8 +156,11 @@ class SnapshotSaver:
         primary_class = detections[0]['class_name']
         confidence = detections[0]['confidence']
 
-        # Create base filename
-        base_filename = f"{primary_class}_{timestamp}_conf{confidence:.2f}"
+        # Get camera identifier
+        camera_id = detection_result.get('camera_id', 'default')
+
+        # Create base filename with camera ID
+        base_filename = f"{camera_id}_{primary_class}_{timestamp}_conf{confidence:.2f}"
         raw_filepath = self.output_dir / f"{base_filename}.jpg"
         annotated_filepath = self.output_dir / f"{base_filename}_annotated.jpg"
 
@@ -173,6 +176,8 @@ class SnapshotSaver:
             # Save metadata JSON
             metadata = {
                 'timestamp': detection_result.get('timestamp'),
+                'camera_id': detection_result.get('camera_id', 'default'),
+                'camera_name': detection_result.get('camera_name', 'Default Camera'),
                 'detections': detections,
                 'detection_counts': detection_result.get('detection_counts', {}),
                 'latency_ms': detection_result.get('total_latency_ms', 0),
@@ -221,8 +226,11 @@ class SnapshotSaver:
 
         primary_class = detections[0]['class_name']
 
-        # Create filename
-        filename = f"{primary_class}_{timestamp}.mp4"
+        # Get camera identifier
+        camera_id = detection_result.get('camera_id', 'default')
+
+        # Create filename with camera ID
+        filename = f"{camera_id}_{primary_class}_{timestamp}.mp4"
         filepath = self.output_dir / filename
 
         try:
@@ -256,6 +264,8 @@ class SnapshotSaver:
             # Save metadata
             metadata = {
                 'timestamp': detection_result.get('timestamp'),
+                'camera_id': detection_result.get('camera_id', 'default'),
+                'camera_name': detection_result.get('camera_name', 'Default Camera'),
                 'detections': detections,
                 'detection_counts': detection_result.get('detection_counts', {}),
                 'clip_duration_seconds': len(buffered_frames) / self.fps

@@ -153,6 +153,10 @@ class DetectionProcessor:
         timestamp = detection_result['timestamp']
         inference_time = detection_result['inference_time']
 
+        # Extract camera metadata if present
+        camera_id = detection_result.get('camera_id', 'default')
+        camera_name = detection_result.get('camera_name', 'Default Camera')
+
         # Calculate total latency (from frame capture to now)
         current_time = time.time()
         total_latency = current_time - timestamp
@@ -168,6 +172,8 @@ class DetectionProcessor:
         # Prepare result
         processed_result = {
             'frame_id': frame_id,
+            'camera_id': camera_id,
+            'camera_name': camera_name,
             'timestamp': timestamp,
             'processing_timestamp': current_time,
             'inference_time_ms': inference_time * 1000,

@@ -1,15 +1,33 @@
 # Telescope Detection System Configuration
 
-camera:
-  ip: "10.0.8.18"
-  username: "admin"
-  password: "REDACTED"
-  stream: "main"  # Options: "main" (2K) or "sub" (lower resolution)
+# Multi-camera configuration
+# Each camera can have its own settings
+cameras:
+  - id: "cam1"
+    name: "Main Backyard View"
+    ip: "10.0.8.18"
+    username: "admin"
+    password: "REDACTED"
+    stream: "main"  # Options: "main" (2K) or "sub" (lower resolution)
+    enabled: true
 
-  # Frame processing
-  target_width: 1920  # Increased for better small object detection
-  target_height: 1080  # Increased for better small object detection
-  buffer_size: 1  # Keep at 1 for lowest latency
+    # Frame processing
+    target_width: 1920  # Increased for better small object detection
+    target_height: 1080  # Increased for better small object detection
+    buffer_size: 1  # Keep at 1 for lowest latency
+
+  # Example second camera configuration (disabled by default)
+  # Uncomment and configure when you add a second camera
+  # - id: "cam2"
+  #   name: "Telescope Close-up"
+  #   ip: "10.0.8.19"
+  #   username: "admin"
+  #   password: "your_password"
+  #   stream: "main"
+  #   enabled: true
+  #   target_width: 1920
+  #   target_height: 1080
+  #   buffer_size: 1
 
 detection:
   # YOLOX Model configuration (Apache 2.0 license)
@@ -132,9 +150,9 @@ detection:
 
   # Per-class confidence overrides (higher threshold = fewer false positives)
   class_confidence_overrides:
-    person: 0.60  # Much higher to reduce false "person" detections
+    person: 0.75  # Much higher to reduce false "person" detections
     bird: 0.55    # High threshold - telescope covers falsely detected as birds
-    bear: 0.70    # Very high - bears extremely rare in Mojave, rocks often misdetected
+    bear: 0.90    # Very high - bears extremely rare in Mojave, rocks often misdetected
 
   # Size filtering (better than just confidence for distant wildlife!)
   # Note: Inference runs at 1920x1920 (3,686,400 total pixels)
