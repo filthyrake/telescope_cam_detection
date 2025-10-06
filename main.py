@@ -248,10 +248,10 @@ class TelescopeDetectionSystem:
 
                     # Merge per-class confidence overrides (camera overrides take precedence)
                     if 'class_confidence_overrides' in camera_overrides:
-                        global_class_overrides = camera_detection_config.get('class_confidence_overrides', {}).copy()
+                        merged_class_overrides = camera_detection_config.get('class_confidence_overrides', {}).copy()
                         camera_class_overrides = camera_overrides['class_confidence_overrides']
-                        global_class_overrides.update(camera_class_overrides)
-                        camera_detection_config['class_confidence_overrides'] = global_class_overrides
+                        merged_class_overrides.update(camera_class_overrides)
+                        camera_detection_config['class_confidence_overrides'] = merged_class_overrides
                         logger.info(f"    class_confidence_overrides: {camera_class_overrides}")
 
                 # Initialize per-camera two-stage pipeline (if enabled)
