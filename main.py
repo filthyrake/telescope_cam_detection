@@ -152,6 +152,14 @@ class TelescopeDetectionSystem:
                     input_size = inat_config.get('input_size', 336)
                     use_hierarchical = inat_config.get('use_hierarchical', True)
 
+                    # Get geographic filter settings
+                    geo_filter_config = species_config.get('geographic_filter', {})
+                    enable_geo_filter = geo_filter_config.get('enabled', False)
+                    allowed_species = geo_filter_config.get('allowed_species', [])
+
+                    if enable_geo_filter:
+                        logger.info(f"Geographic filtering enabled with {len(allowed_species)} allowed species")
+
                     # Create universal classifier (handles all animals)
                     inat_classifier = SpeciesClassifier(
                         model_name=model_name,
@@ -160,7 +168,9 @@ class TelescopeDetectionSystem:
                         confidence_threshold=inat_config.get('confidence_threshold', 0.3),
                         taxonomy_file=taxonomy_file,
                         input_size=input_size,
-                        use_hierarchical=use_hierarchical
+                        use_hierarchical=use_hierarchical,
+                        allowed_species=allowed_species,
+                        enable_geographic_filter=enable_geo_filter
                     )
 
                     # Load the model (10,000 classes)
