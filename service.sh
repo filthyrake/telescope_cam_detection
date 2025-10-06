@@ -48,14 +48,29 @@ install_service() {
 
     check_root
 
-    # Copy service file to systemd directory
-    if [ -f "$PROJECT_DIR/$SERVICE_FILE" ]; then
-        cp "$PROJECT_DIR/$SERVICE_FILE" "$SYSTEMD_DIR/$SERVICE_NAME.service"
-        print_success "Service file copied to $SYSTEMD_DIR"
-    else
-        print_error "Service file not found: $PROJECT_DIR/$SERVICE_FILE"
+    # Get current user (the one who ran sudo)
+    SERVICE_USER="${SUDO_USER:-$USER}"
+
+    # Check if template exists
+    if [ ! -f "$PROJECT_DIR/$SERVICE_FILE.template" ]; then
+        print_error "Service template not found: $PROJECT_DIR/$SERVICE_FILE.template"
         exit 1
     fi
+
+    # Escape special characters for sed
+    ESCAPED_USER=$(printf '%s\n' "$SERVICE_USER" | sed 's/[\/&]/\\&/g')
+    ESCAPED_PROJECT_DIR=$(printf '%s\n' "$PROJECT_DIR" | sed 's/[\/&]/\\&/g')
+
+    # Generate service file from template
+    print_info "Generating service file for user: $SERVICE_USER"
+    sed -e "s|{{USER}}|$ESCAPED_USER|g" \
+        -e "s|{{PROJECT_DIR}}|$ESCAPED_PROJECT_DIR|g" \
+        "$PROJECT_DIR/$SERVICE_FILE.template" > "$PROJECT_DIR/$SERVICE_FILE"
+    print_success "Service file generated"
+
+    # Copy service file to systemd directory
+    cp "$PROJECT_DIR/$SERVICE_FILE" "$SYSTEMD_DIR/$SERVICE_NAME.service"
+    print_success "Service file copied to $SYSTEMD_DIR"
 
     # Reload systemd
     systemctl daemon-reload
