@@ -26,10 +26,10 @@ SOFTWARE.
 
 This project uses the following open-source components:
 
-### GroundingDINO
+### YOLOX
 - License: Apache License 2.0
-- Copyright: IDEA-Research
-- URL: https://github.com/IDEA-Research/GroundingDINO
+- Copyright: Megvii, Inc.
+- URL: https://github.com/Megvii-BaseDetection/YOLOX
 
 ### iNaturalist / EVA02 Model
 - License: Apache License 2.0
@@ -38,7 +38,7 @@ This project uses the following open-source components:
 
 ### PyTorch
 - License: BSD-3-Clause
-- Copyright: Facebook, Inc. and its affiliates
+- Copyright: Meta Platforms, Inc. and affiliates
 - URL: https://github.com/pytorch/pytorch
 
 ### OpenCV
@@ -50,5 +50,9 @@ This project uses the following open-source components:
 - License: MIT License
 - Copyright: Sebastián Ramírez
 - URL: https://github.com/tiangolo/fastapi
+
+### Reolink Camera Integration
+This software is designed to work with Reolink cameras but is not affiliated with,
+endorsed by, or sponsored by Reolink Technology Limited.
 
 All dependencies are compatible with the MIT License.

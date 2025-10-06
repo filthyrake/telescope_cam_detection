@@ -1,6 +1,14 @@
 # Telescope Detection System
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
+[![CUDA](https://img.shields.io/badge/CUDA-11.8+-76B900.svg)](https://developer.nvidia.com/cuda-toolkit)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 Real-time object detection system for monitoring astronomical telescopes and desert wildlife using Reolink cameras and NVIDIA A30 GPU.
+
+> ⭐ **If you find this project useful, please consider giving it a star!** It helps others discover the project.
 
 ## Features
 
@@ -14,6 +22,25 @@ Real-time object detection system for monitoring astronomical telescopes and des
 - **WebSocket streaming**: Real-time detection results
 - **Snapshot saving**: Automatic image/clip saving on detection events
 - **MIT License**: Fully open source with permissive licensing (Apache 2.0 dependencies)
+
+## Screenshots & Demo
+
+### Web Interface
+
+![Web UI Demo](docs/images/web_ui_demo.png)
+*Real-time detection with live video feed and bounding box overlays*
+
+### Detection Examples
+
+![Wildlife Detection](docs/images/detection_example.png)
+*Multi-camera wildlife detection with species classification*
+
+> **Note**: Demo screenshots coming soon! The web interface includes:
+> - Live RTSP video streams from multiple cameras
+> - Real-time detection overlays with confidence scores
+> - Species classification labels (when Stage 2 enabled)
+> - Performance metrics (FPS, latency, GPU usage)
+> - Detection history and statistics
 
 ## System Requirements
 
