@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Telescope Detection System - Main Application
+Backyard Computer Vision System - Main Application
 Integrates all components for real-time detection monitoring.
 """
 
@@ -319,7 +319,7 @@ class TelescopeDetectionSystem:
             True if all components started successfully, False otherwise
         """
         try:
-            logger.info("Starting Telescope Detection System...")
+            logger.info("Starting Backyard Computer Vision System...")
 
             # Start all stream captures
             for i, stream_capture in enumerate(self.stream_captures):
@@ -381,7 +381,7 @@ class TelescopeDetectionSystem:
 
     def stop(self):
         """Stop all system components gracefully."""
-        logger.info("Stopping Telescope Detection System...")
+        logger.info("Stopping Backyard Computer Vision System...")
 
         # Stop all detection processors
         for detection_processor in self.detection_processors:
