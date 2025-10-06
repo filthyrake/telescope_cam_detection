@@ -154,6 +154,36 @@ species_classification:
     #   >= 0.2: Order (e.g., "Lagomorpha")
     #   >= 0.1: Class (e.g., "Mammalia", "Aves", "Reptilia")
 
+  # Image enhancement (pre-process crops before classification)
+  # Improves accuracy on IR/night vision, small/distant animals
+  enhancement:
+    enabled: true
+    method: "realesrgan"  # Options: "none", "clahe", "realesrgan"
+
+    # Real-ESRGAN settings (4x super-resolution upscaling)
+    # Speed: ~500ms-1s per crop on A30 GPU
+    # Benefits: Makes small/distant wildlife visible for classification
+    realesrgan:
+      model_path: "models/enhancement/RealESRGAN_x4plus.pth"
+      scale: 4  # Upscaling factor (2, 3, or 4)
+      tile: 512  # Process in tiles (0 = no tiling, larger = faster but more VRAM)
+      tile_pad: 10  # Padding for tiles to avoid edge artifacts
+      half: false  # Use FP16 for 2x speedup (may reduce quality slightly)
+      # Note: device is inherited from detection.device (main GPU/CPU setting)
+
+    # CLAHE settings (contrast enhancement)
+    # Fast (~5ms), improves low-contrast night vision images
+    clahe:
+      clip_limit: 2.0  # Higher = more contrast (1.0-4.0 typical)
+      tile_grid_size: [8, 8]  # Tile grid for adaptive histogram equalization
+
+    # Bilateral filter settings (denoising while preserving edges)
+    # Fast (~10ms), reduces noise in IR images
+    bilateral:
+      d: 9  # Filter diameter (larger = stronger but slower)
+      sigma_color: 75  # Color space sigma (higher = more colors considered similar)
+      sigma_space: 75  # Coordinate space sigma (higher = larger neighborhood)
+
 web:
   host: "0.0.0.0"
   port: 8000
