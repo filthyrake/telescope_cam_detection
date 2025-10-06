@@ -1,6 +1,6 @@
-# Contributing to Telescope Detection System
+# Contributing
 
-Thank you for your interest in contributing! This document provides guidelines for contributing to the project.
+Thanks for checking this out! Contributions are welcome, but fair warning: this is a hobby project so my review times might be sporadic. I'll do my best!
 
 ## Table of Contents
 
@@ -43,7 +43,7 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 ### Pull Requests
 
-We actively welcome pull requests! Areas where we'd love contributions:
+Pull requests are welcome! Some areas where help would be awesome:
 
 - 🐛 Bug fixes
 - 📚 Documentation improvements
@@ -171,10 +171,10 @@ git push origin feature/your-feature-name
 
 ### 6. Review Process
 
-- Maintainers will review your PR
+- I'll review PRs when I have time (could be quick, could be a while)
 - Address feedback by pushing new commits
-- Once approved, your PR will be merged
-- Your contribution will be credited in release notes!
+- Once it looks good, I'll merge it
+- You'll get credited in release notes!
 
 ## Coding Standards
 
@@ -365,9 +365,4 @@ Fixes #789
 
 ## Recognition
 
-Contributors will be:
-- Credited in release notes
-- Listed in CONTRIBUTORS.md (if we create one)
-- Thanked in commit messages
-
-Thank you for making this project better! 🎉
+If you contribute, I'll credit you in release notes and thank you in commits. Appreciate you making this better! 🎉

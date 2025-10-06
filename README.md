@@ -8,8 +8,6 @@
 
 Real-time object detection system for monitoring astronomical telescopes and desert wildlife using Reolink cameras and NVIDIA A30 GPU.
 
-> ⭐ **If you find this project useful, please consider giving it a star!** It helps others discover the project.
-
 ## Features
 
 - **Ultra-fast detection**: YOLOX inference at 11-21ms (47x faster than previous system)
