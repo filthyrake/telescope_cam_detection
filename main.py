@@ -234,6 +234,26 @@ class TelescopeDetectionSystem:
                 frame_queue = self.frame_queues[i]
                 inference_queue = self.inference_queues[i]
 
+                # Merge camera-specific detection overrides with global settings
+                camera_detection_config = detection_config.copy()
+                camera_overrides = camera_config.get('detection_overrides', {})
+                if camera_overrides:
+                    logger.info(f"  [{camera_id}] Applying per-camera detection overrides")
+
+                    # Override scalar values (conf_threshold, min_box_area, etc.)
+                    for key in ['conf_threshold', 'min_box_area', 'max_detections', 'nms_threshold']:
+                        if key in camera_overrides:
+                            camera_detection_config[key] = camera_overrides[key]
+                            logger.info(f"    {key}: {camera_overrides[key]}")
+
+                    # Merge per-class confidence overrides (camera overrides take precedence)
+                    if 'class_confidence_overrides' in camera_overrides:
+                        merged_class_overrides = camera_detection_config.get('class_confidence_overrides', {}).copy()
+                        camera_class_overrides = camera_overrides['class_confidence_overrides']
+                        merged_class_overrides.update(camera_class_overrides)
+                        camera_detection_config['class_confidence_overrides'] = merged_class_overrides
+                        logger.info(f"    class_confidence_overrides: {camera_class_overrides}")
+
                 # Initialize per-camera two-stage pipeline (if enabled)
                 camera_two_stage_pipeline = None
                 if use_two_stage:
@@ -246,18 +266,18 @@ class TelescopeDetectionSystem:
 
                     # Pass device to enhancement config if not specified
                     if enhancement_config and 'device' not in enhancement_config:
-                        enhancement_config['device'] = detection_config['device']
+                        enhancement_config['device'] = camera_detection_config['device']
 
                     # Initialize pipeline for this camera
                     camera_two_stage_pipeline = TwoStageDetectionPipeline(
-                        enable_species_classification=detection_config.get('enable_species_classification', True),
+                        enable_species_classification=camera_detection_config.get('enable_species_classification', True),
                         stage2_confidence_threshold=species_config.get('confidence_threshold', 0.3),
-                        device=detection_config['device'],
+                        device=camera_detection_config['device'],
                         enhancement_config=enhancement_config if enhancement_config else None
                     )
 
                     # Initialize iNaturalist species classifier for this camera
-                    if detection_config.get('enable_species_classification', False):
+                    if camera_detection_config.get('enable_species_classification', False):
                         model_name = inat_config.get('model_name', 'eva02_large_patch14_clip_336.merged2b_ft_inat21')
                         taxonomy_file = inat_config.get('taxonomy_file', 'models/inat2021_taxonomy.json')
                         input_size_inat = inat_config.get('input_size', 336)
@@ -272,7 +292,7 @@ class TelescopeDetectionSystem:
                         inat_classifier = SpeciesClassifier(
                             model_name=model_name,
                             checkpoint_path=None,  # Use pretrained from timm
-                            device=detection_config['device'],
+                            device=camera_detection_config['device'],
                             confidence_threshold=inat_config.get('confidence_threshold', 0.3),
                             taxonomy_file=taxonomy_file,
                             input_size=input_size_inat,
@@ -297,18 +317,18 @@ class TelescopeDetectionSystem:
                 inference_engine = InferenceEngine(
                     model_name=model_config_dict.get('name', 'yolox-s'),
                     model_path=model_config_dict.get('weights', 'models/yolox/yolox_s.pth'),
-                    device=detection_config['device'],
-                    conf_threshold=detection_config.get('conf_threshold', 0.25),
-                    nms_threshold=detection_config.get('nms_threshold', 0.45),
+                    device=camera_detection_config['device'],
+                    conf_threshold=camera_detection_config.get('conf_threshold', 0.25),
+                    nms_threshold=camera_detection_config.get('nms_threshold', 0.45),
                     input_size=input_size_tuple,
                     input_queue=frame_queue,
                     output_queue=inference_queue,
-                    min_box_area=detection_config.get('min_box_area', 0),
-                    max_det=detection_config.get('max_detections', 300),
+                    min_box_area=camera_detection_config.get('min_box_area', 0),
+                    max_det=camera_detection_config.get('max_detections', 300),
                     use_two_stage=camera_two_stage_pipeline is not None,
                     two_stage_pipeline=camera_two_stage_pipeline,
-                    class_confidence_overrides=detection_config.get('class_confidence_overrides', {}),
-                    wildlife_only=detection_config.get('wildlife_only', True)
+                    class_confidence_overrides=camera_detection_config.get('class_confidence_overrides', {}),
+                    wildlife_only=camera_detection_config.get('wildlife_only', True)
                 )
 
                 self.inference_engines.append(inference_engine)

@@ -16,7 +16,7 @@ cameras:
     target_height: 1080  # Increased for better small object detection
     buffer_size: 1  # Keep at 1 for lowest latency
 
-  # Second camera
+  # Second camera (ground level - needs different thresholds)
   - id: "cam2"
     name: "Secondary View"
     ip: "10.0.2.47"
@@ -25,6 +25,19 @@ cameras:
     target_width: 1920
     target_height: 1080
     buffer_size: 1
+
+    # Per-camera detection overrides (optional - overrides global settings)
+    # Ground-level camera sees larger/closer objects, so higher thresholds reduce false positives
+    detection_overrides:
+      conf_threshold: 0.25  # Higher than global 0.15 (closer objects = higher confidence)
+      min_box_area: 100     # Higher than global 20 (filter small distant objects)
+
+      # Per-class overrides for this camera
+      class_confidence_overrides:
+        person: 0.80    # Even higher for ground-level (more false positives from objects)
+        bird: 0.60      # Higher than global 0.55
+        cat: 0.65       # Ground-level cats are easier to detect
+        dog: 0.65       # Ground-level dogs are easier to detect
 
 detection:
   # YOLOX Model configuration (Apache 2.0 license)
