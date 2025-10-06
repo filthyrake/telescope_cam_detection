@@ -357,6 +357,7 @@ class TelescopeDetectionSystem:
                     use_two_stage=camera_two_stage_pipeline is not None,
                     two_stage_pipeline=camera_two_stage_pipeline,
                     class_confidence_overrides=camera_detection_config.get('class_confidence_overrides', {}),
+                    class_size_constraints=camera_detection_config.get('class_size_constraints', {}),
                     wildlife_only=camera_detection_config.get('wildlife_only', True)
                 )
 
