@@ -11,6 +11,10 @@ class DetectionApp {
         this.img = new Image();
         this.videoStream = null;
 
+        // Multi-camera support
+        this.cameras = [];
+        this.currentCameraId = null;
+
         // State
         this.latestDetections = null;
         this.isConnected = false;
@@ -34,12 +38,75 @@ class DetectionApp {
         this.init();
     }
 
-    init() {
+    async init() {
         console.log('Initializing Detection App');
         this.setupCanvas();
         this.setupFullscreen();
+        await this.fetchCameras();
+        this.setupCameraSelector();
         this.connectWebSocket();
         this.startVideoStream();
+    }
+
+    async fetchCameras() {
+        try {
+            const response = await fetch('/cameras');
+            const data = await response.json();
+            this.cameras = data.cameras || [];
+            console.log('Available cameras:', this.cameras);
+
+            // Set default camera to first one
+            if (this.cameras.length > 0) {
+                this.currentCameraId = this.cameras[0].id;
+            }
+        } catch (e) {
+            console.error('Failed to fetch cameras:', e);
+            // Fallback to default camera
+            this.currentCameraId = 'cam1';
+        }
+    }
+
+    setupCameraSelector() {
+        const selector = document.getElementById('cameraSelect');
+
+        // Clear existing options
+        selector.innerHTML = '';
+
+        // Populate with available cameras
+        if (this.cameras.length === 0) {
+            selector.innerHTML = '<option value="">No cameras available</option>';
+            return;
+        }
+
+        this.cameras.forEach(camera => {
+            const option = document.createElement('option');
+            option.value = camera.id;
+            option.textContent = `${camera.name} (${camera.is_connected ? 'Connected' : 'Disconnected'})`;
+            selector.appendChild(option);
+        });
+
+        // Set initial selection
+        selector.value = this.currentCameraId;
+
+        // Handle camera change
+        selector.addEventListener('change', (e) => {
+            this.switchCamera(e.target.value);
+        });
+    }
+
+    switchCamera(cameraId) {
+        console.log('Switching to camera:', cameraId);
+        this.currentCameraId = cameraId;
+
+        // Update video stream
+        const videoUrl = `${window.location.protocol}//${window.location.host}/video/feed/${cameraId}`;
+        this.img.src = videoUrl;
+
+        // Update camera name display
+        const camera = this.cameras.find(c => c.id === cameraId);
+        if (camera) {
+            document.getElementById('cameraName').textContent = camera.name;
+        }
     }
 
     setupCanvas() {
@@ -162,6 +229,12 @@ class DetectionApp {
             console.log('Connection message:', data.message);
         } else if (data.type === 'detections') {
             this.latestDetections = data;
+
+            // Update camera name from detection if available
+            if (data.camera_name) {
+                document.getElementById('cameraName').textContent = data.camera_name;
+            }
+
             this.updateUI(data);
             this.updateFPS();
         } else if (data.type === 'heartbeat') {
@@ -170,8 +243,10 @@ class DetectionApp {
     }
 
     startVideoStream() {
-        // Load video stream from MJPEG endpoint
-        const videoUrl = `${window.location.protocol}//${window.location.host}/video/feed`;
+        // Load video stream from MJPEG endpoint for current camera
+        const videoUrl = this.currentCameraId
+            ? `${window.location.protocol}//${window.location.host}/video/feed/${this.currentCameraId}`
+            : `${window.location.protocol}//${window.location.host}/video/feed`;
 
         this.img.onload = () => {
             this.drawFrame();
@@ -179,6 +254,14 @@ class DetectionApp {
 
         // Start loading the video stream
         this.img.src = videoUrl;
+
+        // Update camera name display
+        if (this.currentCameraId) {
+            const camera = this.cameras.find(c => c.id === this.currentCameraId);
+            if (camera) {
+                document.getElementById('cameraName').textContent = camera.name;
+            }
+        }
 
         // Alternative: Use fetch API for frame-by-frame streaming
         // this.streamFrames();
