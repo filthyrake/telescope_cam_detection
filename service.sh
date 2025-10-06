@@ -57,10 +57,14 @@ install_service() {
         exit 1
     fi
 
+    # Escape special characters for sed
+    ESCAPED_USER=$(printf '%s\n' "$SERVICE_USER" | sed 's/[\/&]/\\&/g')
+    ESCAPED_PROJECT_DIR=$(printf '%s\n' "$PROJECT_DIR" | sed 's/[\/&]/\\&/g')
+
     # Generate service file from template
     print_info "Generating service file for user: $SERVICE_USER"
-    sed -e "s|{{USER}}|$SERVICE_USER|g" \
-        -e "s|{{PROJECT_DIR}}|$PROJECT_DIR|g" \
+    sed -e "s|{{USER}}|$ESCAPED_USER|g" \
+        -e "s|{{PROJECT_DIR}}|$ESCAPED_PROJECT_DIR|g" \
         "$PROJECT_DIR/$SERVICE_FILE.template" > "$PROJECT_DIR/$SERVICE_FILE"
     print_success "Service file generated"
 

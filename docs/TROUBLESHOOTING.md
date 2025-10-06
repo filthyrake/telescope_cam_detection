@@ -156,7 +156,7 @@ sudo ufw allow 8000
 # Common causes:
 # - Missing camera_credentials.yaml
 # - Wrong Python path in service file
-# - Permissions issue (try: sudo chown -R damen:damen /home/damen/telescope_cam_detection)
+# - Permissions issue (try: sudo chown -R $USER:$USER /path/to/telescope_cam_detection)
 ```
 
 ### Service Crashes Repeatedly
