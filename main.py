@@ -45,16 +45,16 @@ class TelescopeDetectionSystem:
         self.config_path = config_path
         self.config = None
 
-        # Components
-        self.stream_capture = None
-        self.inference_engine = None
-        self.detection_processor = None
+        # Components (now lists for multi-camera support)
+        self.stream_captures = []  # List of RTSPStreamCapture instances
+        self.inference_engines = []  # List of InferenceEngine instances
+        self.detection_processors = []  # List of DetectionProcessor instances
         self.web_server = None
 
-        # Queues for inter-component communication
-        self.frame_queue = None
-        self.inference_queue = None
-        self.detection_queue = None
+        # Queues for inter-component communication (per-camera)
+        self.frame_queues = []  # List of frame queues
+        self.inference_queues = []  # List of inference queues
+        self.detection_queue = None  # Single queue for all detections
 
         # Shutdown flag
         self.shutdown_requested = False
@@ -90,36 +90,81 @@ class TelescopeDetectionSystem:
             True if all components initialized successfully, False otherwise
         """
         try:
-            # Create queues
-            frame_queue_size = self.config.get('performance', {}).get('frame_queue_size', 2)
+            # Create shared detection queue
             detection_queue_size = self.config.get('performance', {}).get('detection_queue_size', 10)
-
-            self.frame_queue = Queue(maxsize=frame_queue_size)
-            self.inference_queue = Queue(maxsize=detection_queue_size)
             self.detection_queue = Queue(maxsize=detection_queue_size)
 
-            logger.info("Queues created")
+            logger.info("Shared detection queue created")
 
-            # Initialize RTSP stream capture
-            camera_config = self.config['camera']
-            rtsp_url = create_rtsp_url(
-                camera_ip=camera_config['ip'],
-                username=camera_config['username'],
-                password=camera_config['password'],
-                stream_type=camera_config.get('stream', 'main')
-            )
+            # Get cameras from config
+            cameras_config = self.config.get('cameras', [])
+            if not cameras_config:
+                logger.error("No cameras configured in config.yaml")
+                return False
 
-            self.stream_capture = RTSPStreamCapture(
-                rtsp_url=rtsp_url,
-                frame_queue=self.frame_queue,
-                target_width=camera_config.get('target_width', 1280),
-                target_height=camera_config.get('target_height', 720),
-                buffer_size=camera_config.get('buffer_size', 1)
-            )
+            # Filter to only enabled cameras
+            enabled_cameras = [cam for cam in cameras_config if cam.get('enabled', True)]
+            if not enabled_cameras:
+                logger.error("No enabled cameras found in configuration")
+                return False
 
-            logger.info("Stream capture initialized")
+            logger.info(f"Initializing {len(enabled_cameras)} camera(s)...")
 
-            # Initialize two-stage pipeline (if enabled)
+            # Initialize components for each camera
+            for camera_config in enabled_cameras:
+                camera_id = camera_config.get('id', 'default')
+                camera_name = camera_config.get('name', 'Default Camera')
+
+                logger.info(f"Setting up camera: {camera_name} (ID: {camera_id})")
+
+                # Create per-camera queues
+                frame_queue_size = self.config.get('performance', {}).get('frame_queue_size', 2)
+                frame_queue = Queue(maxsize=frame_queue_size)
+                inference_queue = Queue(maxsize=detection_queue_size)
+
+                self.frame_queues.append(frame_queue)
+                self.inference_queues.append(inference_queue)
+
+                # Initialize RTSP stream capture for this camera
+                rtsp_url = create_rtsp_url(
+                    camera_ip=camera_config['ip'],
+                    username=camera_config['username'],
+                    password=camera_config['password'],
+                    stream_type=camera_config.get('stream', 'main')
+                )
+
+                stream_capture = RTSPStreamCapture(
+                    rtsp_url=rtsp_url,
+                    frame_queue=frame_queue,
+                    target_width=camera_config.get('target_width', 1280),
+                    target_height=camera_config.get('target_height', 720),
+                    buffer_size=camera_config.get('buffer_size', 1),
+                    camera_id=camera_id,
+                    camera_name=camera_name
+                )
+
+                self.stream_captures.append(stream_capture)
+                logger.info(f"  [{camera_id}] Stream capture initialized")
+
+            # Initialize shared snapshot saver (if enabled)
+            snapshot_config = self.config.get('snapshots', {})
+            snapshot_saver = None
+
+            if snapshot_config.get('enabled', False):
+                snapshot_saver = SnapshotSaver(
+                    output_dir=snapshot_config.get('output_dir', 'clips'),
+                    save_mode=snapshot_config.get('save_mode', 'image'),
+                    trigger_classes=snapshot_config.get('trigger_classes'),
+                    min_confidence=snapshot_config.get('min_confidence', 0.6),
+                    cooldown_seconds=snapshot_config.get('cooldown_seconds', 30),
+                    clip_duration=snapshot_config.get('clip_duration', 10),
+                    pre_buffer_seconds=snapshot_config.get('pre_buffer_seconds', 5),
+                    fps=30,
+                    save_annotated=snapshot_config.get('save_annotated', True)
+                )
+                logger.info("Shared snapshot saver initialized")
+
+            # Initialize two-stage pipeline (shared across all cameras, if enabled)
             detection_config = self.config['detection']
             two_stage_pipeline = None
 
@@ -189,7 +234,7 @@ class TelescopeDetectionSystem:
 
                 logger.info("Two-stage pipeline initialized")
 
-            # Initialize YOLOX inference engine (Stage 1: Fast detection)
+            # Initialize YOLOX inference engine parameters
             model_config_dict = detection_config.get('model', {})
             input_size = detection_config.get('input_size', [640, 640])
             input_size_tuple = tuple(input_size)
@@ -204,73 +249,56 @@ class TelescopeDetectionSystem:
             else:
                 logger.info(f"  Input size: {input_size_tuple}")
 
-            self.inference_engine = InferenceEngine(
-                model_name=model_config_dict.get('name', 'yolox-s'),
-                model_path=model_config_dict.get('weights', 'models/yolox/yolox_s.pth'),
-                device=detection_config['device'],
-                conf_threshold=detection_config.get('conf_threshold', 0.25),
-                nms_threshold=detection_config.get('nms_threshold', 0.45),
-                input_size=input_size_tuple,
-                input_queue=self.frame_queue,
-                output_queue=self.inference_queue,
-                min_box_area=detection_config.get('min_box_area', 0),
-                max_det=detection_config.get('max_detections', 300),
-                use_two_stage=two_stage_pipeline is not None,
-                two_stage_pipeline=two_stage_pipeline,
-                class_confidence_overrides=detection_config.get('class_confidence_overrides', {}),
-                wildlife_only=detection_config.get('wildlife_only', True)
-            )
+            # Create inference engines and detection processors for each camera
+            for i, camera_config in enumerate(enabled_cameras):
+                camera_id = camera_config.get('id', 'default')
+                stream_capture = self.stream_captures[i]
+                frame_queue = self.frame_queues[i]
+                inference_queue = self.inference_queues[i]
 
-            logger.info("YOLOX inference engine initialized")
-
-            # Initialize snapshot saver (if enabled)
-            snapshot_config = self.config.get('snapshots', {})
-            snapshot_saver = None
-
-            if snapshot_config.get('enabled', False):
-                snapshot_saver = SnapshotSaver(
-                    output_dir=snapshot_config.get('output_dir', 'clips'),
-                    save_mode=snapshot_config.get('save_mode', 'image'),
-                    trigger_classes=snapshot_config.get('trigger_classes'),
-                    min_confidence=snapshot_config.get('min_confidence', 0.6),
-                    cooldown_seconds=snapshot_config.get('cooldown_seconds', 30),
-                    clip_duration=snapshot_config.get('clip_duration', 10),
-                    pre_buffer_seconds=snapshot_config.get('pre_buffer_seconds', 5),
-                    fps=30,
-                    save_annotated=snapshot_config.get('save_annotated', True)
+                # Initialize YOLOX inference engine for this camera
+                inference_engine = InferenceEngine(
+                    model_name=model_config_dict.get('name', 'yolox-s'),
+                    model_path=model_config_dict.get('weights', 'models/yolox/yolox_s.pth'),
+                    device=detection_config['device'],
+                    conf_threshold=detection_config.get('conf_threshold', 0.25),
+                    nms_threshold=detection_config.get('nms_threshold', 0.45),
+                    input_size=input_size_tuple,
+                    input_queue=frame_queue,
+                    output_queue=inference_queue,
+                    min_box_area=detection_config.get('min_box_area', 0),
+                    max_det=detection_config.get('max_detections', 300),
+                    use_two_stage=two_stage_pipeline is not None,
+                    two_stage_pipeline=two_stage_pipeline,
+                    class_confidence_overrides=detection_config.get('class_confidence_overrides', {}),
+                    wildlife_only=detection_config.get('wildlife_only', True)
                 )
-                logger.info("Snapshot saver initialized")
 
-            # Initialize detection processor
-            history_size = self.config.get('performance', {}).get('history_size', 30)
+                self.inference_engines.append(inference_engine)
+                logger.info(f"  [{camera_id}] YOLOX inference engine initialized")
 
-            self.detection_processor = DetectionProcessor(
-                input_queue=self.inference_queue,
-                output_queue=self.detection_queue,
-                detection_history_size=history_size,
-                snapshot_saver=snapshot_saver,
-                frame_source=self.stream_capture
-            )
+                # Initialize detection processor for this camera
+                history_size = self.config.get('performance', {}).get('history_size', 30)
 
-            logger.info("Detection processor initialized")
+                detection_processor = DetectionProcessor(
+                    input_queue=inference_queue,
+                    output_queue=self.detection_queue,  # All cameras write to shared detection queue
+                    detection_history_size=history_size,
+                    snapshot_saver=snapshot_saver,  # Shared snapshot saver
+                    frame_source=stream_capture
+                )
 
-            # Initialize web server
+                self.detection_processors.append(detection_processor)
+                logger.info(f"  [{camera_id}] Detection processor initialized")
+
+            logger.info(f"All {len(enabled_cameras)} camera pipeline(s) initialized successfully")
+
+            # Initialize web server (passes multiple frame sources)
             web_config = self.config['web']
-
-            # Create a wrapper to provide latest frame to web server
-            class FrameSource:
-                def __init__(self, capture):
-                    self.capture = capture
-                    self.latest_frame = None
-
-                def update(self):
-                    # This would be called periodically to update latest frame
-                    # For now, web server will get frames from video feed endpoint
-                    pass
 
             self.web_server = WebServer(
                 detection_queue=self.detection_queue,
-                frame_source=self.stream_capture,  # Pass stream capture for video
+                frame_sources=self.stream_captures,  # Pass list of stream captures
                 host=web_config.get('host', '0.0.0.0'),
                 port=web_config.get('port', 8000)
             )
@@ -293,35 +321,51 @@ class TelescopeDetectionSystem:
         try:
             logger.info("Starting Telescope Detection System...")
 
-            # Start stream capture
-            if not self.stream_capture.start():
-                logger.error("Failed to start stream capture")
-                return False
+            # Start all stream captures
+            for i, stream_capture in enumerate(self.stream_captures):
+                if not stream_capture.start():
+                    logger.error(f"Failed to start stream capture {i}")
+                    # Stop previously started captures
+                    for j in range(i):
+                        self.stream_captures[j].stop()
+                    return False
 
-            logger.info("Stream capture started")
+            logger.info(f"All {len(self.stream_captures)} stream capture(s) started")
 
-            # Start inference engine
-            if not self.inference_engine.start():
-                logger.error("Failed to start inference engine")
-                self.stream_capture.stop()
-                return False
+            # Start all inference engines
+            for i, inference_engine in enumerate(self.inference_engines):
+                if not inference_engine.start():
+                    logger.error(f"Failed to start inference engine {i}")
+                    # Stop previously started components
+                    for j in range(i):
+                        self.inference_engines[j].stop()
+                    for stream_capture in self.stream_captures:
+                        stream_capture.stop()
+                    return False
 
-            logger.info("Inference engine started")
+            logger.info(f"All {len(self.inference_engines)} inference engine(s) started")
 
-            # Start detection processor
-            if not self.detection_processor.start():
-                logger.error("Failed to start detection processor")
-                self.stream_capture.stop()
-                self.inference_engine.stop()
-                return False
+            # Start all detection processors
+            for i, detection_processor in enumerate(self.detection_processors):
+                if not detection_processor.start():
+                    logger.error(f"Failed to start detection processor {i}")
+                    # Stop previously started components
+                    for j in range(i):
+                        self.detection_processors[j].stop()
+                    for inference_engine in self.inference_engines:
+                        inference_engine.stop()
+                    for stream_capture in self.stream_captures:
+                        stream_capture.stop()
+                    return False
 
-            logger.info("Detection processor started")
+            logger.info(f"All {len(self.detection_processors)} detection processor(s) started")
 
             # Start web server (blocking)
             logger.info(f"Starting web server on http://{self.config['web']['host']}:{self.config['web']['port']}")
             logger.info("=" * 80)
             logger.info("System is running!")
             logger.info(f"Open browser to: http://localhost:{self.config['web']['port']}")
+            logger.info(f"Monitoring {len(self.stream_captures)} camera(s)")
             logger.info("Press Ctrl+C to stop")
             logger.info("=" * 80)
 
@@ -339,14 +383,20 @@ class TelescopeDetectionSystem:
         """Stop all system components gracefully."""
         logger.info("Stopping Telescope Detection System...")
 
-        if self.detection_processor:
-            self.detection_processor.stop()
+        # Stop all detection processors
+        for detection_processor in self.detection_processors:
+            if detection_processor:
+                detection_processor.stop()
 
-        if self.inference_engine:
-            self.inference_engine.stop()
+        # Stop all inference engines
+        for inference_engine in self.inference_engines:
+            if inference_engine:
+                inference_engine.stop()
 
-        if self.stream_capture:
-            self.stream_capture.stop()
+        # Stop all stream captures
+        for stream_capture in self.stream_captures:
+            if stream_capture:
+                stream_capture.stop()
 
         logger.info("System stopped")
 
@@ -355,25 +405,30 @@ class TelescopeDetectionSystem:
         logger.info("=" * 80)
         logger.info("System Statistics:")
 
-        if self.stream_capture:
-            stats = self.stream_capture.get_stats()
-            logger.info(f"  Stream Capture:")
-            logger.info(f"    - Connected: {stats['is_connected']}")
-            logger.info(f"    - FPS: {stats['fps']:.1f}")
-            logger.info(f"    - Dropped frames: {stats['dropped_frames']}")
+        # Print stats for each camera
+        for i, stream_capture in enumerate(self.stream_captures):
+            if stream_capture:
+                stats = stream_capture.get_stats()
+                logger.info(f"  Camera {i} ({stream_capture.camera_name}):")
+                logger.info(f"    Stream Capture:")
+                logger.info(f"      - Connected: {stats['is_connected']}")
+                logger.info(f"      - FPS: {stats['fps']:.1f}")
+                logger.info(f"      - Dropped frames: {stats['dropped_frames']}")
 
-        if self.inference_engine:
-            stats = self.inference_engine.get_stats()
-            logger.info(f"  Inference Engine:")
-            logger.info(f"    - Device: {stats['device']}")
-            logger.info(f"    - FPS: {stats['fps']:.1f}")
-            logger.info(f"    - Avg inference time: {stats['avg_inference_time_ms']:.1f}ms")
+        for i, inference_engine in enumerate(self.inference_engines):
+            if inference_engine:
+                stats = inference_engine.get_stats()
+                logger.info(f"    Inference Engine:")
+                logger.info(f"      - Device: {stats['device']}")
+                logger.info(f"      - FPS: {stats['fps']:.1f}")
+                logger.info(f"      - Avg inference time: {stats['avg_inference_time_ms']:.1f}ms")
 
-        if self.detection_processor:
-            stats = self.detection_processor.get_stats()
-            logger.info(f"  Detection Processor:")
-            logger.info(f"    - Processed: {stats['processed_count']}")
-            logger.info(f"    - History size: {stats['history_size']}")
+        for i, detection_processor in enumerate(self.detection_processors):
+            if detection_processor:
+                stats = detection_processor.get_stats()
+                logger.info(f"    Detection Processor:")
+                logger.info(f"      - Processed: {stats['processed_count']}")
+                logger.info(f"      - History size: {stats['history_size']}")
 
         logger.info("=" * 80)
 
