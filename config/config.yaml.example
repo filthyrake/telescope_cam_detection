@@ -1,0 +1,453 @@
+# Telescope Detection System Configuration
+#
+# ============================================================================
+# SETUP INSTRUCTIONS:
+# ============================================================================
+# 1. Copy this file: cp config/config.yaml.example config/config.yaml
+# 2. Update camera IPs below (lines 19, 32) with your actual camera IP addresses
+# 3. Create camera_credentials.yaml from camera_credentials.example.yaml
+# 4. Never commit config/config.yaml - it's gitignored for security
+# ============================================================================
+
+# Multi-camera configuration
+# Each camera can have its own settings
+# NOTE: Camera credentials (username/password) are stored in camera_credentials.yaml
+# This file is gitignored for security. See camera_credentials.example.yaml for format.
+cameras:
+  - id: "cam1"
+    name: "Main Backyard View"
+    ip: "192.168.1.100"  # UPDATE: Replace with your camera IP
+    stream: "main"  # Options: "main" (2K) or "sub" (lower resolution)
+    enabled: true
+    protocol: "rtsp-tcp"  # Options: rtsp, rtsp-tcp, onvif, h265 (using TCP for reliability)
+
+    # Frame processing
+    target_width: 1920  # Increased for better small object detection
+    target_height: 1080  # Increased for better small object detection
+    buffer_size: 1  # Keep at 1 for lowest latency
+
+  # Second camera (ground level - Reolink E1 Pro with better resolution)
+  - id: "cam2"
+    name: "Secondary View"
+    ip: "192.168.1.101"  # UPDATE: Replace with your second camera IP
+    stream: "main"
+    enabled: true
+    protocol: "rtsp-tcp"  # Options: rtsp, rtsp-tcp, onvif, h265 (using TCP to fix screen tearing)
+    target_width: 2560  # E1 Pro native resolution (better quality for Stage 2)
+    target_height: 1440
+    buffer_size: 1
+
+    # Per-camera detection overrides (optional - overrides global settings)
+    # Ground-level camera sees larger/closer objects, so higher thresholds reduce false positives
+    detection_overrides:
+      conf_threshold: 0.25  # Higher than global 0.15 (closer objects = higher confidence)
+      min_box_area: 100     # Higher than global 20 (filter small distant objects)
+
+      # Per-class overrides for this camera
+      class_confidence_overrides:
+        person: 0.80    # Even higher for ground-level (more false positives from objects)
+        bird: 0.60      # Higher than global 0.55
+        cat: 0.65       # Ground-level cats are easier to detect
+        dog: 0.65       # Ground-level dogs are easier to detect
+
+    # Stage 2 preprocessing overrides (optional - improves species classification)
+    # Higher resolution crops with padding give iNaturalist better context
+    stage2_preprocessing:
+      crop_padding_percent: 40  # Add 40% padding around detection bbox (vs global 20%)
+      min_crop_size: 100        # Skip Stage 2 if crop smaller than 100x100 pixels
+
+detection:
+  # YOLOX Model configuration (Apache 2.0 license)
+  # 47x faster than GroundingDINO (11-21ms vs 560ms)
+  model:
+    name: "yolox-s"  # YOLOX-S variant (good speed/accuracy balance)
+    weights: "models/yolox/yolox_s.pth"
+  device: "cuda:0"
+
+  # YOLOX input size (larger = better for small objects, but slower)
+  # 640x640: ~11-21ms (fast, standard)
+  # 1280x1280: ~50-100ms (slower, better for small/distant wildlife)
+  # 1920x1920: ~150-250ms (slow, maximum detail for tiny IR wildlife)
+  input_size: [1920, 1920]  # [height, width]
+
+  # YOLOX detection thresholds
+  conf_threshold: 0.15  # Confidence threshold (low for small wildlife, but not too aggressive)
+  nms_threshold: 0.45   # NMS IoU threshold
+  wildlife_only: true   # Filter to wildlife-relevant classes only
+
+  # Legacy prompts (not used by YOLOX, kept for reference)
+  # YOLOX detects 80 COCO classes including: person, bird, cat, dog, horse, sheep, cow, bear, etc.
+  text_prompts:
+    # Humans and pets
+    - "person"
+    - "dog"
+    - "cat"
+
+    # Desert mammals (predators)
+    - "coyote"
+    - "bobcat"
+    - "fox"
+    - "mountain lion"
+    - "puma"
+    - "skunk"
+    - "raccoon"
+
+    # Desert mammals (prey/herbivores)
+    - "rabbit"
+    - "cottontail"
+    - "jackrabbit"
+    - "ground squirrel"
+    - "pack rat"
+    - "kangaroo rat"
+    - "mouse"
+    - "deer"
+    - "mule deer"
+    - "javelina"
+    - "peccary"
+
+    # Birds (raptors)
+    - "hawk"
+    - "red-tailed hawk"
+    - "owl"
+    - "great horned owl"
+    - "barn owl"
+    - "falcon"
+    - "kestrel"
+    - "vulture"
+    - "turkey vulture"
+    - "eagle"
+
+    # Birds (ground dwellers)
+    - "roadrunner"
+    - "quail"
+    - "gambel's quail"
+
+    # Birds (common)
+    - "raven"
+    - "crow"
+    - "dove"
+    - "mourning dove"
+    - "hummingbird"
+    - "sparrow"
+    - "finch"
+    - "jay"
+    - "woodpecker"
+    - "thrush"
+    - "mockingbird"
+    - "cardinal"
+    - "oriole"
+
+    # Reptiles (lizards)
+    - "lizard"
+    - "desert lizard"
+    - "small lizard"
+    - "iguana"
+    - "desert iguana"
+    - "chuckwalla"
+    - "collared lizard"
+    - "horned lizard"
+    - "gecko"
+    - "zebra-tailed lizard"
+
+    # Reptiles (snakes and tortoises)
+    - "snake"
+    - "rattlesnake"
+    - "gopher snake"
+    - "king snake"
+    - "tortoise"
+    - "desert tortoise"
+
+    # Amphibians
+    - "toad"
+    - "frog"
+
+    # Arthropods (if visible at distance)
+    - "scorpion"
+    - "tarantula"
+
+    # General categories (fallback)
+    - "reptile"
+    - "bird"
+    - "mammal"
+    - "small animal"
+
+  # Two-stage detection pipeline (YOLOX + iNaturalist)
+  use_two_stage: true  # Enable Stage 2 species classification
+  enable_species_classification: true  # Enable fine-grained species ID
+
+  # Per-class confidence overrides (higher threshold = fewer false positives)
+  class_confidence_overrides:
+    person: 0.75  # Much higher to reduce false "person" detections
+    bird: 0.55    # High threshold - telescope covers falsely detected as birds
+    bear: 0.90    # Very high - bears extremely rare in Mojave, rocks often misdetected
+
+  # Size filtering (better than just confidence for distant wildlife!)
+  # Note: Inference runs at 1920x1920 (3,686,400 total pixels)
+  # Typical sizes at this resolution: tiny=50-200px², small bird/rabbit=200-1000px², coyote=1000-5000px²
+  min_box_area: 20  # Minimum bounding box area in pixels² (~4.5x4.5 pixels) - catches very small/distant animals
+  max_detections: 300  # Maximum number of detections per frame
+
+# Stage 2 Species Classification (fine-grained identification)
+species_classification:
+  enabled: true
+  confidence_threshold: 0.3  # Minimum confidence for species ID
+
+  # Stage 2 Preprocessing (global defaults)
+  # Improves crop quality for better species identification
+  preprocessing:
+    crop_padding_percent: 20  # Add 20% padding around detection bbox for context
+    min_crop_size: 64         # Skip Stage 2 if crop smaller than 64x64 pixels
+
+  # Universal iNaturalist model (covers 10,000 species)
+  inat_classifier:
+    model_name: "timm/eva02_large_patch14_clip_336.merged2b_ft_inat21"
+    taxonomy_file: "models/inat2021_taxonomy.json"  # Full taxonomy with hierarchical data
+    input_size: 336  # EVA02 uses 336x336 input
+    confidence_threshold: 0.3
+    use_hierarchical: true  # Enable taxonomic fallback (genus, family, order, class)
+    # Hierarchical thresholds:
+    #   >= 0.5: Species (e.g., "Desert Cottontail")
+    #   >= 0.4: Genus (e.g., "Sylvilagus")
+    #   >= 0.3: Family (e.g., "Leporidae")
+    #   >= 0.2: Order (e.g., "Lagomorpha")
+    #   >= 0.1: Class (e.g., "Mammalia", "Aves", "Reptilia")
+
+  # Geographic filtering (Mojave Desert species whitelist)
+  geographic_filter:
+    enabled: true  # Enable geographic filtering to remove impossible detections
+    # Mojave Desert wildlife species (common names as they appear in iNaturalist)
+    # This whitelist prevents false positives like penguins, kangaroos, polar bears, etc.
+    allowed_species:
+      # === MAMMALS ===
+      - "Coyote"
+      - "Desert Cottontail"
+      - "Black-tailed Jackrabbit"
+      - "Antelope Jackrabbit"
+      - "White-tailed Antelope Squirrel"
+      - "Harris's Antelope Squirrel"
+      - "Round-tailed Ground Squirrel"
+      - "Rock Squirrel"
+      - "Bobcat"
+      - "Mountain Lion"
+      - "Cougar"
+      - "Gray Fox"
+      - "Kit Fox"
+      - "Mule Deer"
+      - "Collared Peccary"
+      - "Javelina"
+      - "Desert Bighorn Sheep"
+      - "Ringtail"
+      - "American Badger"
+      - "Striped Skunk"
+      - "Western Spotted Skunk"
+      - "Desert Woodrat"
+      - "Merriam's Kangaroo Rat"
+      - "Desert Kangaroo Rat"
+      - "Desert Pocket Mouse"
+      - "Cactus Mouse"
+      - "Southern Grasshopper Mouse"
+      - "Desert Shrew"
+      - "California Leaf-nosed Bat"
+      - "Mexican Free-tailed Bat"
+      - "Pallid Bat"
+
+      # === BIRDS ===
+      - "Gambel's Quail"
+      - "Greater Roadrunner"
+      - "Cactus Wren"
+      - "Curve-billed Thrasher"
+      - "Le Conte's Thrasher"
+      - "Bendire's Thrasher"
+      - "Red-tailed Hawk"
+      - "Harris's Hawk"
+      - "Cooper's Hawk"
+      - "Sharp-shinned Hawk"
+      - "Golden Eagle"
+      - "Great Horned Owl"
+      - "Barn Owl"
+      - "Burrowing Owl"
+      - "Elf Owl"
+      - "Western Screech-Owl"
+      - "Turkey Vulture"
+      - "Black Vulture"
+      - "Common Raven"
+      - "Chihuahuan Raven"
+      - "American Crow"
+      - "Mourning Dove"
+      - "White-winged Dove"
+      - "Inca Dove"
+      - "Common Ground Dove"
+      - "Gila Woodpecker"
+      - "Ladder-backed Woodpecker"
+      - "Gilded Flicker"
+      - "Northern Flicker"
+      - "Verdin"
+      - "Black-throated Sparrow"
+      - "White-crowned Sparrow"
+      - "House Finch"
+      - "Lesser Goldfinch"
+      - "Phainopepla"
+      - "Loggerhead Shrike"
+      - "Northern Mockingbird"
+      - "Costa's Hummingbird"
+      - "Anna's Hummingbird"
+      - "Black-chinned Hummingbird"
+      - "Rufous Hummingbird"
+      - "Rock Wren"
+      - "Canyon Wren"
+      - "Black-tailed Gnatcatcher"
+      - "Blue-gray Gnatcatcher"
+      - "Say's Phoebe"
+      - "Ash-throated Flycatcher"
+      - "Vermilion Flycatcher"
+      - "Horned Lark"
+
+      # === REPTILES ===
+      - "Desert Iguana"
+      - "Common Chuckwalla"
+      - "Chuckwalla"
+      - "Desert Spiny Lizard"
+      - "Clark's Spiny Lizard"
+      - "Zebra-tailed Lizard"
+      - "Greater Earless Lizard"
+      - "Desert Horned Lizard"
+      - "Flat-tailed Horned Lizard"
+      - "Long-nosed Leopard Lizard"
+      - "Collared Lizard"
+      - "Desert Collared Lizard"
+      - "Common Side-blotched Lizard"
+      - "Desert Night Lizard"
+      - "Western Banded Gecko"
+      - "Desert Banded Gecko"
+      - "Mediterranean Gecko"
+      - "Western Diamondback Rattlesnake"
+      - "Mojave Rattlesnake"
+      - "Sidewinder"
+      - "Speckled Rattlesnake"
+      - "Gopher Snake"
+      - "Gophersnake"
+      - "Common Kingsnake"
+      - "California Kingsnake"
+      - "Long-nosed Snake"
+      - "Coachwhip"
+      - "Red Coachwhip"
+      - "Glossy Snake"
+      - "Western Patch-nosed Snake"
+      - "Desert Tortoise"
+      - "Mohave Desert Tortoise"
+
+      # === AMPHIBIANS ===
+      - "Couch's Spadefoot"
+      - "Great Basin Spadefoot"
+      - "Red-spotted Toad"
+      - "Sonoran Desert Toad"
+      - "Colorado River Toad"
+
+      # === ARTHROPODS (large, visible) ===
+      - "Desert Hairy Scorpion"
+      - "Arizona Bark Scorpion"
+      - "Desert Blonde Tarantula"
+      - "Tarantula"
+
+      # === DOMESTIC/INTRODUCED ===
+      - "Domestic Dog"
+      - "Domestic Cat"
+      - "Human"
+      - "Person"
+      # Note: Excluded "Horse", "Cattle", "Cow" - extremely unlikely in residential backyard
+
+      # === TAXONOMIC GROUPS (fallback categories) ===
+      - "Mammalia"
+      - "Aves"
+      - "Reptilia"
+      - "Amphibia"
+      - "Squamata"  # Lizards and snakes
+      - "Rodentia"
+      - "Carnivora"
+      - "Artiodactyla"  # Deer, javelina
+      - "Passeriformes"  # Perching birds
+      - "Falconiformes"  # Raptors
+      - "Columbiformes"  # Doves
+      - "Galliformes"  # Quail
+      - "Strigiformes"  # Owls
+
+  # Image enhancement (pre-process crops before classification)
+  # Improves accuracy on IR/night vision, small/distant animals
+  enhancement:
+    enabled: true
+    method: "realesrgan"  # Options: "none", "clahe", "realesrgan"
+
+    # Real-ESRGAN settings (4x super-resolution upscaling)
+    # Speed: ~500ms-1s per crop on A30 GPU
+    # Benefits: Makes small/distant wildlife visible for classification
+    realesrgan:
+      model_path: "models/enhancement/RealESRGAN_x4plus.pth"
+      scale: 4  # Upscaling factor (2, 3, or 4)
+      tile: 512  # Process in tiles (0 = no tiling, larger = faster but more VRAM)
+      tile_pad: 10  # Padding for tiles to avoid edge artifacts
+      half: false  # Use FP16 for 2x speedup (may reduce quality slightly)
+      # Note: device is inherited from detection.device (main GPU/CPU setting)
+
+    # CLAHE settings (contrast enhancement)
+    # Fast (~5ms), improves low-contrast night vision images
+    clahe:
+      clip_limit: 2.0  # Higher = more contrast (1.0-4.0 typical)
+      tile_grid_size: [8, 8]  # Tile grid for adaptive histogram equalization
+
+    # Bilateral filter settings (denoising while preserving edges)
+    # Fast (~10ms), reduces noise in IR images
+    bilateral:
+      d: 9  # Filter diameter (larger = stronger but slower)
+      sigma_color: 75  # Color space sigma (higher = more colors considered similar)
+      sigma_space: 75  # Coordinate space sigma (higher = larger neighborhood)
+
+web:
+  host: "0.0.0.0"
+  port: 8000
+
+performance:
+  # Queue sizes
+  frame_queue_size: 2
+  detection_queue_size: 10
+
+  # Detection history
+  history_size: 30
+
+# Future configuration for Phase 3
+detection_zones: []
+  # Example:
+  # - name: "telescope_danger_zone"
+  #   type: "polygon"
+  #   points: [[100,200], [300,200], [300,400], [100,400]]
+  #   alert_on_entry: ["person"]
+
+collision_detection:
+  enabled: false
+  danger_threshold: 50  # pixels
+
+# Snapshot/Clip Saving
+snapshots:
+  enabled: true  # Enable snapshot saving
+  save_mode: "image"  # "image" for single frames, "clip" for videos
+  output_dir: "clips"  # Directory to save snapshots
+
+  # Trigger settings
+  trigger_classes:  # Classes that trigger saves (empty = all detections)
+    - "person"
+    - "cat"      # might catch: iguanas, large lizards
+    - "dog"      # might catch: coyotes
+    - "bird"     # will catch: roadrunner, quail, all birds
+    # Wildlife-adjacent that might be relevant:
+    - "bear"
+    - "horse"
+    - "sheep"
+    - "cow"
+    # Note: bananas, chairs, potted plants, etc. will still DISPLAY but won't save snapshots!
+  min_confidence: 0.30  # Lower for distant/small wildlife from high camera mount
+  cooldown_seconds: 45  # Seconds between saves for same class
+  save_annotated: true  # Save with bounding boxes drawn
+
+  # Video clip settings (only used if save_mode="clip")
+  clip_duration: 10  # Total clip duration in seconds
+  pre_buffer_seconds: 5  # Seconds of video before detection
+  fps: 30  # Frames per second for video clips

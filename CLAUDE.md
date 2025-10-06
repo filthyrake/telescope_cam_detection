@@ -13,7 +13,7 @@ Real-time object detection system for **telescope collision prevention** and **w
 
 **Current Status**:
 - Wildlife detection: **ACTIVE** (using YOLOX-S at 11-21ms inference)
-- Multi-camera: **ACTIVE** (2 cameras: cam1 @ 10.0.8.18, cam2 @ 10.0.2.47)
+- Multi-camera: **ACTIVE** (2 cameras: cam1 + cam2)
 - Species classification: **FRAMEWORK READY** (iNaturalist Stage 2, 10,000 species)
 - Telescope detection: **PLANNED** (custom model requires annotated dataset)
 - Collision detection logic: **FRAMEWORK READY** (config placeholders exist)

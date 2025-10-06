@@ -66,7 +66,7 @@ The system supports multiple cameras with independent configurations:
 cameras:
   - id: "cam1"
     name: "Main Backyard View"
-    ip: "10.0.8.18"
+    ip: "192.168.1.100"
     stream: "main"
     enabled: true
     protocol: "rtsp-tcp"
@@ -76,7 +76,7 @@ cameras:
 
   - id: "cam2"
     name: "Ground Level View"
-    ip: "10.0.2.47"
+    ip: "192.168.1.101"
     stream: "main"
     enabled: true
     protocol: "rtsp-tcp"
@@ -573,7 +573,7 @@ detection:
 ```yaml
 cameras:
   - id: "cam1"
-    ip: "10.0.8.18"
+    ip: "192.168.1.100"
     enabled: true
 
 detection:
@@ -592,7 +592,7 @@ web:
 cameras:
   - id: "cam1"
     name: "Main View"
-    ip: "10.0.8.18"
+    ip: "192.168.1.100"
     protocol: "rtsp-tcp"
     enabled: true
     target_width: 1920
@@ -600,7 +600,7 @@ cameras:
 
   - id: "cam2"
     name: "Ground Level"
-    ip: "10.0.2.47"
+    ip: "192.168.1.101"
     protocol: "rtsp-tcp"
     enabled: true
     target_width: 2560

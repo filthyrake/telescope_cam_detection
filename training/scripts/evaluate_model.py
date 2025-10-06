@@ -68,9 +68,9 @@ def evaluate_on_images(model_path: str, images_dir: str, conf_threshold: float =
 
 def evaluate_live(
     model_path: str,
-    camera_ip: str = "10.0.8.18",
-    username: str = "admin",
-    password: str = "5326jbbD",
+    camera_ip: str,
+    username: str,
+    password: str,
     conf_threshold: float = 0.25
 ):
     """
@@ -149,11 +149,11 @@ if __name__ == "__main__":
                        help="Test images directory (for images mode)")
     parser.add_argument("--conf", type=float, default=0.25,
                        help="Confidence threshold")
-    parser.add_argument("--camera-ip", default="10.0.8.18",
+    parser.add_argument("--camera-ip", default="192.168.1.100",
                        help="Camera IP (for live mode)")
     parser.add_argument("--username", default="admin",
                        help="Camera username (for live mode)")
-    parser.add_argument("--password", default="5326jbbD",
+    parser.add_argument("--password", required=True,
                        help="Camera password (for live mode)")
 
     args = parser.parse_args()

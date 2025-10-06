@@ -170,7 +170,7 @@ The Telescope Detection System is a real-time object detection and species class
 **Configuration**:
 ```yaml
 camera:
-  ip: "10.0.8.18"
+  ip: "192.168.1.100"
   username: "admin"
   password: "..."
   stream: "main"
@@ -623,7 +623,7 @@ snapshots:
 ```yaml
 camera:
   # Camera connection
-  ip: "10.0.8.18"
+  ip: "192.168.1.100"
   username: "admin"
   password: "..."
   stream: "main"  # "main" or "sub"

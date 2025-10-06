@@ -79,3 +79,6 @@ camera_credentials.yaml
 credentials.yaml
 .env
 *.credentials.yaml
+
+# Configuration with private IPs (use config.yaml.example to create)
+config/config.yaml

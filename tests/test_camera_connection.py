@@ -99,10 +99,10 @@ def test_camera_connection(camera_ip: str, username: str, password: str, stream_
 
 
 if __name__ == "__main__":
-    # Camera configuration
-    CAMERA_IP = "10.0.8.18"
+    # Camera configuration - UPDATE WITH YOUR CAMERA INFO
+    CAMERA_IP = "192.168.1.100"  # Replace with your camera IP
     USERNAME = "admin"
-    PASSWORD = "5326jbbD"
+    PASSWORD = "your_password_here"  # Update with your camera password
 
     # Test main stream
     logger.info("Testing MAIN stream (high quality)...")
