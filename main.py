@@ -211,7 +211,7 @@ class TelescopeDetectionSystem:
                 logger.info("Shared snapshot saver initialized")
 
             # Get detection config for pipeline setup
-            detection_config = self.config['detection']
+            detection_config = self.config.get('detection', {})
             use_two_stage = detection_config.get('use_two_stage', False)
 
             if use_two_stage:
@@ -357,6 +357,7 @@ class TelescopeDetectionSystem:
                     use_two_stage=camera_two_stage_pipeline is not None,
                     two_stage_pipeline=camera_two_stage_pipeline,
                     class_confidence_overrides=camera_detection_config.get('class_confidence_overrides', {}),
+                    class_size_constraints=camera_detection_config.get('class_size_constraints', {}),
                     wildlife_only=camera_detection_config.get('wildlife_only', True)
                 )
 
@@ -380,13 +381,13 @@ class TelescopeDetectionSystem:
             logger.info(f"All {len(enabled_cameras)} camera pipeline(s) initialized successfully")
 
             # Initialize web server (passes multiple frame sources)
-            web_config = self.config['web']
+            self.web_config = self.config.get('web', {})
 
             self.web_server = WebServer(
                 detection_queue=self.detection_queue,
                 frame_sources=self.stream_captures,  # Pass list of stream captures
-                host=web_config.get('host', '0.0.0.0'),
-                port=web_config.get('port', 8000)
+                host=self.web_config.get('host', '0.0.0.0'),
+                port=self.web_config.get('port', 8000)
             )
 
             logger.info("Web server initialized")
@@ -447,10 +448,12 @@ class TelescopeDetectionSystem:
             logger.info(f"All {len(self.detection_processors)} detection processor(s) started")
 
             # Start web server (blocking)
-            logger.info(f"Starting web server on http://{self.config['web']['host']}:{self.config['web']['port']}")
+            host = self.web_config.get('host', '0.0.0.0')
+            port = self.web_config.get('port', 8000)
+            logger.info(f"Starting web server on http://{host}:{port}")
             logger.info("=" * 80)
             logger.info("System is running!")
-            logger.info(f"Open browser to: http://localhost:{self.config['web']['port']}")
+            logger.info(f"Open browser to: http://localhost:{port}")
             logger.info(f"Monitoring {len(self.stream_captures)} camera(s)")
             logger.info("Press Ctrl+C to stop")
             logger.info("=" * 80)
