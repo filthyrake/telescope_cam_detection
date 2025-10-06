@@ -37,6 +37,7 @@ class DetectionApp {
     init() {
         console.log('Initializing Detection App');
         this.setupCanvas();
+        this.setupFullscreen();
         this.connectWebSocket();
         this.startVideoStream();
     }
@@ -45,6 +46,71 @@ class DetectionApp {
         // Set canvas size
         this.canvas.width = 1280;
         this.canvas.height = 720;
+    }
+
+    setupFullscreen() {
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const videoContainer = document.getElementById('videoContainer');
+
+        // Store original canvas size
+        this.originalCanvasWidth = this.canvas.width;
+        this.originalCanvasHeight = this.canvas.height;
+
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                // Enter fullscreen
+                videoContainer.requestFullscreen().catch(err => {
+                    console.error('Error attempting to enable fullscreen:', err);
+                });
+            } else {
+                // Exit fullscreen
+                document.exitFullscreen();
+            }
+        });
+
+        // Update button text and canvas size when fullscreen state changes
+        document.addEventListener('fullscreenchange', () => {
+            if (document.fullscreenElement) {
+                fullscreenBtn.textContent = '⛶ Exit Fullscreen';
+                this.resizeCanvasForFullscreen();
+            } else {
+                fullscreenBtn.textContent = '⛶ Fullscreen';
+                this.restoreCanvasSize();
+            }
+        });
+
+        // Handle window resize in fullscreen
+        window.addEventListener('resize', () => {
+            if (document.fullscreenElement) {
+                this.resizeCanvasForFullscreen();
+            }
+        });
+    }
+
+    resizeCanvasForFullscreen() {
+        // Get screen dimensions
+        const screenWidth = window.screen.width;
+        const screenHeight = window.screen.height;
+
+        // Calculate aspect ratio
+        const videoAspect = this.originalCanvasWidth / this.originalCanvasHeight;
+        const screenAspect = screenWidth / screenHeight;
+
+        // Resize canvas to fill screen while maintaining aspect ratio
+        if (screenAspect > videoAspect) {
+            // Screen is wider - fit to height
+            this.canvas.height = screenHeight;
+            this.canvas.width = screenHeight * videoAspect;
+        } else {
+            // Screen is taller - fit to width
+            this.canvas.width = screenWidth;
+            this.canvas.height = screenWidth / videoAspect;
+        }
+    }
+
+    restoreCanvasSize() {
+        this.canvas.width = this.originalCanvasWidth;
+        this.canvas.height = this.originalCanvasHeight;
     }
 
     connectWebSocket() {
