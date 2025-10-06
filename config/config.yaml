@@ -16,18 +16,17 @@ cameras:
     target_height: 1080  # Increased for better small object detection
     buffer_size: 1  # Keep at 1 for lowest latency
 
-  # Example second camera configuration (disabled by default)
-  # Uncomment and configure when you add a second camera
-  # - id: "cam2"
-  #   name: "Telescope Close-up"
-  #   ip: "10.0.8.19"
-  #   username: "admin"
-  #   password: "your_password"
-  #   stream: "main"
-  #   enabled: true
-  #   target_width: 1920
-  #   target_height: 1080
-  #   buffer_size: 1
+  # Second camera
+  - id: "cam2"
+    name: "Secondary View"
+    ip: "10.0.2.47"
+    username: "admin"
+    password: "REDACTED"
+    stream: "main"
+    enabled: true
+    target_width: 1920
+    target_height: 1080
+    buffer_size: 1
 
 detection:
   # YOLOX Model configuration (Apache 2.0 license)
