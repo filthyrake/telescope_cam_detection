@@ -1,0 +1,26 @@
+# Neolink Configuration Example
+# Copy this file to neolink-config.toml and fill in your camera credentials
+# IMPORTANT: neolink-config.toml is gitignored and should NEVER be committed
+
+[[cameras]]
+name = "cam2"  # Must match camera ID in config.yaml
+username = "admin"  # Replace with your camera username
+password = "YOUR_PASSWORD_HERE"  # Replace with your camera password
+address = "CAMERA_IP:9000"  # Replace CAMERA_IP with your camera's IP address (port 9000 is Reolink Baichuan protocol)
+
+# Stream settings
+[cameras.streams]
+  [cameras.streams.mainStream]
+    enable = true
+    rtsp_address = "0.0.0.0:8554"  # Neolink will serve RTSP on this port
+    format = "h264"
+    resolution = "high"  # "high", "medium", or "low"
+    quality = "max"  # Video quality: "min", "max", or "medium"
+
+  [cameras.streams.subStream]
+    enable = false
+
+# Optional: Pause behavior
+[cameras.pause]
+on_motion = false
+on_client = false

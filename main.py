@@ -171,7 +171,8 @@ class TelescopeDetectionSystem:
                     username=camera_config['username'],
                     password=camera_config['password'],
                     stream_type=camera_config.get('stream', 'main'),
-                    protocol=camera_config.get('protocol', 'rtsp')  # Default to standard RTSP
+                    protocol=camera_config.get('protocol', 'rtsp'),  # Default to standard RTSP
+                    camera_id=camera_id  # Pass camera_id for neolink protocol
                 )
 
                 # Determine if TCP transport should be used

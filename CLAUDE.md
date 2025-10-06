@@ -2,6 +2,49 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ CRITICAL SECURITY RULES - READ FIRST ⚠️
+
+**THIS IS A PUBLIC REPOSITORY. SECRETS = IMMEDIATE SECURITY BREACH.**
+
+### NEVER commit these to git:
+- ❌ Passwords, API keys, tokens, credentials of any kind
+- ❌ IP addresses (camera IPs, private network IPs)
+- ❌ Test files with hardcoded credentials (even "temporary" ones)
+- ❌ Configuration files with real credentials or IPs
+- ❌ Any file containing real camera credentials or network information
+
+### Files that are GITIGNORED (never commit):
+- `camera_credentials.yaml` - Camera passwords
+- `neolink-config.toml` - Neolink camera credentials
+- `config/config.yaml` - Camera IPs and settings
+- Any `test_*.py` files with hardcoded credentials
+
+### Before committing ANY file:
+1. ✅ Check if it contains passwords, IPs, or credentials
+2. ✅ Verify it's not in .gitignore
+3. ✅ Use `git diff --staged` to review exactly what will be committed
+4. ✅ If creating test scripts, ALWAYS use placeholders like "YOUR_PASSWORD_HERE"
+
+### If you write test scripts:
+```python
+# ✅ CORRECT - Use placeholders
+USERNAME = "admin"
+PASSWORD = "YOUR_PASSWORD_HERE"  # User must fill this in
+CAMERA_IP = "192.168.1.100"      # Example IP
+
+# ❌ WRONG - Never hardcode real credentials
+PASSWORD = "D@m3nR0ck$"  # NEVER DO THIS
+CAMERA_IP = "10.0.2.47"  # NEVER DO THIS
+```
+
+### If secrets are accidentally committed:
+1. Immediately use `git reset HEAD~1` to undo the commit
+2. Force push to overwrite GitHub history: `git push --force`
+3. Tell the user to rotate/change ALL exposed credentials immediately
+4. Update .gitignore to prevent future mistakes
+
+**REMEMBER: Once pushed to GitHub (even for 1 second), consider it compromised forever.**
+
 ## Project Overview
 
 Real-time object detection system for **telescope collision prevention** and **wildlife monitoring** using Reolink cameras and NVIDIA A30 GPU.
