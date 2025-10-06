@@ -259,6 +259,14 @@ class TelescopeDetectionSystem:
                         camera_detection_config['class_confidence_overrides'] = merged_class_overrides
                         logger.info(f"    class_confidence_overrides: {camera_class_overrides}")
 
+                    # Merge per-class size constraints (camera overrides take precedence)
+                    if 'class_size_constraints' in camera_overrides:
+                        merged_size_constraints = camera_detection_config.get('class_size_constraints', {}).copy()
+                        camera_size_constraints = camera_overrides['class_size_constraints']
+                        merged_size_constraints.update(camera_size_constraints)
+                        camera_detection_config['class_size_constraints'] = merged_size_constraints
+                        logger.info(f"    class_size_constraints: {camera_size_constraints}")
+
                 # Initialize per-camera two-stage pipeline (if enabled)
                 camera_two_stage_pipeline = None
                 if use_two_stage:
