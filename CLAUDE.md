@@ -21,12 +21,41 @@ Real-time object detection system for **telescope collision prevention** and **w
 
 ## Development Commands
 
+### Initial Setup: Camera Credentials
+
+**IMPORTANT**: Camera credentials are stored separately from config files and never committed to git.
+
+```bash
+# First time setup: Copy the example credentials file
+cp camera_credentials.example.yaml camera_credentials.yaml
+
+# Edit with your actual camera credentials
+nano camera_credentials.yaml
+```
+
+The `camera_credentials.yaml` file format:
+```yaml
+cameras:
+  cam1:
+    username: "admin"
+    password: "your_password_here"
+  cam2:
+    username: "admin"
+    password: "your_password_here"
+```
+
+**Security Notes**:
+- `camera_credentials.yaml` is gitignored and will NEVER be committed
+- `config/config.yaml` contains NO credentials (only camera IPs and settings)
+- Credentials are loaded at runtime and merged with camera configs
+- Never commit real credentials to version control
+
 ### Running the System
 ```bash
 # Activate virtual environment (always required)
 source venv/bin/activate
 
-# Run main application
+# Run main application (will load credentials automatically)
 python main.py
 
 # Access web interface at http://localhost:8000
