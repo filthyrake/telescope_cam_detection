@@ -31,6 +31,7 @@ class InferenceEngine:
         device: str = "cuda:0",
         conf_threshold: float = 0.25,
         nms_threshold: float = 0.45,
+        input_size: tuple = (640, 640),
         input_queue: Optional[Queue] = None,
         output_queue: Optional[Queue] = None,
         min_box_area: int = 0,
@@ -50,6 +51,7 @@ class InferenceEngine:
             device: Device to run inference on
             conf_threshold: Confidence threshold
             nms_threshold: NMS IoU threshold
+            input_size: Input image size (height, width) - larger = better for small objects
             input_queue: Queue to receive frames from
             output_queue: Queue to send detections to
             min_box_area: Minimum bounding box area (pixels²)
@@ -64,6 +66,7 @@ class InferenceEngine:
         self.device = device
         self.conf_threshold = conf_threshold
         self.nms_threshold = nms_threshold
+        self.input_size = input_size
         self.input_queue = input_queue
         self.output_queue = output_queue
         self.min_box_area = min_box_area
@@ -100,6 +103,7 @@ class InferenceEngine:
                 device=self.device,
                 conf_threshold=self.conf_threshold,
                 nms_threshold=self.nms_threshold,
+                input_size=self.input_size,
                 wildlife_only=self.wildlife_only,
             )
 
