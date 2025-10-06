@@ -1,12 +1,14 @@
 name: Docker Build
 
 on:
-  push:
-    branches: [ master, main ]
+  # Only run on pull requests and releases (not every push)
+  # CUDA base images are ~8GB and cause disk space issues on GitHub Actions
   pull_request:
     branches: [ master, main ]
   release:
     types: [ published ]
+  # Manual trigger option
+  workflow_dispatch:
 
 jobs:
   docker:
