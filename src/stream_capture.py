@@ -27,7 +27,9 @@ class RTSPStreamCapture:
         frame_queue: Queue,
         target_width: int = 1280,
         target_height: int = 720,
-        buffer_size: int = 1
+        buffer_size: int = 1,
+        camera_id: str = "default",
+        camera_name: str = "Default Camera"
     ):
         """
         Initialize RTSP stream capture.
@@ -38,12 +40,16 @@ class RTSPStreamCapture:
             target_width: Resize width for inference
             target_height: Resize height for inference
             buffer_size: Number of frames to buffer (keep at 1 for lowest latency)
+            camera_id: Unique identifier for this camera
+            camera_name: Human-readable name for this camera
         """
         self.rtsp_url = rtsp_url
         self.frame_queue = frame_queue
         self.target_width = target_width
         self.target_height = target_height
         self.buffer_size = buffer_size
+        self.camera_id = camera_id
+        self.camera_name = camera_name
 
         self.capture: Optional[cv2.VideoCapture] = None
         self.stop_event = Event()
@@ -66,7 +72,7 @@ class RTSPStreamCapture:
         Returns:
             True if connection successful, False otherwise
         """
-        logger.info(f"Connecting to RTSP stream: {self.rtsp_url}")
+        logger.info(f"[{self.camera_id}] Connecting to RTSP stream: {self.rtsp_url}")
 
         # OpenCV VideoCapture with optimized settings for low latency
         self.capture = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
@@ -76,17 +82,17 @@ class RTSPStreamCapture:
         self.capture.set(cv2.CAP_PROP_FPS, 30)
 
         if not self.capture.isOpened():
-            logger.error("Failed to open RTSP stream")
+            logger.error(f"[{self.camera_id}] Failed to open RTSP stream")
             return False
 
         # Test read
         ret, frame = self.capture.read()
         if not ret or frame is None:
-            logger.error("Failed to read test frame from stream")
+            logger.error(f"[{self.camera_id}] Failed to read test frame from stream")
             return False
 
         self.is_connected = True
-        logger.info(f"Successfully connected. Frame size: {frame.shape[1]}x{frame.shape[0]}")
+        logger.info(f"[{self.camera_id}] Successfully connected. Frame size: {frame.shape[1]}x{frame.shape[0]}")
         return True
 
     def start(self) -> bool:
@@ -103,12 +109,12 @@ class RTSPStreamCapture:
         self.stop_event.clear()
         self.capture_thread = Thread(target=self._capture_loop, daemon=True)
         self.capture_thread.start()
-        logger.info("Capture thread started")
+        logger.info(f"[{self.camera_id}] Capture thread started")
         return True
 
     def stop(self):
         """Stop the capture thread and release resources."""
-        logger.info("Stopping capture thread...")
+        logger.info(f"[{self.camera_id}] Stopping capture thread...")
         self.stop_event.set()
 
         if self.capture_thread:
@@ -118,11 +124,11 @@ class RTSPStreamCapture:
             self.capture.release()
 
         self.is_connected = False
-        logger.info("Capture thread stopped")
+        logger.info(f"[{self.camera_id}] Capture thread stopped")
 
     def _capture_loop(self):
         """Main capture loop running in separate thread."""
-        logger.info("Capture loop started")
+        logger.info(f"[{self.camera_id}] Capture loop started")
         consecutive_failures = 0
         max_failures = 30  # Reconnect after 30 consecutive failures
 
@@ -159,7 +165,9 @@ class RTSPStreamCapture:
                     self.frame_queue.put_nowait({
                         'frame': frame,
                         'timestamp': timestamp,
-                        'frame_id': self.frame_count
+                        'frame_id': self.frame_count,
+                        'camera_id': self.camera_id,
+                        'camera_name': self.camera_name
                     })
                     self.frame_count += 1
                 except Full:

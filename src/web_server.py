@@ -30,7 +30,7 @@ class WebServer:
     def __init__(
         self,
         detection_queue: Optional[Any] = None,
-        frame_source: Optional[Any] = None,
+        frame_sources: Optional[list] = None,
         host: str = "0.0.0.0",
         port: int = 8000
     ):
@@ -39,21 +39,20 @@ class WebServer:
 
         Args:
             detection_queue: Queue to receive detection results from
-            frame_source: Source to get latest frames from (for video streaming)
+            frame_sources: List of frame sources (RTSPStreamCapture instances)
             host: Host to bind to
             port: Port to bind to
         """
         self.detection_queue = detection_queue
-        self.frame_source = frame_source
+        self.frame_sources = frame_sources if frame_sources else []
         self.host = host
         self.port = port
 
         self.app = FastAPI(title="Telescope Detection System")
         self.active_connections: list[WebSocket] = []
 
-        # Latest frame for streaming
-        self.latest_frame: Optional[np.ndarray] = None
-        self.latest_detections: Optional[Dict[str, Any]] = None
+        # Latest detections per camera
+        self.latest_detections: Dict[str, Dict[str, Any]] = {}  # camera_id -> detection_result
 
         self._setup_routes()
         self._mount_static_files()
@@ -118,13 +117,30 @@ class WebServer:
                 "active_connections": len(self.active_connections)
             }
 
+        @self.app.get("/cameras")
+        async def cameras():
+            """Get list of available cameras."""
+            camera_list = []
+            for frame_source in self.frame_sources:
+                camera_list.append({
+                    "id": frame_source.camera_id,
+                    "name": frame_source.camera_name,
+                    "is_connected": frame_source.is_connected,
+                    "fps": frame_source.fps
+                })
+            return {"cameras": camera_list}
+
         @self.app.get("/stats")
         async def stats():
             """Get system statistics."""
             return {
                 "active_connections": len(self.active_connections),
-                "has_detections": self.latest_detections is not None,
-                "last_detection_time": self.latest_detections.get("timestamp") if self.latest_detections else None
+                "num_cameras": len(self.frame_sources),
+                "cameras_with_detections": len(self.latest_detections),
+                "last_detection_times": {
+                    cam_id: det.get("timestamp")
+                    for cam_id, det in self.latest_detections.items()
+                }
             }
 
         @self.app.get("/clips_list")
@@ -186,7 +202,10 @@ class WebServer:
                 while True:
                     if self.detection_queue and not self.detection_queue.empty():
                         detection_result = self.detection_queue.get()
-                        self.latest_detections = detection_result
+
+                        # Store latest detection for this camera
+                        camera_id = detection_result.get('camera_id', 'default')
+                        self.latest_detections[camera_id] = detection_result
 
                         # Prepare WebSocket message
                         message = self._prepare_detection_message(detection_result)
@@ -211,14 +230,40 @@ class WebServer:
                     self.active_connections.remove(websocket)
                 logger.info(f"WebSocket removed. Total connections: {len(self.active_connections)}")
 
-        @self.app.get("/video/feed")
-        async def video_feed():
+        @self.app.get("/video/feed/{camera_id}")
+        async def video_feed(camera_id: str):
             """
-            MJPEG video stream endpoint.
+            MJPEG video stream endpoint for a specific camera.
             Streams frames with detection overlays.
             """
+            # Find the frame source for this camera
+            frame_source = None
+            for fs in self.frame_sources:
+                if fs.camera_id == camera_id:
+                    frame_source = fs
+                    break
+
+            if not frame_source:
+                return {"error": f"Camera {camera_id} not found"}
+
             return StreamingResponse(
-                self._generate_video_stream(),
+                self._generate_video_stream(camera_id),
+                media_type="multipart/x-mixed-replace; boundary=frame"
+            )
+
+        @self.app.get("/video/feed")
+        async def video_feed_default():
+            """
+            MJPEG video stream endpoint (default camera).
+            Streams frames with detection overlays from the first camera.
+            """
+            if not self.frame_sources:
+                return {"error": "No cameras available"}
+
+            # Use first camera as default
+            camera_id = self.frame_sources[0].camera_id
+            return StreamingResponse(
+                self._generate_video_stream(camera_id),
                 media_type="multipart/x-mixed-replace; boundary=frame"
             )
 
@@ -234,6 +279,8 @@ class WebServer:
         """
         message = {
             "type": "detections",
+            "camera_id": detection_result.get("camera_id", "default"),
+            "camera_name": detection_result.get("camera_name", "Default Camera"),
             "frame_id": detection_result.get("frame_id"),
             "timestamp": detection_result.get("timestamp"),
             "processing_timestamp": detection_result.get("processing_timestamp"),
@@ -246,18 +293,32 @@ class WebServer:
 
         return message
 
-    async def _generate_video_stream(self):
+    async def _generate_video_stream(self, camera_id: str):
         """
-        Generate MJPEG video stream with detection overlays.
+        Generate MJPEG video stream with detection overlays for a specific camera.
+
+        Args:
+            camera_id: ID of the camera to stream
         """
+        # Find the frame source for this camera
+        frame_source = None
+        for fs in self.frame_sources:
+            if fs.camera_id == camera_id:
+                frame_source = fs
+                break
+
+        if not frame_source:
+            logger.error(f"Camera {camera_id} not found for video streaming")
+            return
+
         while True:
-            if self.frame_source and hasattr(self.frame_source, 'latest_frame'):
-                frame = self.frame_source.latest_frame
+            if frame_source and hasattr(frame_source, 'latest_frame'):
+                frame = frame_source.latest_frame
 
                 if frame is not None:
-                    # Draw detections on frame
-                    if self.latest_detections:
-                        frame = self._draw_detections(frame.copy(), self.latest_detections)
+                    # Draw detections on frame for this camera
+                    if camera_id in self.latest_detections:
+                        frame = self._draw_detections(frame.copy(), self.latest_detections[camera_id])
 
                     # Encode frame as JPEG
                     ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
