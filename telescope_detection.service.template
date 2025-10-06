@@ -4,13 +4,13 @@ After=network.target
 
 [Service]
 Type=simple
-User=damen
-Group=damen
-WorkingDirectory=/home/damen/telescope_cam_detection
-Environment="PATH=/home/damen/telescope_cam_detection/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+User={{USER}}
+Group={{USER}}
+WorkingDirectory={{PROJECT_DIR}}
+Environment="PATH={{PROJECT_DIR}}/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # Run the main application
-ExecStart=/home/damen/telescope_cam_detection/venv/bin/python /home/damen/telescope_cam_detection/main.py
+ExecStart={{PROJECT_DIR}}/venv/bin/python {{PROJECT_DIR}}/main.py
 
 # Restart policy
 Restart=always

@@ -82,3 +82,6 @@ credentials.yaml
 
 # Configuration with private IPs (use config.yaml.example to create)
 config/config.yaml
+
+# Generated systemd service file (use telescope_detection.service.template)
+telescope_detection.service
