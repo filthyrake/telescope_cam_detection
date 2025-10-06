@@ -241,7 +241,7 @@ def create_rtsp_url(
     Create stream URL for Reolink camera with various protocol options.
 
     Args:
-        camera_ip: IP address of the camera
+        camera_ip: IP address of the camera (or Neolink host for 'neolink' protocol)
         username: Camera username
         password: Camera password
         stream_type: 'main' for high quality or 'sub' for lower quality
@@ -251,17 +251,29 @@ def create_rtsp_url(
             - 'onvif': ONVIF RTSP path (alternative protocol)
             - 'h265': H.265/HEVC encoding (if camera supports)
             - 'neolink': Neolink RTSP bridge (best quality for E1 Pro)
+                         Note: For neolink, camera_ip should be the Neolink host
+                         (e.g., '127.0.0.1' if running locally), not the camera's IP
         camera_id: Camera ID (required for neolink protocol)
 
     Returns:
         Stream URL string
+
+    Raises:
+        ValueError: If neolink protocol is used with invalid camera_id
     """
     protocol = protocol.lower()
 
     # Neolink RTSP bridge (best quality for E1 Pro WiFi cameras)
     if protocol == "neolink":
+        # Validate camera_id for neolink protocol
+        if not camera_id or camera_id == "default":
+            raise ValueError(
+                "Neolink protocol requires a valid camera_id. "
+                "Camera ID must match the name configured in neolink-config.toml"
+            )
+
         # Neolink serves on port 8554 by default
-        # Format: rtsp://localhost:8554/<camera_name>/<stream>
+        # Format: rtsp://<neolink_host>:8554/<camera_name>/<stream>
         stream_name = "mainStream" if stream_type == "main" else "subStream"
         url = f"rtsp://{camera_ip}:8554/{camera_id}/{stream_name}"
         return url

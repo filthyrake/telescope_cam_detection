@@ -1,6 +1,8 @@
 services:
   neolink:
-    image: quantumentangledandy/neolink:latest
+    # Pin to specific digest for reproducibility (2025-10-06)
+    # This is the actively maintained fork: https://github.com/QuantumEntangledAndy/neolink
+    image: quantumentangledandy/neolink@sha256:4eebf499c20f8de740d8c32163f665e41fd0f342be3b1174828b3b8bd7def59d
     container_name: neolink
     restart: unless-stopped
     network_mode: host
