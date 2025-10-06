@@ -29,7 +29,9 @@ class SpeciesClassifier:
         confidence_threshold: float = 0.3,
         taxonomy_file: Optional[str] = None,
         input_size: int = 224,
-        use_hierarchical: bool = True
+        use_hierarchical: bool = True,
+        allowed_species: Optional[List[str]] = None,
+        enable_geographic_filter: bool = False
     ):
         """
         Initialize species classifier.
@@ -42,6 +44,8 @@ class SpeciesClassifier:
             taxonomy_file: Path to taxonomy mapping file
             input_size: Input image size (224, 336, etc.)
             use_hierarchical: Use hierarchical taxonomy fallback
+            allowed_species: Whitelist of allowed species names (geographic filter)
+            enable_geographic_filter: Whether to apply geographic filtering
         """
         self.model_name = model_name
         self.checkpoint_path = checkpoint_path
@@ -50,6 +54,12 @@ class SpeciesClassifier:
         self.model = None
         self.taxonomy = {}
         self.use_hierarchical = use_hierarchical
+
+        # Geographic filtering
+        self.enable_geographic_filter = enable_geographic_filter
+        self.allowed_species = set(allowed_species) if allowed_species else set()
+        if self.enable_geographic_filter:
+            logger.info(f"Geographic filter enabled with {len(self.allowed_species)} allowed species")
 
         # Image preprocessing settings
         self.input_size = input_size  # Configurable input size
@@ -278,6 +288,13 @@ class SpeciesClassifier:
                 label, tax_level = self.get_hierarchical_label(idx, prob)
 
                 if label is not None:
+                    # Apply geographic filter if enabled
+                    if self.enable_geographic_filter and self.allowed_species:
+                        # Check if species is in whitelist
+                        if label not in self.allowed_species:
+                            logger.debug(f"Filtered out non-local species: {label} (confidence: {prob:.3f})")
+                            continue
+
                     results.append({
                         'species': label,
                         'confidence': prob,
