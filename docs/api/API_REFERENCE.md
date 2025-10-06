@@ -263,7 +263,7 @@ ws.onclose = () => {
 
 ```typescript
 interface Detection {
-  class_name: string;              // YOLO-World class
+  class_name: string;              // YOLOX COCO class
   confidence: number;              // 0.0 - 1.0
   bbox: BoundingBox;
   stage1_class: string;            // Original detection class

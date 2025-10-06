@@ -19,7 +19,7 @@
 
 The Telescope Detection System is a real-time object detection and species classification platform designed for:
 
-1. **Wildlife Monitoring**: Detect and identify desert animals using YOLO-World + iNaturalist
+1. **Wildlife Monitoring**: Detect and identify desert animals using YOLOX + iNaturalist
 2. **Telescope Collision Prevention**: Detect telescope equipment and prevent collisions (future)
 
 ### Key Features
@@ -36,14 +36,14 @@ The Telescope Detection System is a real-time object detection and species class
 | Component | Technology |
 |-----------|----------|
 | Language | Python 3.12 |
-| Detection (Stage 1) | YOLOv8-World (Ultralytics) |
+| Detection (Stage 1) | YOLOX-S (Megvii, Apache 2.0) |
 | Classification (Stage 2) | EVA02-Large (timm) + iNaturalist 2021 |
-| Video Streaming | OpenCV + RTSP |
+| Video Streaming | OpenCV + RTSP/RTSP-TCP |
 | Web Framework | FastAPI + Uvicorn |
 | Frontend | HTML5 + JavaScript + WebSockets |
 | GPU | CUDA 11.8+ / PyTorch 2.1+ |
 | Service Management | systemd |
-| Camera | Reolink RLC-410W (2560x1440) |
+| Cameras | Reolink RLC-410W (2560x1440) + E1 Pro (2560x1440) |
 
 ---
 
@@ -56,31 +56,33 @@ The Telescope Detection System is a real-time object detection and species class
 
 
 ┌──────────────┐         ┌─────────────────────────────────────────┐
-│   Reolink    │  RTSP   │         Stream Capture Thread           │
-│   RLC-410W   ├────────▶│  - OpenCV VideoCapture                  │
-│   Camera     │         │  - Frame resizing (2560x1440→1280x720)  │
+│   Reolink    │  RTSP   │       Stream Capture Threads            │
+│   Cameras    │  /TCP   │  (One per camera)                       │
+│  - RLC-410W  ├────────▶│  - OpenCV VideoCapture                  │
+│  - E1 Pro    │         │  - Per-camera frame sizing              │
 │ (2560x1440)  │         │  - Frame queue management               │
 └──────────────┘         └───────────────┬─────────────────────────┘
                                          │
                                          ▼
                               ┌─────────────────────┐
-                              │   Frame Queue       │
-                              │   (maxsize=2)       │
+                              │   Frame Queues      │
+                              │   (maxsize=1)       │
                               │  - Drops old frames │
                               └──────────┬──────────┘
                                          │
                                          ▼
                        ┌────────────────────────────────────┐
-                       │   Inference Engine Thread          │
+                       │   Inference Engine Threads         │
+                       │  (One per camera)                  │
                        │  ┌──────────────────────────────┐  │
                        │  │  Two-Stage Pipeline          │  │
                        │  │                              │  │
                        │  │  ┌────────────────────────┐ │  │
-                       │  │  │ STAGE 1: YOLO-World    │ │  │
+                       │  │  │ STAGE 1: YOLOX         │ │  │
                        │  │  │ - Object detection     │ │  │
                        │  │  │ - Bounding boxes       │ │  │
-                       │  │  │ - 20 wildlife classes  │ │  │
-                       │  │  │ - ~20-25ms inference   │ │  │
+                       │  │  │ - 80 COCO classes      │ │  │
+                       │  │  │ - ~11-21ms inference   │ │  │
                        │  │  └──────────┬─────────────┘ │  │
                        │  │             ▼               │  │
                        │  │  ┌────────────────────────┐ │  │
@@ -88,7 +90,7 @@ The Telescope Detection System is a real-time object detection and species class
                        │  │  │ - Crop detections      │ │  │
                        │  │  │ - Species classifier   │ │  │
                        │  │  │ - 10,000 species       │ │  │
-                       │  │  │ - ~5-10ms per detect   │ │  │
+                       │  │  │ - ~20-30ms per detect  │ │  │
                        │  │  └────────────────────────┘ │  │
                        │  │                              │  │
                        │  └──────────────────────────────┘  │
@@ -205,7 +207,7 @@ camera:
 │  │  Two-Stage Mode:               │ │
 │  │  ┌──────────────────────────┐  │ │
 │  │  │ TwoStageDetectionPipeline│  │ │
-│  │  │  - YOLO-World (Stage 1)  │  │ │
+│  │  │  - YOLOX (Stage 1)  │  │ │
 │  │  │  - SpeciesClassifier     │  │ │
 │  │  │    (Stage 2)             │  │ │
 │  │  └──────────────────────────┘  │ │
@@ -240,7 +242,7 @@ detection:
 
 **Purpose**: Orchestrate detection + classification
 
-**Stage 1: YOLO-World Detection**
+**Stage 1: YOLOX Detection**
 - Open-vocabulary object detection
 - Text prompts for classes
 - Generates bounding boxes
@@ -254,7 +256,7 @@ detection:
 
 **Data Flow**:
 ```
-Frame → YOLO-World → Detections (bbox + class)
+Frame → YOLOX → Detections (bbox + class)
                 ↓
         For each detection:
                 ↓
@@ -542,13 +544,13 @@ snapshots:
 
 ## Detection Pipeline
 
-### Stage 1: YOLO-World Detection
+### Stage 1: YOLOX Detection
 
 **Input**: Frame (1280x720x3 BGR)
 
 **Process**:
 1. Preprocess image (normalize, resize if needed)
-2. Run YOLO-World inference
+2. Run YOLOX inference
 3. Apply NMS (IoU threshold: 0.45)
 4. Filter by confidence (0.25)
 5. Filter by size (50px² minimum)
@@ -636,7 +638,7 @@ detection:
   model: "yolov8x-worldv2.pt"
   device: "cuda:0"
 
-  # YOLO-World settings
+  # YOLOX settings
   use_yolo_world: true
   yolo_world_classes: [...]
 
@@ -845,7 +847,7 @@ Total: ~46ms end-to-end (conservative estimate)
 
 | Component | Memory | Notes |
 |-----------|--------|-------|
-| YOLO-World model | ~400MB | GPU VRAM |
+| YOLOX model | ~69MB | GPU VRAM |
 | iNaturalist model | ~1.5GB | GPU VRAM |
 | Frame buffers | ~50MB | CPU RAM |
 | Python overhead | ~500MB | CPU RAM |
@@ -1111,12 +1113,12 @@ journalctl -u telescope_detection.service -f
 
 ## References
 
-- YOLOv8: https://docs.ultralytics.com/
-- YOLO-World: https://github.com/AILab-CVC/YOLO-World
+- YOLOX: https://github.com/Megvii-BaseDetection/YOLOX
 - iNaturalist 2021: https://github.com/visipedia/inat_comp/tree/master/2021
 - EVA02: https://github.com/baaivision/EVA
 - timm: https://github.com/huggingface/pytorch-image-models
 - FastAPI: https://fastapi.tiangolo.com/
+- OpenCV: https://opencv.org/
 
 ---
 

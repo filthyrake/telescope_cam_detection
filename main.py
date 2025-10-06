@@ -170,8 +170,12 @@ class TelescopeDetectionSystem:
                     camera_ip=camera_config['ip'],
                     username=camera_config['username'],
                     password=camera_config['password'],
-                    stream_type=camera_config.get('stream', 'main')
+                    stream_type=camera_config.get('stream', 'main'),
+                    protocol=camera_config.get('protocol', 'rtsp')  # Default to standard RTSP
                 )
+
+                # Determine if TCP transport should be used
+                use_tcp = camera_config.get('protocol', 'rtsp').lower() == 'rtsp-tcp'
 
                 stream_capture = RTSPStreamCapture(
                     rtsp_url=rtsp_url,
@@ -180,7 +184,8 @@ class TelescopeDetectionSystem:
                     target_height=camera_config.get('target_height', 720),
                     buffer_size=camera_config.get('buffer_size', 1),
                     camera_id=camera_id,
-                    camera_name=camera_name
+                    camera_name=camera_name,
+                    use_tcp=use_tcp  # Enable TCP transport if protocol is rtsp-tcp
                 )
 
                 self.stream_captures.append(stream_capture)

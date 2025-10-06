@@ -68,14 +68,11 @@ YOLOX/
 # Backup files
 *.backup
 
-# Experimental scripts
+# Experimental scripts (root level only, not tests/ directory)
 convert_onnx_to_tensorrt.py
 export_to_onnx.py
 export_yolox_tensorrt.py
 profile_inference.py
-test_tensorrt_compile.py
-test_performance.py
-test_system_startup.py
 
 # Credentials (NEVER commit these!)
 camera_credentials.yaml

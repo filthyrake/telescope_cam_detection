@@ -29,7 +29,8 @@ class RTSPStreamCapture:
         target_height: int = 720,
         buffer_size: int = 1,
         camera_id: str = "default",
-        camera_name: str = "Default Camera"
+        camera_name: str = "Default Camera",
+        use_tcp: bool = False
     ):
         """
         Initialize RTSP stream capture.
@@ -42,6 +43,7 @@ class RTSPStreamCapture:
             buffer_size: Number of frames to buffer (keep at 1 for lowest latency)
             camera_id: Unique identifier for this camera
             camera_name: Human-readable name for this camera
+            use_tcp: Use TCP transport instead of UDP (reduces tearing)
         """
         self.rtsp_url = rtsp_url
         self.frame_queue = frame_queue
@@ -50,6 +52,7 @@ class RTSPStreamCapture:
         self.buffer_size = buffer_size
         self.camera_id = camera_id
         self.camera_name = camera_name
+        self.use_tcp = use_tcp
 
         self.capture: Optional[cv2.VideoCapture] = None
         self.stop_event = Event()
@@ -73,8 +76,16 @@ class RTSPStreamCapture:
             True if connection successful, False otherwise
         """
         logger.info(f"[{self.camera_id}] Connecting to RTSP stream: {self.rtsp_url}")
+        if self.use_tcp:
+            logger.info(f"[{self.camera_id}] Using TCP transport (rtsp_transport=tcp)")
 
         # OpenCV VideoCapture with optimized settings for low latency
+        # Use FFMPEG backend with TCP transport if requested
+        if self.use_tcp:
+            # Set RTSP transport to TCP via environment variable (OpenCV+FFMPEG)
+            import os
+            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp'
+
         self.capture = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
 
         # Set low latency options
@@ -222,22 +233,48 @@ def create_rtsp_url(
     camera_ip: str,
     username: str = "admin",
     password: str = "",
-    stream_type: str = "main"
+    stream_type: str = "main",
+    protocol: str = "rtsp"
 ) -> str:
     """
-    Create RTSP URL for Reolink camera.
+    Create stream URL for Reolink camera with various protocol options.
 
     Args:
         camera_ip: IP address of the camera
         username: Camera username
         password: Camera password
         stream_type: 'main' for high quality or 'sub' for lower quality
+        protocol: Protocol to use:
+            - 'rtsp' or 'rtsp-udp': Standard RTSP over UDP (default)
+            - 'rtsp-tcp': RTSP over TCP (reduces tearing, more reliable)
+            - 'onvif': ONVIF RTSP path (alternative protocol)
+            - 'h265': H.265/HEVC encoding (if camera supports)
 
     Returns:
-        RTSP URL string
+        Stream URL string
     """
-    stream_path = "h264Preview_01_main" if stream_type == "main" else "h264Preview_01_sub"
-    return f"rtsp://{username}:{password}@{camera_ip}:554/{stream_path}"
+    protocol = protocol.lower()
+
+    # ONVIF uses different path format
+    if protocol == "onvif":
+        # ONVIF Profile S stream path
+        # Channel 1 = main stream, Channel 2 = sub stream
+        channel = "101" if stream_type == "main" else "102"
+        url = f"rtsp://{username}:{password}@{camera_ip}:554/Streaming/Channels/{channel}"
+        return url
+
+    # H.265 encoding option
+    elif protocol == "h265":
+        stream_path = "h265Preview_01_main" if stream_type == "main" else "h265Preview_01_sub"
+        url = f"rtsp://{username}:{password}@{camera_ip}:554/{stream_path}"
+        return url
+
+    # Standard H.264 RTSP (default, or rtsp-tcp - handled in RTSPStreamCapture)
+    else:
+        stream_path = "h264Preview_01_main" if stream_type == "main" else "h264Preview_01_sub"
+        url = f"rtsp://{username}:{password}@{camera_ip}:554/{stream_path}"
+        # Note: TCP transport is handled in RTSPStreamCapture via use_tcp parameter
+        return url
 
 
 if __name__ == "__main__":

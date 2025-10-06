@@ -20,7 +20,7 @@ training/
 ├── scripts/
 │   ├── capture_training_images.py   # Auto-capture from camera
 │   ├── prepare_dataset.py           # Split train/val sets
-│   ├── train_custom_model.py        # Train YOLOv8 model
+│   ├── train_custom_model.py        # Train YOLOX model
 │   └── evaluate_model.py            # Test trained model
 └── runs/                       # Training outputs will go here
 ```
@@ -53,7 +53,7 @@ Splits 150 images → 120 train, 30 validation
 1. Go to https://roboflow.com
 2. Upload images
 3. Draw boxes around telescope parts
-4. Export in YOLOv8 format
+4. Export in YOLOX format
 5. Download labels
 
 **Option B: Use LabelImg (Desktop)**

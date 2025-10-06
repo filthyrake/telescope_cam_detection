@@ -2,7 +2,7 @@
 
 ## Current Status
 
-✅ **Stage 1 (YOLO-World Detection)**: ACTIVE and working
+✅ **Stage 1 (YOLOX Detection)**: ACTIVE and working
 - Detects animals using open-vocabulary text prompts
 - 17 desert species classes configured
 - Successfully differentiates rabbit vs bird
@@ -11,9 +11,9 @@
 
 ## What is Stage 2?
 
-Stage 2 adds **fine-grained species identification** on top of YOLO-World detection:
+Stage 2 adds **fine-grained species identification** on top of YOLOX detection:
 
-1. **Stage 1**: YOLO-World detects "bird" and creates bounding box
+1. **Stage 1**: YOLOX detects "bird" and creates bounding box
 2. **Stage 2**: Species classifier crops that box and identifies "Gambel's Quail" specifically
 
 **Performance**: Adds ~5-10ms per detection, total pipeline ~25-35ms
@@ -207,7 +207,7 @@ This won't identify specific species but validates the pipeline works.
 
 ### Option 3: Skip Stage 2 for Now
 **Pros:**
-- YOLO-World already working great
+- YOLOX already working great
 - Simpler system
 
 **Cons:**
@@ -216,10 +216,10 @@ This won't identify specific species but validates the pipeline works.
 
 ## Recommended Approach
 
-**Phase 1 (NOW)**: Keep using YOLO-World only
+**Phase 1 (NOW)**: Keep using YOLOX only
 - Collect more wildlife detections
 - Build training dataset from clips
-- Verify YOLO-World fixes rabbit/bird confusion
+- Verify YOLOX fixes rabbit/bird confusion
 
 **Phase 2 (In 2-4 weeks)**: Add Stage 2 when you have data
 - Download HuggingFace bird classifier for immediate use
@@ -251,7 +251,7 @@ Alternatives:
 
 ## Next Steps
 
-1. ✅ Monitor YOLO-World performance first
+1. ✅ Monitor YOLOX performance first
 2. ⏳ Collect 100+ wildlife clips
 3. ⏳ Decide if species-level ID is needed
 4. ⏳ Download HuggingFace models or train custom
@@ -267,4 +267,4 @@ Alternatives:
 
 ---
 
-**Current Status: Stage 1 (YOLO-World) is active and sufficient for most use cases. Stage 2 can be added anytime you want finer species identification.**
+**Current Status: Stage 1 (YOLOX) is active and sufficient for most use cases. Stage 2 can be added anytime you want finer species identification.**
