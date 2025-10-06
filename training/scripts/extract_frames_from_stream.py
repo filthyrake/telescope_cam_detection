@@ -160,9 +160,9 @@ TIPS:
   - Avoid very fast slewing (causes motion blur)
         """
     )
-    parser.add_argument("--ip", default="10.0.8.18", help="Camera IP address")
+    parser.add_argument("--ip", default="192.168.1.100", help="Camera IP address")
     parser.add_argument("--user", default="admin", help="Camera username")
-    parser.add_argument("--password", default="5326jbbD", help="Camera password")
+    parser.add_argument("--password", required=True, help="Camera password")
     parser.add_argument("--output",
                        default="training/datasets/telescope_equipment/images/raw",
                        help="Output directory")

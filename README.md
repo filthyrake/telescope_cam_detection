@@ -54,12 +54,12 @@ Main configuration in `config/config.yaml`:
 cameras:
   - id: "cam1"
     name: "Main Backyard View"
-    ip: "10.0.8.18"
+    ip: "192.168.1.100"
     stream: "main"
     enabled: true
   - id: "cam2"
     name: "Secondary View"
-    ip: "10.0.2.47"
+    ip: "192.168.1.101"
     stream: "main"
     enabled: true
 
@@ -88,7 +88,7 @@ python main.py
 ```
 
 The system will:
-1. Connect to cameras (2 configured: cam1 @ 10.0.8.18, cam2 @ 10.0.2.47)
+1. Connect to cameras (2 configured: cam1 + cam2)
 2. Load YOLOX model (69MB, downloads automatically)
 3. Start inference engines (one per camera)
 4. Launch web server with live feeds

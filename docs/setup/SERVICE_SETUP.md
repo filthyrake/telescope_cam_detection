@@ -128,7 +128,7 @@ If the service starts but camera connection fails:
    ```
 3. **Check network connectivity**:
    ```bash
-   ping 10.0.8.18  # Your camera IP
+   ping 192.168.1.100  # Your camera IP
    ```
 
 ### GPU Not Available
