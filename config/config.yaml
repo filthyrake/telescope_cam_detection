@@ -22,10 +22,10 @@ cameras:
       # Per-class size constraints (filter detections by bounding box area)
       # Format: {min: pixels², max: pixels²}
       # At 1920x1080 resolution: total pixels = 2,073,600
-      # Typical bird at distance: 200-5000px² | Large bird/hawk: 5000-15000px²
+      # Typical bird at distance: 200-5000px² | Large bird/hawk: 5000-8000px²
       class_size_constraints:
         bird:
-          max: 15000  # Max ~122x122 pixels - filters large false positives
+          max: 8000  # Max ~89x89 pixels - filters large false positives
 
   # Second camera (ground level - Reolink E1 Pro with better resolution)
   - id: "cam2"
