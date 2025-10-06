@@ -171,6 +171,8 @@ class InferenceEngine:
                 frame = frame_data['frame']
                 frame_timestamp = frame_data['timestamp']
                 frame_id = frame_data['frame_id']
+                camera_id = frame_data.get('camera_id', 'default')
+                camera_name = frame_data.get('camera_name', 'Default Camera')
 
                 # Run inference
                 inference_start = time.time()
@@ -195,7 +197,9 @@ class InferenceEngine:
                     'timestamp': frame_timestamp,
                     'inference_time': inference_time,
                     'detections': detections,
-                    'frame_shape': frame.shape
+                    'frame_shape': frame.shape,
+                    'camera_id': camera_id,
+                    'camera_name': camera_name
                 }
 
                 # Send to output queue
