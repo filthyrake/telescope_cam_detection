@@ -1,6 +1,6 @@
 # Custom Telescope Detection Training Guide
 
-Complete guide for training a custom YOLOv8 model to detect your telescope equipment.
+Complete guide for training a custom YOLOX model to detect your telescope equipment.
 
 ## 📋 Overview
 
@@ -109,7 +109,7 @@ labelImg training/datasets/telescope_equipment/images/train
 3. Create new project: "Telescope Detection"
 4. Upload images from `images/train` and `images/val`
 5. Draw bounding boxes using their interface
-6. Export in "YOLOv8" format
+6. Export in "YOLOX" format
 7. Download and extract labels to `labels/train` and `labels/val`
 
 ### Annotation Tips:
@@ -281,10 +281,10 @@ With 100-200 well-annotated images:
 
 ## 📚 Additional Resources
 
-- YOLOv8 Docs: https://docs.ultralytics.com/
+- YOLOX Docs: https://github.com/Megvii-BaseDetection/YOLOX
 - LabelImg: https://github.com/HumanSignal/labelImg
 - Roboflow: https://roboflow.com/
-- YOLO Format: https://docs.ultralytics.com/datasets/detect/
+- YOLO Format: https://github.com/Megvii-BaseDetection/YOLOX/tree/main/datasets
 
 ---
 

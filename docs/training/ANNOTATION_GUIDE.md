@@ -28,7 +28,7 @@ You need to annotate your captured images with correct labels before training a 
    - tripod_leg
    ```
 5. **Draw boxes & label**: Click and drag to draw bounding boxes
-6. **Export**: YOLOv8 format → download
+6. **Export**: YOLOX format → download
 7. **Place in**: `training/datasets/combined_wildlife_telescope/`
 
 ### Option 2: LabelImg (Desktop, More Control)

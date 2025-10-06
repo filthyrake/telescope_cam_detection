@@ -10,6 +10,7 @@ cameras:
     ip: "10.0.8.18"
     stream: "main"  # Options: "main" (2K) or "sub" (lower resolution)
     enabled: true
+    protocol: "rtsp-tcp"  # Options: rtsp, rtsp-tcp, onvif, h265 (using TCP for reliability)
 
     # Frame processing
     target_width: 1920  # Increased for better small object detection
@@ -22,6 +23,7 @@ cameras:
     ip: "10.0.2.47"
     stream: "main"
     enabled: true
+    protocol: "rtsp-tcp"  # Options: rtsp, rtsp-tcp, onvif, h265 (using TCP to fix screen tearing)
     target_width: 2560  # E1 Pro native resolution (better quality for Stage 2)
     target_height: 1440
     buffer_size: 1

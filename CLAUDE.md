@@ -4,20 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Real-time object detection system for **telescope collision prevention** and **wildlife monitoring** using a Reolink RLC-410W camera and NVIDIA A30 GPU.
+Real-time object detection system for **telescope collision prevention** and **wildlife monitoring** using Reolink cameras and NVIDIA A30 GPU.
 
 **Dual Purpose System**:
 1. **Telescope Safety** (Primary Goal): Detect telescope equipment parts (tube, mount, tripod legs) and potential collision hazards (people, animals). Prevent accidents with telescope equipment by alerting when objects are too close to tripod legs or moving telescope components.
 
-2. **Wildlife Monitoring** (Secondary Goal): Monitor desert animals (coyotes, rabbits, quail, roadrunners, lizards, etc.) using GroundingDINO open-vocabulary detection with 93 comprehensive text prompts.
+2. **Wildlife Monitoring** (Secondary Goal): Monitor desert animals using YOLOX COCO detection + optional iNaturalist species classification.
 
 **Current Status**:
-- Wildlife detection: **ACTIVE** (using GroundingDINO - Apache 2.0 license)
+- Wildlife detection: **ACTIVE** (using YOLOX-S at 11-21ms inference)
+- Multi-camera: **ACTIVE** (2 cameras: cam1 @ 10.0.8.18, cam2 @ 10.0.2.47)
+- Species classification: **FRAMEWORK READY** (iNaturalist Stage 2, 10,000 species)
 - Telescope detection: **PLANNED** (custom model requires annotated dataset)
 - Collision detection logic: **FRAMEWORK READY** (config placeholders exist)
-- License: **MIT** (all dependencies Apache 2.0 or MIT compatible)
+- License: **MIT** (all dependencies Apache 2.0/BSD/MIT compatible)
 
-**Camera Setup**: Mounted overlooking backyard telescope setup and surrounding desert terrain
+**Camera Setup**: Two Reolink cameras (RLC-410W + E1 Pro) overlooking backyard telescope and desert terrain
 
 ## Development Commands
 
@@ -115,56 +117,69 @@ python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}, De
 
 ### Component Pipeline
 ```
-RTSP Camera → Stream Capture → Frame Queue → Inference Engine → Detection Processor → Web Server
-                                                     ↓
-                                          (Optional) Snapshot Saver
-                                                     ↓
-                                               clips/ directory
+Multi-Camera RTSP → Stream Captures → Frame Queues → Inference Engines → Detection Processors → Web Server
+                                                              ↓
+                                                   (Optional) Stage 2 Classifier
+                                                              ↓
+                                                       Snapshot Savers
+                                                              ↓
+                                                        clips/ directory
 ```
 
 ### Threading Model
-- **Stream Capture Thread**: Continuously grabs frames from RTSP, drops old frames (Queue size=2)
-- **Inference Thread**: GPU inference on queued frames (runs in InferenceEngine)
-- **Detection Processor Thread**: Post-processes detections, handles snapshot saving
-- **Web Server (Main Thread)**: FastAPI/Uvicorn serving video feed + WebSocket detections
+- **Stream Capture Threads**: One per camera, continuously grabs frames from RTSP (Queue size=1)
+- **Inference Threads**: One per camera, YOLOX GPU inference on queued frames
+- **Stage 2 Thread (Optional)**: iNaturalist species classification when enabled
+- **Detection Processor Threads**: Post-process detections, coordinate snapshot saving
+- **Web Server (Main Thread)**: FastAPI/Uvicorn serving video feeds + WebSocket detections
 
 ### Key Design Patterns
 
-**Low-Latency Frame Pipeline**: Uses Queue size=1-2 and aggressive frame dropping to process only the latest frames, target <100ms end-to-end latency.
+**Ultra-Low-Latency Pipeline**: Achieves 25-35ms end-to-end with YOLOX inference at 11-21ms.
 
 **Detection Pipeline**:
-- **Stage 1**: GroundingDINO open-vocabulary detection with 93 text prompts
-  - Comprehensive desert wildlife: mammals, birds, reptiles, amphibians
-  - Specific species: "zebra-tailed lizard", "gambel's quail", "desert iguana", etc.
-- **Stage 2 (Optional)**: iNaturalist species classifier for fine-grained ID
-  - Framework ready but disabled for initial testing
-  - Can be re-enabled after GroundingDINO validation
+- **Stage 1**: YOLOX object detection (80 COCO classes)
+  - Wildlife filtering: person, cat, dog, bird, horse, cow, bear, etc.
+  - Configurable per-camera thresholds and overrides
+  - Input size: [1920, 1920] for small distant wildlife detection
+- **Stage 2 (Optional)**: iNaturalist EVA02 species classification
+  - 10,000 species from iNaturalist 2021
+  - Per-camera preprocessing settings (crop padding, min size)
+  - Only runs when Stage 1 detects wildlife-relevant classes
 
 **Snapshot Cooldown System**: Prevents duplicate saves using per-class cooldown timers (default 45s).
 
 ## Configuration System
 
 **Main Config**: `config/config.yaml`
+**Credentials**: `camera_credentials.yaml` (gitignored, never committed)
 
 Critical settings:
-- `detection.model.config`: `models/GroundingDINO_SwinT_OGC.py` (Apache 2.0)
-- `detection.model.weights`: `models/groundingdino_swint_ogc.pth` (662MB)
-- `detection.text_prompts`: List of 93 comprehensive wildlife + human prompts
-- `detection.box_threshold`: 0.25 (confidence for bounding boxes)
-- `detection.text_threshold`: 0.25 (confidence for text-image matching)
-- `detection.min_box_area`: 50px² (catches small distant lizards)
+- `cameras[]`: Multi-camera configuration array
+  - Per-camera detection overrides (thresholds, min_box_area)
+  - Per-camera Stage 2 preprocessing settings
+- `detection.model.name`: `yolox-s` (balanced speed/accuracy)
+- `detection.model.weights`: `models/yolox/yolox_s.pth` (69MB)
+- `detection.input_size`: [1920, 1920] (larger for small wildlife)
+- `detection.conf_threshold`: 0.15 (low for distant animals)
+- `detection.wildlife_only`: true (filters to relevant COCO classes)
+- `detection.class_confidence_overrides`: Per-class thresholds (e.g., person: 0.60)
 - `snapshots.enabled`: true (saves detections to clips/)
 - `snapshots.trigger_classes`: Which animals trigger saves
 - `detection_zones`: **PLANNED** - Define danger zones around telescope equipment
 - `collision_detection.enabled`: **PLANNED** - Enable proximity alerts
 
 **Model Selection Strategy**:
-- **GroundingDINO** (Apache 2.0): For wildlife using 93 text prompts (no training needed)
-  - Open-vocabulary detection with natural language
-  - Supports specific species names: "desert iguana", "zebra-tailed lizard"
+- **YOLOX** (Apache 2.0): Stage 1 detection (80 COCO classes, 11-21ms)
+  - `yolox-s`: Current (balanced)
+  - `yolox-tiny`: Faster for constrained systems
+  - `yolox-x`: Higher accuracy when needed
+- **iNaturalist** (Apache 2.0): Stage 2 classification (10,000 species, +20-30ms)
+  - Optional fine-grained species ID
+  - EVA02-Large-Patch14-CLIP-336 model
 - **Custom Model** (future): For telescope parts (requires training on 7 classes)
-  - Will need to train separate model or fine-tune GroundingDINO
-- **License**: All components MIT/Apache 2.0 compatible for open source release
+  - Will train YOLOX on telescope dataset
+- **License**: All components MIT/Apache 2.0/BSD compatible for open source release
 
 **Telescope Detection Classes** (training/datasets/telescope_equipment/classes.yaml):
 ```yaml
@@ -180,18 +195,26 @@ Critical settings:
 ## Important File Locations
 
 ### Core Modules (src/)
-- `stream_capture.py`: RTSP stream handling
-- `inference_engine.py`: GroundingDINO inference (Apache 2.0)
+- `stream_capture.py`: Multi-camera RTSP stream handling
+- `inference_engine_yolox.py`: YOLOX GPU inference (Apache 2.0) **[CURRENT]**
+- `two_stage_pipeline_yolox.py`: Stage 2 iNaturalist classifier (optional)
+- `species_classifier.py`: Species classification (iNaturalist EVA02)
+- `yolox_detector.py`: YOLOX model wrapper
 - `detection_processor.py`: Post-processing, snapshot coordination
 - `web_server.py`: FastAPI + WebSocket interface
 - `snapshot_saver.py`: Saves detection clips
-- `two_stage_pipeline.py`: Optional iNaturalist classifier (disabled)
-- `species_classifier.py`: Species classification (disabled)
+- `image_enhancement.py`: Optional preprocessing (CLAHE, Real-ESRGAN)
+
+### Backup Files (for reference)
+- `inference_engine.py.groundingdino.backup`: Previous GroundingDINO implementation
+- `inference_engine.py.ultralytics.backup`: Original Ultralytics YOLO implementation
+- `config/config.yaml.groundingdino.backup`: Previous config
 
 ### Key Files
-- `main.py`: Entry point
-- `config/config.yaml`: Main configuration (93 text prompts here)
-- `models/`: GroundingDINO weights (662MB) + config
+- `main.py`: Entry point (multi-camera orchestration)
+- `config/config.yaml`: Main configuration
+- `camera_credentials.yaml`: Camera passwords (gitignored)
+- `models/yolox/`: YOLOX model weights (69MB, auto-downloads)
 
 ## Development Workflow
 
@@ -206,9 +229,18 @@ If you're asked to help with telescope detection:
 4. Target: Detect telescope tube, mount, tripod legs for collision prevention
 
 ### Adding New Wildlife Detection Classes
-1. Edit `config/config.yaml` → `detection.text_prompts`
-2. Add text prompt for new animal (e.g., "coati", "ringtail")
-3. Restart system (no training needed with GroundingDINO open-vocabulary)
+
+**Stage 1 (YOLOX)**: Limited to 80 COCO classes (pre-trained)
+- Cannot add new classes without retraining
+- Current classes cover most wildlife: person, cat, dog, bird, horse, cow, bear, etc.
+
+**Stage 2 (iNaturalist)**: 10,000 species already supported
+- No configuration needed - automatically classifies detected wildlife
+- Enable in `config/config.yaml` → `detection.use_two_stage: true`
+
+**Custom Training** (future): Train YOLOX on custom classes
+- See `docs/training/` for training workflow
+- Can add telescope parts, specific animals, etc.
 
 ### Implementing Collision Detection Logic
 
@@ -229,21 +261,27 @@ If asked to implement, see comments in `detection_processor.py` for approach.
 **Debugging**:
 - Check `clips/` directory for saved detections
 - Use `scripts/view_snapshots.py` to review with metadata
-- Logs show inference times (currently ~120ms, target <50ms with TensorRT)
+- Logs show inference times (currently 11-21ms YOLOX, excellent performance)
+- Use `./service.sh logs -f` to monitor live system logs
 
 ## GPU Optimization
 
 **Current Performance (A30)**:
-- GroundingDINO: ~120ms inference (unoptimized)
-- Target with TensorRT: ~13ms (Phase 4 - planned)
-- VRAM usage: ~2-3GB
+- YOLOX-S: ~11-21ms inference (excellent)
+- Stage 2 (iNaturalist): +20-30ms when triggered
+- VRAM usage: ~2GB per camera (~4GB total for 2 cameras)
 - Use `/stats` endpoint for detailed metrics
+
+**Future Optimization**:
+- TensorRT: Can reduce to 3-5ms (not critical, current speed excellent)
+- FP16: Already optimal for this workload
+- Batch inference: Could process multiple cameras simultaneously
 
 ## API Quick Reference
 
 - **WebSocket**: `ws://localhost:8000/ws/detections` (real-time detections)
 - **HTTP**: `GET /stats` (performance metrics)
-- See `API_REFERENCE.md` for complete documentation
+- See `docs/api/API_REFERENCE.md` for complete documentation
 
 ## Common Issues
 
@@ -251,11 +289,20 @@ If asked to implement, see comments in `detection_processor.py` for approach.
 
 **Camera connection fails**: Check IP, credentials, firewall. Run `tests/test_camera_connection.py`
 
-**High latency (>160ms)**: Expected with current GroundingDINO. Will improve with TensorRT (Phase 4)
+**High latency (>50ms)**:
+- Reduce `input_size` from [1920, 1920] to [640, 640]
+- Switch to `yolox-tiny` or `yolox-nano`
+- Check per-camera `detection_overrides`
 
-**False positives**: Increase `min_box_area` or adjust `class_confidence_overrides`
+**False positives**:
+- Increase `conf_threshold` or per-camera overrides
+- Increase `min_box_area`
+- Adjust `class_confidence_overrides` (e.g., person: 0.80)
 
-**Missing detections**: Lower `box_threshold` or add more specific text prompts
+**Missing detections**:
+- Lower `conf_threshold` (currently 0.15, very sensitive)
+- Increase `input_size` for better small object detection
+- Check `wildlife_only` filter isn't excluding needed classes
 
 ## Code Style Notes
 
@@ -326,10 +373,10 @@ This project is licensed under the **MIT License**. All dependencies use permiss
 
 ### Core Dependencies
 
-- **GroundingDINO** (Apache 2.0) - https://github.com/IDEA-Research/GroundingDINO
-  - Open-vocabulary object detection
-- **iNaturalist/EVA02** (Apache 2.0) - https://github.com/huggingface/pytorch-image-models  
-  - 10,000 species classification
+- **YOLOX** (Apache 2.0) - https://github.com/Megvii-BaseDetection/YOLOX
+  - Ultra-fast object detection (11-21ms inference)
+- **iNaturalist/EVA02** (Apache 2.0) - https://github.com/huggingface/pytorch-image-models
+  - 10,000 species classification (Stage 2)
 - **PyTorch** (BSD-3-Clause) - https://pytorch.org/
   - Deep learning framework
 - **OpenCV** (Apache 2.0) - https://opencv.org/
@@ -338,3 +385,9 @@ This project is licensed under the **MIT License**. All dependencies use permiss
   - Web framework
 
 All components are MIT/Apache 2.0/BSD compatible.
+
+### Migration History
+
+- **v1.0**: Ultralytics YOLO (AGPL-3.0, license incompatible)
+- **v1.1**: GroundingDINO (Apache 2.0, 120ms inference, too slow)
+- **v1.2** (Current): YOLOX (Apache 2.0, 11-21ms inference, 47x faster)
