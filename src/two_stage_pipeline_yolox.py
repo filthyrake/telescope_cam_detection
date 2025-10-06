@@ -136,7 +136,10 @@ class TwoStageDetectionPipeline:
                 confidence = top_result['confidence']
                 taxonomic_level = top_result.get('taxonomic_level', 'species')
 
-                # Always add species info (hierarchical fallback may provide class/order/family)
+                # Note: Hierarchical mode accepts confidence >= 0.1 (class level)
+                # This is intentional - lower confidence returns coarser taxonomic levels
+                # (e.g., "Mammalia (class)" at 0.15 instead of null)
+                # Original stage2_confidence_threshold is enforced at classifier level
                 detection['species'] = species_name
                 detection['species_confidence'] = float(confidence)
                 detection['stage2_category'] = category

@@ -113,7 +113,16 @@ class SpeciesClassifier:
             tax_entry = self.taxonomy.get(str(class_id), {})
             if isinstance(tax_entry, str):
                 return (tax_entry, "species")
-            return (tax_entry.get('common_name', f"species_{class_id}"), "species")
+            elif isinstance(tax_entry, dict):
+                # Try common_name, then name, then fallback
+                label = tax_entry.get('common_name') or tax_entry.get('name')
+                if label:
+                    return (label, "species")
+                else:
+                    return (f"species_{class_id}", "species")
+            else:
+                # Unexpected type, fallback
+                return (f"species_{class_id}", "species")
 
         # Get taxonomy entry
         tax_entry = self.taxonomy.get(str(class_id), {})
@@ -258,6 +267,12 @@ class SpeciesClassifier:
             for prob, idx in zip(top_probs, top_indices):
                 prob = prob.item()
                 idx = idx.item()
+
+                # For hierarchical mode, allow lower threshold (class level = 0.1)
+                # For non-hierarchical mode, enforce standard threshold
+                min_threshold = 0.1 if self.use_hierarchical else self.confidence_threshold
+                if prob < min_threshold:
+                    continue
 
                 # Get hierarchical label based on confidence
                 label, tax_level = self.get_hierarchical_label(idx, prob)
