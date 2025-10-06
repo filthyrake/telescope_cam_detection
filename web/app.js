@@ -79,18 +79,22 @@ class DetectionApp {
             }
         });
 
-        // Handle window resize in fullscreen
+        // Handle window resize in fullscreen with throttling
+        let resizeTimeout;
         window.addEventListener('resize', () => {
             if (document.fullscreenElement) {
-                this.resizeCanvasForFullscreen();
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(() => {
+                    this.resizeCanvasForFullscreen();
+                }, 100);
             }
         });
     }
 
     resizeCanvasForFullscreen() {
-        // Get screen dimensions
-        const screenWidth = window.screen.width;
-        const screenHeight = window.screen.height;
+        // Get viewport dimensions (not screen dimensions)
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
 
         // Calculate aspect ratio
         const videoAspect = this.originalCanvasWidth / this.originalCanvasHeight;
