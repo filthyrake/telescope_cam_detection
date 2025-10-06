@@ -268,12 +268,27 @@ class TelescopeDetectionSystem:
                     if enhancement_config and 'device' not in enhancement_config:
                         enhancement_config['device'] = camera_detection_config['device']
 
+                    # Get preprocessing config (camera-specific overrides global)
+                    global_preprocessing = species_config.get('preprocessing', {})
+                    camera_preprocessing = camera_config.get('stage2_preprocessing', {})
+
+                    # Merge preprocessing configs (camera overrides global)
+                    crop_padding_percent = camera_preprocessing.get('crop_padding_percent',
+                                                                    global_preprocessing.get('crop_padding_percent', 20))
+                    min_crop_size = camera_preprocessing.get('min_crop_size',
+                                                            global_preprocessing.get('min_crop_size', 64))
+
+                    if camera_preprocessing:
+                        logger.info(f"  [{camera_id}] Stage 2 preprocessing: padding={crop_padding_percent}%, min_size={min_crop_size}px")
+
                     # Initialize pipeline for this camera
                     camera_two_stage_pipeline = TwoStageDetectionPipeline(
                         enable_species_classification=camera_detection_config.get('enable_species_classification', True),
                         stage2_confidence_threshold=species_config.get('confidence_threshold', 0.3),
                         device=camera_detection_config['device'],
-                        enhancement_config=enhancement_config if enhancement_config else None
+                        enhancement_config=enhancement_config if enhancement_config else None,
+                        crop_padding_percent=crop_padding_percent,
+                        min_crop_size=min_crop_size
                     )
 
                     # Initialize iNaturalist species classifier for this camera
