@@ -99,7 +99,7 @@ class TelescopeDetectionSystem:
             # Get cameras from config
             cameras_config = self.config.get('cameras', [])
             if not cameras_config:
-                logger.error("No cameras configured in config.yaml")
+                logger.error('No cameras configured in config.yaml. Expected "cameras" array with at least one camera entry.')
                 return False
 
             # Filter to only enabled cameras
