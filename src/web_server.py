@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 class WebServer:
     """
-    Web server for telescope detection system.
+    Web server for backyard computer vision system.
     Provides WebSocket for detection data and HTTP for video streaming.
     """
 
@@ -48,7 +48,7 @@ class WebServer:
         self.host = host
         self.port = port
 
-        self.app = FastAPI(title="Telescope Detection System")
+        self.app = FastAPI(title="Backyard Computer Vision System")
         self.active_connections: list[WebSocket] = []
 
         # Latest detections per camera
@@ -194,7 +194,7 @@ class WebServer:
                 # Send initial connection message
                 await websocket.send_json({
                     "type": "connection",
-                    "message": "Connected to telescope detection system",
+                    "message": "Connected to backyard computer vision system",
                     "timestamp": time.time()
                 })
 
