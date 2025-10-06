@@ -85,7 +85,8 @@ class InferenceEngine:
         self.inference_thread: Optional[Thread] = None
 
         # Performance metrics
-        self.inference_count = 0
+        self.inference_count = 0  # Reset every second for FPS calculation
+        self.total_inference_count = 0  # Never reset - cumulative total
         self.total_inference_time = 0.0
         self.avg_inference_time = 0.0
         self.fps = 0.0
@@ -184,6 +185,7 @@ class InferenceEngine:
 
                 # Update metrics
                 self.inference_count += 1
+                self.total_inference_count += 1  # Cumulative total (never reset)
                 self.total_inference_time += inference_time
                 self.avg_inference_time = self.total_inference_time / self.inference_count
 
@@ -285,7 +287,9 @@ class InferenceEngine:
     def get_stats(self) -> Dict[str, Any]:
         """Get inference statistics"""
         return {
+            'device': self.device,
             'fps': self.fps,
             'avg_inference_time': self.avg_inference_time,
-            'total_inferences': self.inference_count,
+            'avg_inference_time_ms': self.avg_inference_time * 1000,
+            'total_inferences': self.total_inference_count,  # Use cumulative count
         }

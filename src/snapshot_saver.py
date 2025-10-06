@@ -118,11 +118,12 @@ class SnapshotSaver:
             # Check cooldown
             with self.cooldown_lock:
                 last_save = self.last_save_times.get(class_name, 0)
-                if time.time() - last_save < self.cooldown_seconds:
+                current_time = time.time()  # Call once for consistency
+                if current_time - last_save < self.cooldown_seconds:
                     continue
 
-                # Update last save time
-                self.last_save_times[class_name] = time.time()
+                # Update last save time (use same timestamp as check)
+                self.last_save_times[class_name] = current_time
 
             return True
 
