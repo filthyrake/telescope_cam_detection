@@ -134,6 +134,7 @@ detection:
   class_confidence_overrides:
     person: 0.60  # Much higher to reduce false "person" detections
     bird: 0.55    # High threshold - telescope covers falsely detected as birds
+    bear: 0.70    # Very high - bears extremely rare in Mojave, rocks often misdetected
 
   # Size filtering (better than just confidence for distant wildlife!)
   # Note: Inference runs at 1920x1920 (3,686,400 total pixels)
