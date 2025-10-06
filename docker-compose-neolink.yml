@@ -1,0 +1,18 @@
+services:
+  neolink:
+    # Pin to specific digest for reproducibility (2025-10-06)
+    # This is the actively maintained fork: https://github.com/QuantumEntangledAndy/neolink
+    image: quantumentangledandy/neolink@sha256:4eebf499c20f8de740d8c32163f665e41fd0f342be3b1174828b3b8bd7def59d
+    container_name: neolink
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./neolink-config.toml:/etc/neolink.toml:ro
+    environment:
+      - TZ=America/Los_Angeles
+      - RUST_LOG=neolink=info
+    healthcheck:
+      test: ['CMD-SHELL', 'timeout 1 bash -c "</dev/tcp/127.0.0.1/8554" || exit 1']
+      interval: 10s
+      timeout: 2s
+      retries: 3

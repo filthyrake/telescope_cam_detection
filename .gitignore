@@ -62,6 +62,9 @@ yolov8*-world*.pt
 test_*.jpg
 test_*.png
 
+# Test scripts (may contain hardcoded credentials - NEVER commit)
+test_*.py
+
 # YOLOX repository (external dependency)
 YOLOX/
 
@@ -79,6 +82,7 @@ camera_credentials.yaml
 credentials.yaml
 .env
 *.credentials.yaml
+neolink-config.toml
 
 # Configuration with private IPs (use config.yaml.example to create)
 config/config.yaml
