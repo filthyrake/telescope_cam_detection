@@ -2,12 +2,12 @@
 
 # Multi-camera configuration
 # Each camera can have its own settings
+# NOTE: Camera credentials (username/password) are stored in camera_credentials.yaml
+# This file is gitignored for security. See camera_credentials.example.yaml for format.
 cameras:
   - id: "cam1"
     name: "Main Backyard View"
     ip: "10.0.8.18"
-    username: "admin"
-    password: "REDACTED"
     stream: "main"  # Options: "main" (2K) or "sub" (lower resolution)
     enabled: true
 
@@ -20,8 +20,6 @@ cameras:
   - id: "cam2"
     name: "Secondary View"
     ip: "10.0.2.47"
-    username: "admin"
-    password: "REDACTED"
     stream: "main"
     enabled: true
     target_width: 1920

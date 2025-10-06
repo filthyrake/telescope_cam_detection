@@ -59,9 +59,31 @@ class TelescopeDetectionSystem:
         # Shutdown flag
         self.shutdown_requested = False
 
+    def load_credentials(self) -> dict:
+        """
+        Load camera credentials from separate YAML file.
+
+        Returns:
+            Dictionary with camera credentials, or empty dict if file not found
+        """
+        credentials_file = Path("camera_credentials.yaml")
+        if not credentials_file.exists():
+            logger.error(f"Credentials file not found: {credentials_file}")
+            logger.error("Please copy camera_credentials.example.yaml to camera_credentials.yaml and fill in your credentials")
+            return {}
+
+        try:
+            with open(credentials_file, 'r') as f:
+                credentials = yaml.safe_load(f)
+            logger.info("Camera credentials loaded successfully")
+            return credentials
+        except Exception as e:
+            logger.error(f"Error loading credentials: {e}")
+            return {}
+
     def load_config(self) -> bool:
         """
-        Load configuration from YAML file.
+        Load configuration from YAML file and merge with credentials.
 
         Returns:
             True if config loaded successfully, False otherwise
@@ -76,6 +98,24 @@ class TelescopeDetectionSystem:
                 self.config = yaml.safe_load(f)
 
             logger.info("Configuration loaded successfully")
+
+            # Load and merge credentials
+            credentials = self.load_credentials()
+            if not credentials or 'cameras' not in credentials:
+                logger.error("Failed to load camera credentials")
+                return False
+
+            # Merge credentials into camera configs
+            for camera in self.config.get('cameras', []):
+                camera_id = camera.get('id')
+                if camera_id in credentials['cameras']:
+                    camera['username'] = credentials['cameras'][camera_id]['username']
+                    camera['password'] = credentials['cameras'][camera_id]['password']
+                else:
+                    logger.error(f"No credentials found for camera: {camera_id}")
+                    return False
+
+            logger.info("Camera credentials merged successfully")
             return True
 
         except Exception as e:
