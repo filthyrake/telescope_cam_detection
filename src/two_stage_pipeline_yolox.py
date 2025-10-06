@@ -35,6 +35,7 @@ class TwoStageDetectionPipeline:
         stage2_confidence_threshold: float = 0.3,
         device: str = "cuda:0",
         enhancement_config: Optional[Dict[str, Any]] = None,
+        rejected_taxonomic_levels: Optional[List[str]] = None,
     ):
         """
         Initialize two-stage pipeline.
@@ -44,10 +45,14 @@ class TwoStageDetectionPipeline:
             stage2_confidence_threshold: Min confidence for species classification
             device: Device to run on
             enhancement_config: Image enhancement config (e.g., {"method": "realesrgan", ...})
+            rejected_taxonomic_levels: Taxonomic levels to reject (e.g., ['order', 'class'])
         """
         self.enable_species_classification = enable_species_classification
         self.stage2_confidence_threshold = stage2_confidence_threshold
         self.device = device
+
+        # Configurable rejected taxonomic levels (default: order and class are too vague)
+        self.rejected_taxonomic_levels = rejected_taxonomic_levels or ['order', 'class']
 
         # Species classifiers (will be added via add_species_classifier)
         self.species_classifiers: Dict[str, SpeciesClassifier] = {}
@@ -106,6 +111,29 @@ class TwoStageDetectionPipeline:
         """
         self.species_classifiers[category] = classifier
         logger.info(f"Added species classifier for category: {category}")
+
+    def _set_detection_species_fields(
+        self,
+        detection: Dict[str, Any],
+        species: Optional[str],
+        confidence: float,
+        category: str,
+        taxonomic_level: Optional[str]
+    ):
+        """
+        Helper method to set species classification fields on detection dict.
+
+        Args:
+            detection: Detection dict to update
+            species: Species name (or None)
+            confidence: Classification confidence
+            category: Stage 2 category (bird, mammal, reptile)
+            taxonomic_level: Taxonomic level (species, genus, family, order, class)
+        """
+        detection['species'] = species
+        detection['species_confidence'] = float(confidence)
+        detection['stage2_category'] = category
+        detection['taxonomic_level'] = taxonomic_level
 
     def classify_detection(
         self,
@@ -202,22 +230,18 @@ class TwoStageDetectionPipeline:
                 confidence = top_result['confidence']
                 taxonomic_level = top_result.get('taxonomic_level', 'species')
 
-                # Note: Hierarchical mode accepts confidence >= 0.1 (class level)
-                # This is intentional - lower confidence returns coarser taxonomic levels
-                # (e.g., "Mammalia (class)" at 0.15 instead of null)
-                # Original stage2_confidence_threshold is enforced at classifier level
-                detection['species'] = species_name
-                detection['species_confidence'] = float(confidence)
-                detection['stage2_category'] = category
-                detection['taxonomic_level'] = taxonomic_level
-
-                logger.debug(f"Classified as {species_name} ({taxonomic_level}, conf: {confidence:.2f})")
+                # Filter out vague taxonomic level classifications (Option 2)
+                # Only accept specific identifications (species, genus, family)
+                if taxonomic_level in self.rejected_taxonomic_levels:
+                    logger.debug(f"Rejected vague classification: {species_name} ({taxonomic_level}, conf: {confidence:.2f})")
+                    self._set_detection_species_fields(detection, None, 0.0, category, None)
+                else:
+                    # Accept specific identifications
+                    self._set_detection_species_fields(detection, species_name, confidence, category, taxonomic_level)
+                    logger.debug(f"Classified as {species_name} ({taxonomic_level}, conf: {confidence:.2f})")
             else:
                 # No results above threshold
-                detection['species'] = None
-                detection['species_confidence'] = 0.0
-                detection['stage2_category'] = category
-                detection['taxonomic_level'] = None
+                self._set_detection_species_fields(detection, None, 0.0, category, None)
 
         except Exception as e:
             logger.error(f"Species classification failed: {e}")
