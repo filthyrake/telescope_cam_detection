@@ -48,14 +48,25 @@ install_service() {
 
     check_root
 
-    # Copy service file to systemd directory
-    if [ -f "$PROJECT_DIR/$SERVICE_FILE" ]; then
-        cp "$PROJECT_DIR/$SERVICE_FILE" "$SYSTEMD_DIR/$SERVICE_NAME.service"
-        print_success "Service file copied to $SYSTEMD_DIR"
-    else
-        print_error "Service file not found: $PROJECT_DIR/$SERVICE_FILE"
+    # Get current user (the one who ran sudo)
+    REAL_USER="${SUDO_USER:-$USER}"
+
+    # Check if template exists
+    if [ ! -f "$PROJECT_DIR/$SERVICE_FILE.template" ]; then
+        print_error "Service template not found: $PROJECT_DIR/$SERVICE_FILE.template"
         exit 1
     fi
+
+    # Generate service file from template
+    print_info "Generating service file for user: $REAL_USER"
+    sed -e "s|{{USER}}|$REAL_USER|g" \
+        -e "s|{{PROJECT_DIR}}|$PROJECT_DIR|g" \
+        "$PROJECT_DIR/$SERVICE_FILE.template" > "$PROJECT_DIR/$SERVICE_FILE"
+    print_success "Service file generated"
+
+    # Copy service file to systemd directory
+    cp "$PROJECT_DIR/$SERVICE_FILE" "$SYSTEMD_DIR/$SERVICE_NAME.service"
+    print_success "Service file copied to $SYSTEMD_DIR"
 
     # Reload systemd
     systemctl daemon-reload
