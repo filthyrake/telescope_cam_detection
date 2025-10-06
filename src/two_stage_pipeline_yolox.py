@@ -60,7 +60,9 @@ class TwoStageDetectionPipeline:
         if enhancement_config and enhancement_config.get('enabled', False):
             try:
                 logger.info(f"Initializing image enhancer: method={enhancement_config.get('method', 'none')}")
-                self.enhancer = ImageEnhancer(**enhancement_config)
+                # Filter out 'enabled' key before passing to ImageEnhancer
+                enhancer_params = {k: v for k, v in enhancement_config.items() if k != 'enabled'}
+                self.enhancer = ImageEnhancer(**enhancer_params)
                 logger.info("✓ Image enhancer loaded")
             except Exception as e:
                 logger.error(f"Failed to load image enhancer: {e}")
