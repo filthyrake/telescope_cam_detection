@@ -36,6 +36,8 @@ class TwoStageDetectionPipeline:
         device: str = "cuda:0",
         enhancement_config: Optional[Dict[str, Any]] = None,
         rejected_taxonomic_levels: Optional[List[str]] = None,
+        crop_padding_percent: int = 20,
+        min_crop_size: int = 64,
     ):
         """
         Initialize two-stage pipeline.
@@ -46,6 +48,8 @@ class TwoStageDetectionPipeline:
             device: Device to run on
             enhancement_config: Image enhancement config (e.g., {"method": "realesrgan", ...})
             rejected_taxonomic_levels: Taxonomic levels to reject (e.g., ['order', 'class'])
+            crop_padding_percent: Percent to expand bbox for better context (e.g., 20 = 20% padding)
+            min_crop_size: Skip Stage 2 if crop smaller than this (e.g., 64 = 64x64 pixels minimum)
         """
         self.enable_species_classification = enable_species_classification
         self.stage2_confidence_threshold = stage2_confidence_threshold
@@ -53,6 +57,10 @@ class TwoStageDetectionPipeline:
 
         # Configurable rejected taxonomic levels (default: order and class are too vague)
         self.rejected_taxonomic_levels = rejected_taxonomic_levels or ['order', 'class']
+
+        # Preprocessing configuration
+        self.crop_padding_percent = crop_padding_percent
+        self.min_crop_size = min_crop_size
 
         # Species classifiers (will be added via add_species_classifier)
         self.species_classifiers: Dict[str, SpeciesClassifier] = {}
@@ -168,30 +176,47 @@ class TwoStageDetectionPipeline:
             detection['species_confidence'] = 0.0
             return detection
 
-        # Extract crop
+        # Extract crop with padding
         x1 = int(bbox['x1'])
         y1 = int(bbox['y1'])
         x2 = int(bbox['x2'])
         y2 = int(bbox['y2'])
 
-        # Ensure valid crop
-        h, w = frame.shape[:2]
-        x1 = max(0, min(x1, w))
-        y1 = max(0, min(y1, h))
-        x2 = max(0, min(x2, w))
-        y2 = max(0, min(y2, h))
+        # Calculate crop dimensions before padding
+        crop_w = x2 - x1
+        crop_h = y2 - y1
 
-        if x2 <= x1 or y2 <= y1:
-            # Invalid crop
-            detection['species'] = None
-            detection['species_confidence'] = 0.0
+        # Check minimum size BEFORE padding (skip Stage 2 for tiny detections)
+        if crop_w < self.min_crop_size or crop_h < self.min_crop_size:
+            logger.debug(f"Skipping Stage 2: crop too small ({crop_w}x{crop_h} < {self.min_crop_size}x{self.min_crop_size})")
+            self._set_detection_species_fields(detection, None, 0.0, category, None)
             return detection
 
-        crop = frame[y1:y2, x1:x2]
+        # Add padding for better context
+        padding_x = int(crop_w * self.crop_padding_percent / 100)
+        padding_y = int(crop_h * self.crop_padding_percent / 100)
+
+        x1_padded = x1 - padding_x
+        y1_padded = y1 - padding_y
+        x2_padded = x2 + padding_x
+        y2_padded = y2 + padding_y
+
+        # Ensure valid crop within frame bounds
+        h, w = frame.shape[:2]
+        x1_padded = max(0, min(x1_padded, w - 1))
+        y1_padded = max(0, min(y1_padded, h - 1))
+        x2_padded = max(0, min(x2_padded, w))
+        y2_padded = max(0, min(y2_padded, h))
+
+        if x2_padded <= x1_padded or y2_padded <= y1_padded:
+            # Invalid crop
+            self._set_detection_species_fields(detection, None, 0.0, category, None)
+            return detection
+
+        crop = frame[y1_padded:y2_padded, x1_padded:x2_padded]
 
         if crop.size == 0:
-            detection['species'] = None
-            detection['species_confidence'] = 0.0
+            self._set_detection_species_fields(detection, None, 0.0, category, None)
             return detection
 
         # Apply image enhancement if configured
