@@ -171,6 +171,7 @@ detection:
     person: 0.75  # Much higher to reduce false "person" detections
     bird: 0.55    # High threshold - telescope covers falsely detected as birds
     bear: 0.90    # Very high - bears extremely rare in Mojave, rocks often misdetected
+    dog: 0.45     # Reduce false positives from shadows
 
   # Size filtering (better than just confidence for distant wildlife!)
   # Note: Inference runs at 1920x1920 (3,686,400 total pixels)
