@@ -26,7 +26,7 @@ detection:
   input_size: [1920, 1920]  # [height, width]
 
   # YOLOX detection thresholds
-  conf_threshold: 0.05  # Confidence threshold (extremely low for tiny/distant wildlife in IR)
+  conf_threshold: 0.15  # Confidence threshold (low for small wildlife, but not too aggressive)
   nms_threshold: 0.45   # NMS IoU threshold
   wildlife_only: true   # Filter to wildlife-relevant classes only
 
