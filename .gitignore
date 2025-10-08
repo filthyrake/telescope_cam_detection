@@ -89,3 +89,6 @@ config/config.yaml
 
 # Generated systemd service file (use telescope_detection.service.template)
 telescope_detection.service
+
+# Claude Code instructions (may contain private IP addresses and system details)
+CLAUDE.md
