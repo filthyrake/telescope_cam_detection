@@ -84,13 +84,12 @@ class RTSPStreamCapture:
 
         # OpenCV VideoCapture with optimized settings for low latency
         # Use FFMPEG backend with TCP transport if requested
+        import os
         if self.use_tcp:
             # Set RTSP transport to TCP via environment variable (OpenCV+FFMPEG)
-            import os
             # Set shorter timeout (5 seconds) for non-blocking startup
             os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = f'rtsp_transport;tcp|timeout;{RTSP_TIMEOUT_MICROSECONDS}'
         else:
-            import os
             os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = f'timeout;{RTSP_TIMEOUT_MICROSECONDS}'
 
         self.capture = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)

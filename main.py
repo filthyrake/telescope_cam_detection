@@ -405,6 +405,22 @@ class TelescopeDetectionSystem:
             logger.error(f"Failed to initialize components: {e}")
             return False
 
+    def _validate_active_cameras(self, active_cameras: list, component_name: str) -> bool:
+        """
+        Validate that at least one camera is active.
+
+        Args:
+            active_cameras: List of active camera indices
+            component_name: Name of component for error message
+
+        Returns:
+            True if cameras are active, False if none remain
+        """
+        if not active_cameras:
+            logger.error(f"No {component_name} started successfully - cannot continue")
+            return False
+        return True
+
     def start(self) -> bool:
         """
         Start all system components.
@@ -431,8 +447,7 @@ class TelescopeDetectionSystem:
                 else:
                     logger.warning(f"  [{camera_id}] ✗ Failed to start stream capture - camera will be skipped")
 
-            if not active_cameras:
-                logger.error("No cameras successfully started - cannot continue")
+            if not self._validate_active_cameras(active_cameras, "cameras"):
                 return False
 
             logger.info(f"{len(active_cameras)}/{len(self.stream_captures)} camera(s) started successfully")
@@ -452,8 +467,7 @@ class TelescopeDetectionSystem:
             # Remove failed cameras
             active_cameras = [i for i in active_cameras if i not in failed_inference]
 
-            if not active_cameras:
-                logger.error("No inference engines started successfully - cannot continue")
+            if not self._validate_active_cameras(active_cameras, "inference engines"):
                 return False
 
             logger.info(f"{len(active_cameras)} inference engine(s) started successfully")
@@ -474,8 +488,7 @@ class TelescopeDetectionSystem:
             # Remove failed cameras
             active_cameras = [i for i in active_cameras if i not in failed_processors]
 
-            if not active_cameras:
-                logger.error("No detection processors started successfully - cannot continue")
+            if not self._validate_active_cameras(active_cameras, "detection processors"):
                 return False
 
             logger.info(f"{len(active_cameras)} detection processor(s) started successfully")

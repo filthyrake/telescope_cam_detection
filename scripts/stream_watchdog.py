@@ -94,8 +94,11 @@ class StreamWatchdog:
                         try:
                             parts = line.split()
                             if len(parts) >= 3:
-                                # This is a rough timestamp - good enough for watchdog
-                                return datetime.now()
+                                # Parse timestamp: combine current year with log's month, day, and time
+                                log_time_str = f"{datetime.now().year} {parts[0]} {parts[1]} {parts[2]}"
+                                # Example: "2024 Oct 06 18:55:02"
+                                log_time = datetime.strptime(log_time_str, "%Y %b %d %H:%M:%S")
+                                return log_time
                         except Exception as e:
                             logger.debug(f"Failed to parse timestamp: {e}")
 

@@ -45,6 +45,7 @@ class MotionFilter:
         self.detect_shadows = detect_shadows
         self.min_motion_area = min_motion_area
         self.motion_required = motion_required
+        # Gaussian blur kernel size must be odd (required by OpenCV cv2.GaussianBlur)
         self.motion_blur_size = motion_blur_size if motion_blur_size % 2 == 1 else motion_blur_size + 1
         self.min_motion_ratio = min_motion_ratio
 
