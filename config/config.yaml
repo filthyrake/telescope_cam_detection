@@ -36,10 +36,10 @@ cameras:
   # Second camera (ground level - Reolink E1 Pro with better resolution)
   - id: "cam2"
     name: "Secondary View"
-    ip: "127.0.0.1"  # Neolink RTSP bridge (localhost, not camera IP)
+    ip: "10.0.6.79"  # Direct camera IP (testing direct RTSP vs Neolink)
     stream: "main"
     enabled: true
-    protocol: "neolink"  # Use Neolink RTSP bridge for E1 Pro (eliminates screen tearing)
+    protocol: "rtsp-tcp"  # Direct RTSP over TCP (testing to fix H.264 corruption)
     target_width: 2560  # E1 Pro native resolution (better quality for Stage 2)
     target_height: 1440
     buffer_size: 1
