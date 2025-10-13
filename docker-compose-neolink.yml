@@ -13,7 +13,7 @@
 #   - Perfect video quality (was corrupted)
 #   - Stable latency <0.1s (was accumulating to 10min)
 #
-# RTSP URL: rtsp://admin:pass@10.0.6.79:554/h264Preview_01_main
+# RTSP URL: rtsp://username:password@<CAMERA_IP>:554/h264Preview_01_main
 #
 # Container removed: 2025-10-13
 # Images removed: quantumentangledandy/neolink, thirtythreeforty/neolink
