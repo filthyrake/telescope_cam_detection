@@ -7,6 +7,7 @@ Uses background subtraction to identify regions with actual movement.
 import cv2
 import numpy as np
 import logging
+from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -206,7 +207,6 @@ class AdaptiveMotionFilter(MotionFilter):
 
     def _is_daytime(self) -> bool:
         """Check if it's currently daytime."""
-        from datetime import datetime
         current_hour = datetime.now().hour
         return self.day_start_hour <= current_hour < self.day_end_hour
 

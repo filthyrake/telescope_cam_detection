@@ -4,6 +4,7 @@ Handles video stream capture from Reolink RLC-410W camera with minimal latency.
 """
 
 import cv2
+import os
 import time
 import logging
 from typing import Optional, Tuple
@@ -84,7 +85,6 @@ class RTSPStreamCapture:
 
         # OpenCV VideoCapture with optimized settings for low latency
         # Use FFMPEG backend with TCP transport if requested
-        import os
         if self.use_tcp:
             # Set RTSP transport to TCP via environment variable (OpenCV+FFMPEG)
             # Set shorter timeout (5 seconds) for non-blocking startup

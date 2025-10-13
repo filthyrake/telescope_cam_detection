@@ -32,6 +32,9 @@ logger = logging.getLogger('stream_watchdog')
 class StreamWatchdog:
     """Monitors camera stream health and triggers recovery actions"""
 
+    # Sentinel value to indicate recovery should be stopped (too many failed attempts)
+    STOP_RECOVERY_SENTINEL = 99
+
     def __init__(
         self,
         check_interval: int = 30,
@@ -94,10 +97,17 @@ class StreamWatchdog:
                         try:
                             parts = line.split()
                             if len(parts) >= 3:
-                                # Parse timestamp: combine current year with log's month, day, and time
-                                log_time_str = f"{datetime.now().year} {parts[0]} {parts[1]} {parts[2]}"
-                                # Example: "2024 Oct 06 18:55:02"
+                                # Parse timestamp with current year first
+                                now = datetime.now()
+                                log_time_str = f"{now.year} {parts[0]} {parts[1]} {parts[2]}"
                                 log_time = datetime.strptime(log_time_str, "%Y %b %d %H:%M:%S")
+
+                                # Handle year boundary: if log timestamp is in the future,
+                                # it's actually from last year (e.g., Dec logs read in Jan)
+                                if log_time > now:
+                                    log_time_str = f"{now.year - 1} {parts[0]} {parts[1]} {parts[2]}"
+                                    log_time = datetime.strptime(log_time_str, "%Y %b %d %H:%M:%S")
+
                                 return log_time
                         except Exception as e:
                             logger.debug(f"Failed to parse timestamp: {e}")
@@ -218,13 +228,13 @@ class StreamWatchdog:
                     return True
             else:
                 logger.error(f"❌ [{camera_id}] Service restart didn't help - manual check needed")
-                self.recovery_attempts[camera_id] = 99  # Stop trying
+                self.recovery_attempts[camera_id] = self.STOP_RECOVERY_SENTINEL
 
         else:
             # Too many attempts - give up
             logger.error(f"❌ [{camera_id}] Recovery failed after multiple attempts")
             logger.error("Manual intervention required - check camera and network connectivity")
-            self.recovery_attempts[camera_id] = 99
+            self.recovery_attempts[camera_id] = self.STOP_RECOVERY_SENTINEL
 
         return False
 
@@ -283,7 +293,7 @@ class StreamWatchdog:
                     if is_healthy:
                         # Reset recovery attempts on successful health check
                         if camera_id in self.recovery_attempts:
-                            if self.recovery_attempts[camera_id] < 99:
+                            if self.recovery_attempts[camera_id] < self.STOP_RECOVERY_SENTINEL:
                                 logger.info(f"✅ [{camera_id}] Stream recovered")
                             del self.recovery_attempts[camera_id]
                     else:
