@@ -1,18 +1,35 @@
-services:
-  neolink:
-    # Pin to specific digest for reproducibility (2025-10-06)
-    # This is the actively maintained fork: https://github.com/QuantumEntangledAndy/neolink
-    image: quantumentangledandy/neolink@sha256:4eebf499c20f8de740d8c32163f665e41fd0f342be3b1174828b3b8bd7def59d
-    container_name: neolink
-    restart: unless-stopped
-    network_mode: host
-    volumes:
-      - ./neolink-config.toml:/etc/neolink.toml:ro
-    environment:
-      - TZ=America/Los_Angeles
-      - RUST_LOG=neolink=info
-    healthcheck:
-      test: ['CMD-SHELL', 'timeout 1 bash -c "</dev/tcp/127.0.0.1/8554" || exit 1']
-      interval: 10s
-      timeout: 2s
-      retries: 3
+# ============================================================================
+# DEPRECATED: Neolink RTSP Bridge (NO LONGER USED)
+# ============================================================================
+#
+# This docker-compose file is DEPRECATED as of 2025-10-13.
+#
+# Reason: Neolink's Baichuan→RTSP transcoding was causing severe H.264
+# corruption (180 errors per 10 minutes) and lag accumulation on cam2
+# (Reolink E1 Pro).
+#
+# Solution: Cam2 now uses direct RTSP connection (port 554) which provides:
+#   - Zero H.264 errors (was 18/min)
+#   - Perfect video quality (was corrupted)
+#   - Stable latency <0.1s (was accumulating to 10min)
+#
+# RTSP URL: rtsp://username:password@<CAMERA_IP>:554/h264Preview_01_main
+#
+# Container removed: 2025-10-13
+# Images removed: quantumentangledandy/neolink, thirtythreeforty/neolink
+#
+# For historical reference, the original configuration was:
+#
+# services:
+#   neolink:
+#     image: quantumentangledandy/neolink@sha256:4eebf499c20f8de740d8c32163f665e41fd0f342be3b1174828b3b8bd7def59d
+#     container_name: neolink
+#     restart: unless-stopped
+#     network_mode: host
+#     volumes:
+#       - ./neolink-config.toml:/etc/neolink.toml:ro
+#     environment:
+#       - TZ=America/Los_Angeles
+#       - RUST_LOG=neolink=info
+#
+# ============================================================================
