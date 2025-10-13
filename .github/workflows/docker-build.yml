@@ -18,6 +18,18 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Free up disk space
+      uses: jlumbroso/free-disk-space@main
+      with:
+        # Remove unnecessary tools and software to free up ~30GB
+        tool-cache: true
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: false
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
