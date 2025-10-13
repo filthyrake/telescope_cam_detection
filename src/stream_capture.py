@@ -14,6 +14,9 @@ from threading import Thread, Event
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# RTSP connection timeout in microseconds (5 seconds)
+RTSP_TIMEOUT_MICROSECONDS = 5_000_000
+
 
 class RTSPStreamCapture:
     """
@@ -85,10 +88,10 @@ class RTSPStreamCapture:
             # Set RTSP transport to TCP via environment variable (OpenCV+FFMPEG)
             import os
             # Set shorter timeout (5 seconds) for non-blocking startup
-            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp|timeout;5000000'
+            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = f'rtsp_transport;tcp|timeout;{RTSP_TIMEOUT_MICROSECONDS}'
         else:
             import os
-            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'timeout;5000000'  # 5 second timeout
+            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = f'timeout;{RTSP_TIMEOUT_MICROSECONDS}'
 
         self.capture = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
 

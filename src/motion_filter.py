@@ -9,7 +9,6 @@ import numpy as np
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -27,6 +26,7 @@ class MotionFilter:
         min_motion_area: int = 100,  # Minimum motion area in pixels² to consider
         motion_required: bool = True,  # Require motion for detection to be valid
         motion_blur_size: int = 21,  # Gaussian blur kernel size for noise reduction
+        min_motion_ratio: float = 0.05,  # Minimum motion ratio (5% of bbox must have motion)
     ):
         """
         Initialize motion filter.
@@ -38,6 +38,7 @@ class MotionFilter:
             min_motion_area: Minimum motion area to consider valid
             motion_required: If True, filter detections without motion
             motion_blur_size: Gaussian blur kernel size (must be odd)
+            min_motion_ratio: Minimum ratio of motion pixels to bbox area (0.0-1.0)
         """
         self.history = history
         self.var_threshold = var_threshold
@@ -45,6 +46,7 @@ class MotionFilter:
         self.min_motion_area = min_motion_area
         self.motion_required = motion_required
         self.motion_blur_size = motion_blur_size if motion_blur_size % 2 == 1 else motion_blur_size + 1
+        self.min_motion_ratio = min_motion_ratio
 
         # Background subtractor (MOG2 - mixture of Gaussians)
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
@@ -111,7 +113,7 @@ class MotionFilter:
         motion_ratio = motion_pixels / bbox_area if bbox_area > 0 else 0.0
 
         # Check if motion exceeds minimum threshold
-        has_motion = motion_pixels >= min_motion_pixels and motion_ratio > 0.05  # At least 5% of bbox
+        has_motion = motion_pixels >= min_motion_pixels and motion_ratio > self.min_motion_ratio
 
         return has_motion, motion_ratio
 

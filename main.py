@@ -450,8 +450,7 @@ class TelescopeDetectionSystem:
                     failed_inference.append(i)
 
             # Remove failed cameras
-            for i in failed_inference:
-                active_cameras.remove(i)
+            active_cameras = [i for i in active_cameras if i not in failed_inference]
 
             if not active_cameras:
                 logger.error("No inference engines started successfully - cannot continue")
@@ -473,8 +472,7 @@ class TelescopeDetectionSystem:
                     failed_processors.append(i)
 
             # Remove failed cameras
-            for i in failed_processors:
-                active_cameras.remove(i)
+            active_cameras = [i for i in active_cameras if i not in failed_processors]
 
             if not active_cameras:
                 logger.error("No detection processors started successfully - cannot continue")

@@ -14,9 +14,10 @@ import logging
 import subprocess
 import sys
 import time
+import yaml
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -35,17 +36,20 @@ class StreamWatchdog:
         self,
         check_interval: int = 30,
         freeze_threshold: int = 120,
-        max_restarts_per_hour: int = 5
+        max_restarts_per_hour: int = 5,
+        config_path: str = "config/config.yaml"
     ):
         """
         Args:
             check_interval: Seconds between health checks
             freeze_threshold: Seconds of inactivity before declaring stream frozen
             max_restarts_per_hour: Maximum service restarts per hour (safety limit)
+            config_path: Path to config.yaml file
         """
         self.check_interval = check_interval
         self.freeze_threshold = freeze_threshold
         self.max_restarts_per_hour = max_restarts_per_hour
+        self.config_path = config_path
 
         self.last_activity: Dict[str, datetime] = {}
         self.restart_history: list = []
@@ -221,6 +225,41 @@ class StreamWatchdog:
 
         return False
 
+    def get_camera_ids_from_config(self) -> List[str]:
+        """
+        Parse camera IDs from config.yaml file.
+
+        Returns:
+            List of enabled camera IDs
+        """
+        try:
+            config_file = Path(__file__).parent.parent / self.config_path
+            if not config_file.exists():
+                logger.warning(f"Config file not found: {config_file}")
+                return ['cam1', 'cam2']  # Fallback to defaults
+
+            with open(config_file, 'r') as f:
+                config = yaml.safe_load(f)
+
+            # Extract enabled camera IDs
+            cameras = config.get('cameras', [])
+            camera_ids = [
+                cam['id'] for cam in cameras
+                if cam.get('enabled', True)  # Default to enabled if not specified
+            ]
+
+            if camera_ids:
+                logger.info(f"Loaded {len(camera_ids)} camera(s) from config: {', '.join(camera_ids)}")
+                return camera_ids
+            else:
+                logger.warning("No cameras found in config, using defaults")
+                return ['cam1', 'cam2']
+
+        except Exception as e:
+            logger.error(f"Error reading config file: {e}")
+            logger.warning("Falling back to default camera IDs: cam1, cam2")
+            return ['cam1', 'cam2']
+
     def run(self):
         """Main watchdog loop"""
         logger.info("🐕 Stream watchdog started")
@@ -229,7 +268,7 @@ class StreamWatchdog:
         time.sleep(30)
 
         # Get camera IDs from config
-        cameras = ['cam1', 'cam2']  # TODO: Could parse from config.yaml
+        cameras = self.get_camera_ids_from_config()
 
         while True:
             try:
