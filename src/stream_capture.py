@@ -70,7 +70,7 @@ class RTSPStreamCapture:
 
     def connect(self) -> bool:
         """
-        Connect to the RTSP stream.
+        Connect to the RTSP stream with short timeout.
 
         Returns:
             True if connection successful, False otherwise
@@ -84,7 +84,11 @@ class RTSPStreamCapture:
         if self.use_tcp:
             # Set RTSP transport to TCP via environment variable (OpenCV+FFMPEG)
             import os
-            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp'
+            # Set shorter timeout (5 seconds) for non-blocking startup
+            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp|timeout;5000000'
+        else:
+            import os
+            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'timeout;5000000'  # 5 second timeout
 
         self.capture = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
 
@@ -109,19 +113,21 @@ class RTSPStreamCapture:
     def start(self) -> bool:
         """
         Start the capture thread.
+        Non-blocking: starts immediately and handles connection in background.
 
         Returns:
-            True if started successfully, False otherwise
+            Always returns True (camera will connect in background if not immediately available)
         """
+        # Try initial connection (non-blocking with short timeout)
         if not self.is_connected:
-            if not self.connect():
-                return False
+            logger.info(f"[{self.camera_id}] Starting capture thread (will connect in background if needed)")
+            # Don't block on connection - let background thread handle it
 
         self.stop_event.clear()
         self.capture_thread = Thread(target=self._capture_loop, daemon=True)
         self.capture_thread.start()
         logger.info(f"[{self.camera_id}] Capture thread started")
-        return True
+        return True  # Always succeed - connection happens in background
 
     def stop(self):
         """Stop the capture thread and release resources."""
@@ -142,9 +148,21 @@ class RTSPStreamCapture:
         logger.info(f"[{self.camera_id}] Capture loop started")
         consecutive_failures = 0
         max_failures = 30  # Reconnect after 30 consecutive failures
+        retry_delay = 5.0  # Seconds to wait before retrying connection
 
         while not self.stop_event.is_set():
             try:
+                # If not connected, attempt to connect
+                if not self.is_connected or self.capture is None:
+                    logger.info(f"[{self.camera_id}] Attempting to connect...")
+                    if self.connect():
+                        logger.info(f"[{self.camera_id}] Connected successfully!")
+                        consecutive_failures = 0
+                    else:
+                        logger.warning(f"[{self.camera_id}] Connection failed, will retry in {retry_delay}s...")
+                        time.sleep(retry_delay)
+                        continue
+
                 ret, frame = self.capture.read()
 
                 if not ret or frame is None:

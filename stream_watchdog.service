@@ -1,0 +1,29 @@
+[Unit]
+Description=Stream Health Watchdog for Telescope Detection
+After=network.target telescope_detection.service
+Requires=telescope_detection.service
+
+[Service]
+Type=simple
+User=damen
+Group=damen
+WorkingDirectory=/home/damen/telescope_cam_detection
+Environment="PATH=/home/damen/telescope_cam_detection/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+ExecStart=/home/damen/telescope_cam_detection/venv/bin/python /home/damen/telescope_cam_detection/scripts/stream_watchdog.py --check-interval 30 --freeze-threshold 120
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=stream-watchdog
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

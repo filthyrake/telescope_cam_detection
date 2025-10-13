@@ -367,12 +367,19 @@ class TelescopeDetectionSystem:
                 # Initialize detection processor for this camera
                 history_size = self.config.get('performance', {}).get('history_size', 30)
 
+                # Get motion filter configuration
+                motion_filter_config = self.config.get('motion_filter', {})
+                enable_motion_filter = motion_filter_config.get('enabled', False)
+                motion_filter_params = {k: v for k, v in motion_filter_config.items() if k != 'enabled'}
+
                 detection_processor = DetectionProcessor(
                     input_queue=inference_queue,
                     output_queue=self.detection_queue,  # All cameras write to shared detection queue
                     detection_history_size=history_size,
                     snapshot_saver=snapshot_saver,  # Shared snapshot saver
-                    frame_source=stream_capture
+                    frame_source=stream_capture,
+                    enable_motion_filter=enable_motion_filter,
+                    motion_filter_config=motion_filter_params
                 )
 
                 self.detection_processors.append(detection_processor)
@@ -401,51 +408,79 @@ class TelescopeDetectionSystem:
     def start(self) -> bool:
         """
         Start all system components.
+        Fault-tolerant: continues running even if some cameras fail.
 
         Returns:
-            True if all components started successfully, False otherwise
+            True if at least one camera started successfully, False otherwise
         """
         try:
             logger.info("Starting Backyard Computer Vision System...")
 
-            # Start all stream captures
+            # Track which cameras successfully start
+            active_cameras = []
+
+            # Start all stream captures (don't fail if one doesn't connect)
             for i, stream_capture in enumerate(self.stream_captures):
-                if not stream_capture.start():
-                    logger.error(f"Failed to start stream capture {i}")
-                    # Stop previously started captures
-                    for j in range(i):
-                        self.stream_captures[j].stop()
-                    return False
+                camera_id = stream_capture.camera_id
+                camera_name = stream_capture.camera_name
 
-            logger.info(f"All {len(self.stream_captures)} stream capture(s) started")
+                logger.info(f"Starting stream capture for {camera_name} (ID: {camera_id})...")
+                if stream_capture.start():
+                    active_cameras.append(i)
+                    logger.info(f"  [{camera_id}] ✓ Stream capture started")
+                else:
+                    logger.warning(f"  [{camera_id}] ✗ Failed to start stream capture - camera will be skipped")
 
-            # Start all inference engines
-            for i, inference_engine in enumerate(self.inference_engines):
+            if not active_cameras:
+                logger.error("No cameras successfully started - cannot continue")
+                return False
+
+            logger.info(f"{len(active_cameras)}/{len(self.stream_captures)} camera(s) started successfully")
+
+            # Start inference engines only for active cameras
+            failed_inference = []
+            for i in active_cameras:
+                inference_engine = self.inference_engines[i]
+                camera_id = self.stream_captures[i].camera_id
+
                 if not inference_engine.start():
-                    logger.error(f"Failed to start inference engine {i}")
-                    # Stop previously started components
-                    for j in range(i):
-                        self.inference_engines[j].stop()
-                    for stream_capture in self.stream_captures:
-                        stream_capture.stop()
-                    return False
+                    logger.warning(f"  [{camera_id}] ✗ Failed to start inference engine - camera disabled")
+                    # Stop this camera's stream capture
+                    self.stream_captures[i].stop()
+                    failed_inference.append(i)
 
-            logger.info(f"All {len(self.inference_engines)} inference engine(s) started")
+            # Remove failed cameras
+            for i in failed_inference:
+                active_cameras.remove(i)
 
-            # Start all detection processors
-            for i, detection_processor in enumerate(self.detection_processors):
+            if not active_cameras:
+                logger.error("No inference engines started successfully - cannot continue")
+                return False
+
+            logger.info(f"{len(active_cameras)} inference engine(s) started successfully")
+
+            # Start detection processors only for active cameras
+            failed_processors = []
+            for i in active_cameras:
+                detection_processor = self.detection_processors[i]
+                camera_id = self.stream_captures[i].camera_id
+
                 if not detection_processor.start():
-                    logger.error(f"Failed to start detection processor {i}")
-                    # Stop previously started components
-                    for j in range(i):
-                        self.detection_processors[j].stop()
-                    for inference_engine in self.inference_engines:
-                        inference_engine.stop()
-                    for stream_capture in self.stream_captures:
-                        stream_capture.stop()
-                    return False
+                    logger.warning(f"  [{camera_id}] ✗ Failed to start detection processor - camera disabled")
+                    # Stop this camera's inference and stream
+                    self.inference_engines[i].stop()
+                    self.stream_captures[i].stop()
+                    failed_processors.append(i)
 
-            logger.info(f"All {len(self.detection_processors)} detection processor(s) started")
+            # Remove failed cameras
+            for i in failed_processors:
+                active_cameras.remove(i)
+
+            if not active_cameras:
+                logger.error("No detection processors started successfully - cannot continue")
+                return False
+
+            logger.info(f"{len(active_cameras)} detection processor(s) started successfully")
 
             # Start web server (blocking)
             host = self.web_config.get('host', '0.0.0.0')
@@ -454,7 +489,23 @@ class TelescopeDetectionSystem:
             logger.info("=" * 80)
             logger.info("System is running!")
             logger.info(f"Open browser to: http://localhost:{port}")
-            logger.info(f"Monitoring {len(self.stream_captures)} camera(s)")
+            logger.info(f"Monitoring {len(active_cameras)} camera(s) (out of {len(self.stream_captures)} configured)")
+
+            # List active cameras
+            for i in active_cameras:
+                cam_name = self.stream_captures[i].camera_name
+                cam_id = self.stream_captures[i].camera_id
+                logger.info(f"  ✓ {cam_name} (ID: {cam_id})")
+
+            # List failed cameras
+            failed_cameras = [idx for idx in range(len(self.stream_captures)) if idx not in active_cameras]
+            if failed_cameras:
+                logger.warning(f"{len(failed_cameras)} camera(s) failed to start:")
+                for i in failed_cameras:
+                    cam_name = self.stream_captures[i].camera_name
+                    cam_id = self.stream_captures[i].camera_id
+                    logger.warning(f"  ✗ {cam_name} (ID: {cam_id})")
+
             logger.info("Press Ctrl+C to stop")
             logger.info("=" * 80)
 

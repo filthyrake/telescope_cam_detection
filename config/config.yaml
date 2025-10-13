@@ -22,18 +22,24 @@ cameras:
       # Per-class size constraints (filter detections by bounding box area)
       # Format: {min: pixels², max: pixels²}
       # At 1920x1080 resolution: total pixels = 2,073,600
-      # Typical bird at distance: 200-5000px² | Large bird/hawk: 5000-8000px²
+      # Typical bird at distance: 200-6000px² | Filters telescope covers (>100,000px²)
       class_size_constraints:
         bird:
-          max: 8000  # Max ~89x89 pixels - filters large false positives
+          max: 6000  # Max ~77x77 pixels - now actually enforced!
+        person:
+          min: 4000  # Minimum ~63x63 pixels - filter small false positives
+
+      # Per-class confidence overrides (higher = fewer false positives)
+      class_confidence_overrides:
+        bird: 0.65  # Higher confidence for cam1 to reduce telescope cover false positives
 
   # Second camera (ground level - Reolink E1 Pro with better resolution)
   - id: "cam2"
     name: "Secondary View"
-    ip: "10.0.2.47"
+    ip: "127.0.0.1"  # Neolink RTSP bridge (localhost, not camera IP)
     stream: "main"
     enabled: true
-    protocol: "rtsp-tcp"  # Options: rtsp, rtsp-tcp, onvif, h265 (using TCP to fix screen tearing)
+    protocol: "neolink"  # Use Neolink RTSP bridge for E1 Pro (eliminates screen tearing)
     target_width: 2560  # E1 Pro native resolution (better quality for Stage 2)
     target_height: 1440
     buffer_size: 1
@@ -72,7 +78,7 @@ detection:
   input_size: [1920, 1920]  # [height, width]
 
   # YOLOX detection thresholds
-  conf_threshold: 0.15  # Confidence threshold (low for small wildlife, but not too aggressive)
+  conf_threshold: 0.40  # Confidence threshold (raised to reduce false positives from shadows/rocks)
   nms_threshold: 0.45   # NMS IoU threshold
   wildlife_only: true   # Filter to wildlife-relevant classes only
 
@@ -179,20 +185,36 @@ detection:
   # Per-class confidence overrides (higher threshold = fewer false positives)
   class_confidence_overrides:
     person: 0.75  # Much higher to reduce false "person" detections
-    bird: 0.55    # High threshold - telescope covers falsely detected as birds
-    bear: 0.90    # Very high - bears extremely rare in Mojave, rocks often misdetected
-    dog: 0.45     # Reduce false positives from shadows
+    bird: 0.70    # High threshold - telescope covers falsely detected as birds
+    bear: 0.95    # Extremely high - bears extremely rare in Mojave, rocks often misdetected
+    dog: 0.70     # Higher to reduce false positives from shadows
+    cat: 0.70     # Higher to reduce false positives from rocks/shadows
 
   # Size filtering (better than just confidence for distant wildlife!)
   # Note: Inference runs at 1920x1920 (3,686,400 total pixels)
   # Typical sizes at this resolution: tiny=50-200px², small bird/rabbit=200-1000px², coyote=1000-5000px²
-  min_box_area: 20  # Minimum bounding box area in pixels² (~4.5x4.5 pixels) - catches very small/distant animals
+  min_box_area: 300  # Minimum bounding box area in pixels² (~17x17 pixels) - filters out noise/shadows/small artifacts
   max_detections: 300  # Maximum number of detections per frame
+
+  # Per-class size constraints (filter detections by bounding box area)
+  # Format: {min: pixels², max: pixels²}
+  class_size_constraints:
+    bird:
+      max: 8000  # Max ~89x89 pixels - filters out large false positives (telescope covers, etc)
+    bear:
+      min: 5000  # Min ~71x71 pixels - bears are large, filter tiny false positives
+    dog:
+      min: 1000  # Min ~32x32 pixels - coyotes/dogs should be reasonably sized
+    cat:
+      min: 800   # Min ~28x28 pixels - cats/bobcats should be visible
+    rabbit:
+      min: 400   # Min ~20x20 pixels - rabbits at distance
+      max: 3000  # Max ~55x55 pixels - filter overly large false positives
 
 # Stage 2 Species Classification (fine-grained identification)
 species_classification:
   enabled: true
-  confidence_threshold: 0.3  # Minimum confidence for species ID
+  confidence_threshold: 0.5  # Minimum confidence for species ID (raised to reduce misidentifications)
 
   # Stage 2 Preprocessing (global defaults)
   # Improves crop quality for better species identification
@@ -205,7 +227,7 @@ species_classification:
     model_name: "timm/eva02_large_patch14_clip_336.merged2b_ft_inat21"
     taxonomy_file: "models/inat2021_taxonomy.json"  # Full taxonomy with hierarchical data
     input_size: 336  # EVA02 uses 336x336 input
-    confidence_threshold: 0.3
+    confidence_threshold: 0.5  # Raised to reduce misidentifications
     use_hierarchical: true  # Enable taxonomic fallback (genus, family, order, class)
     # Hierarchical thresholds:
     #   >= 0.5: Species (e.g., "Desert Cottontail")
@@ -415,6 +437,15 @@ performance:
   # Detection history
   history_size: 30
 
+# Motion Detection Filter (reduces false positives from static objects)
+motion_filter:
+  enabled: true  # Enable motion-based filtering
+  history: 500  # Number of frames for background model (higher = slower adaptation)
+  var_threshold: 16  # Threshold for background/foreground (higher = less sensitive)
+  detect_shadows: true  # Detect and filter shadows (slower but more accurate)
+  min_motion_area: 100  # Minimum motion area in pixels² to consider valid
+  motion_blur_size: 21  # Gaussian blur kernel size for noise reduction (must be odd)
+
 # Future configuration for Phase 3
 detection_zones: []
   # Example:
@@ -446,7 +477,7 @@ snapshots:
     - "cow"
     # Note: bananas, chairs, potted plants, etc. will still DISPLAY but won't save snapshots!
   min_confidence: 0.30  # Lower for distant/small wildlife from high camera mount
-  cooldown_seconds: 45  # Seconds between saves for same class
+  cooldown_seconds: 120  # Seconds between saves for same class (increased to reduce duplicate saves)
   save_annotated: true  # Save with bounding boxes drawn
 
   # Video clip settings (only used if save_mode="clip")
