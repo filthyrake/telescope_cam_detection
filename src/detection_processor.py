@@ -10,6 +10,7 @@ from queue import Queue
 from threading import Thread, Event
 from collections import deque
 from visualization_utils import draw_detections
+from src.motion_filter import MotionFilter
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,7 +28,9 @@ class DetectionProcessor:
         output_queue: Optional[Queue] = None,
         detection_history_size: int = 30,
         snapshot_saver: Optional[Any] = None,
-        frame_source: Optional[Any] = None
+        frame_source: Optional[Any] = None,
+        enable_motion_filter: bool = False,
+        motion_filter_config: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize detection processor.
@@ -38,6 +41,8 @@ class DetectionProcessor:
             detection_history_size: Number of frames to keep in history
             snapshot_saver: SnapshotSaver instance (optional)
             frame_source: Source to get latest frames (for snapshot saving)
+            enable_motion_filter: Enable motion-based filtering
+            motion_filter_config: Configuration dict for motion filter
         """
         self.input_queue = input_queue
         self.output_queue = output_queue
@@ -48,6 +53,14 @@ class DetectionProcessor:
         self.detection_history = deque(maxlen=detection_history_size)
         self.stop_event = Event()
         self.processor_thread: Optional[Thread] = None
+
+        # Motion filter
+        self.enable_motion_filter = enable_motion_filter
+        self.motion_filter = None
+        if enable_motion_filter:
+            config = motion_filter_config or {}
+            self.motion_filter = MotionFilter(**config)
+            logger.info("Motion filter enabled")
 
         # Statistics
         self.processed_count = 0
@@ -93,8 +106,13 @@ class DetectionProcessor:
 
                 detection_result = self.input_queue.get()
 
-                # Process detections
-                processed_result = self._process_detections(detection_result)
+                # Get current frame for motion filtering
+                current_frame = None
+                if self.frame_source and hasattr(self.frame_source, 'latest_frame'):
+                    current_frame = self.frame_source.latest_frame
+
+                # Process detections (includes motion filtering)
+                processed_result = self._process_detections(detection_result, current_frame)
 
                 # Add to history
                 self.detection_history.append(processed_result)
@@ -138,12 +156,17 @@ class DetectionProcessor:
                 logger.error(f"Error in processing loop: {e}")
                 time.sleep(0.1)
 
-    def _process_detections(self, detection_result: Dict[str, Any]) -> Dict[str, Any]:
+    def _process_detections(
+        self,
+        detection_result: Dict[str, Any],
+        frame: Optional[Any] = None
+    ) -> Dict[str, Any]:
         """
         Process raw detection results.
 
         Args:
             detection_result: Raw detection result from inference engine
+            frame: Current frame (for motion filtering)
 
         Returns:
             Processed detection result
@@ -156,6 +179,11 @@ class DetectionProcessor:
         # Extract camera metadata if present
         camera_id = detection_result.get('camera_id', 'default')
         camera_name = detection_result.get('camera_name', 'Default Camera')
+
+        # Apply motion filter if enabled
+        detections_before_motion = len(detections)
+        if self.enable_motion_filter and self.motion_filter and frame is not None:
+            detections = self.motion_filter.filter_detections(frame, detections)
 
         # Calculate total latency (from frame capture to now)
         current_time = time.time()
@@ -181,7 +209,8 @@ class DetectionProcessor:
             'detections': detections,
             'detections_by_class': detections_by_class,
             'detection_counts': detection_counts,
-            'total_detections': len(detections)
+            'total_detections': len(detections),
+            'motion_filtered': detections_before_motion - len(detections) if self.enable_motion_filter else 0
         }
 
         return processed_result
@@ -212,11 +241,18 @@ class DetectionProcessor:
         Returns:
             Dictionary containing processor stats
         """
-        return {
+        stats = {
             'processed_count': self.processed_count,
             'history_size': len(self.detection_history),
-            'last_detection_time': self.last_detection_time
+            'last_detection_time': self.last_detection_time,
+            'motion_filter_enabled': self.enable_motion_filter
         }
+
+        # Add motion filter stats if enabled
+        if self.enable_motion_filter and self.motion_filter:
+            stats['motion_filter_stats'] = self.motion_filter.get_stats()
+
+        return stats
 
     def get_recent_detections(self, n: int = 10) -> List[Dict[str, Any]]:
         """
