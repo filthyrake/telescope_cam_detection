@@ -10,7 +10,7 @@ from queue import Queue
 from threading import Thread, Event
 from collections import deque
 from visualization_utils import draw_detections
-from .motion_filter import MotionFilter
+from src.motion_filter import MotionFilter
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
