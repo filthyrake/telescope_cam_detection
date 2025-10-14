@@ -107,6 +107,19 @@ class DetectionProcessor:
 
         logger.info("Detection processor thread stopped")
 
+    def _get_frame_copy(self) -> Optional[Any]:
+        """
+        Get a thread-safe copy of the latest frame from frame source.
+
+        Returns:
+            Copy of latest frame, or None if unavailable
+        """
+        if not self.frame_source or not hasattr(self.frame_source, 'latest_frame'):
+            return None
+
+        with self.frame_source.frame_lock:
+            return self.frame_source.latest_frame.copy() if self.frame_source.latest_frame is not None else None
+
     def _processing_loop(self):
         """Main processing loop running in separate thread."""
         logger.info("Detection processing loop started")
@@ -121,10 +134,7 @@ class DetectionProcessor:
                 detection_result = self.input_queue.get()
 
                 # Get current frame for motion filtering (thread-safe)
-                current_frame = None
-                if self.frame_source and hasattr(self.frame_source, 'latest_frame'):
-                    with self.frame_source.frame_lock:
-                        current_frame = self.frame_source.latest_frame.copy() if self.frame_source.latest_frame is not None else None
+                current_frame = self._get_frame_copy()
 
                 # Process detections (includes motion filtering)
                 processed_result = self._process_detections(detection_result, current_frame)
@@ -134,33 +144,29 @@ class DetectionProcessor:
 
                 # Save snapshot if enabled and triggered (thread-safe frame access)
                 if self.snapshot_saver and self.frame_source:
-                    if hasattr(self.frame_source, 'latest_frame'):
-                        # Get frame copy with lock
-                        with self.frame_source.frame_lock:
-                            frame_copy = self.frame_source.latest_frame.copy() if self.frame_source.latest_frame is not None else None
+                    frame_copy = self._get_frame_copy()
+                    if frame_copy is not None:
+                        # Add current frame to buffer for clip mode
+                        self.snapshot_saver.add_frame_to_buffer(
+                            frame_copy,
+                            processed_result['timestamp']
+                        )
 
-                        if frame_copy is not None:
-                            # Add current frame to buffer for clip mode
-                            self.snapshot_saver.add_frame_to_buffer(
+                        # Check if snapshot should be saved
+                        if processed_result['detections']:
+                            # Create annotated frame with bounding boxes
+                            annotated_frame = draw_detections(
                                 frame_copy,
-                                processed_result['timestamp']
+                                processed_result['detections']
                             )
 
-                            # Check if snapshot should be saved
-                            if processed_result['detections']:
-                                # Create annotated frame with bounding boxes
-                                annotated_frame = draw_detections(
-                                    frame_copy,
-                                    processed_result['detections']
-                                )
-
-                                saved_path = self.snapshot_saver.process_detection(
-                                    frame_copy,
-                                    processed_result,
-                                    annotated_frame=annotated_frame
-                                )
-                                if saved_path:
-                                    processed_result['snapshot_saved'] = saved_path
+                            saved_path = self.snapshot_saver.process_detection(
+                                frame_copy,
+                                processed_result,
+                                annotated_frame=annotated_frame
+                            )
+                            if saved_path:
+                                processed_result['snapshot_saved'] = saved_path
 
                 # Send to output queue
                 try:

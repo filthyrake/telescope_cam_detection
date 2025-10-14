@@ -201,7 +201,7 @@ class SnapshotSaver:
                 with open(metadata_file, 'w') as f:
                     json.dump(metadata, f, indent=2)
             except Exception as e:
-                logger.warning(f"Failed to save metadata: {e}")
+                logger.warning(f"Failed to save metadata {metadata_file}: {e}")
                 # Continue - snapshot is more important than metadata
 
             # Update statistics
