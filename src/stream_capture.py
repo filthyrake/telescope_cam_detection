@@ -150,11 +150,16 @@ class RTSPStreamCapture:
         if self.capture_thread:
             self.capture_thread.join(timeout=5.0)
 
+            # Check if thread actually stopped
+            if self.capture_thread.is_alive():
+                logger.error(f"[{self.camera_id}] Capture thread did not stop after 5s timeout (thread may be blocked)")
+            else:
+                logger.info(f"[{self.camera_id}] Capture thread stopped successfully")
+
         if self.capture:
             self.capture.release()
 
         self.is_connected = False
-        logger.info(f"[{self.camera_id}] Capture thread stopped")
 
     def _capture_loop(self):
         """Main capture loop running in separate thread."""

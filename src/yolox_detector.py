@@ -12,7 +12,22 @@ from pathlib import Path
 
 # Add YOLOX directory to sys.path dynamically (relative to this file)
 _yolox_path = Path(__file__).parent.parent / "YOLOX"
-if _yolox_path.exists() and str(_yolox_path) not in sys.path:
+_yolox_exp_file = _yolox_path / "yolox" / "exp" / "__init__.py"
+
+# Validate YOLOX installation before modifying sys.path
+if not _yolox_path.exists():
+    raise ImportError(
+        f"YOLOX not found at {_yolox_path}. "
+        "Please install YOLOX according to the official project documentation."
+    )
+
+if not _yolox_exp_file.exists():
+    raise ImportError(
+        f"YOLOX installation incomplete: {_yolox_exp_file} not found. "
+        "Please ensure YOLOX is properly installed with all required modules."
+    )
+
+if str(_yolox_path) not in sys.path:
     sys.path.insert(0, str(_yolox_path))
 
 from yolox.exp import get_exp

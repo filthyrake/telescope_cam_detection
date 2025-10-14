@@ -105,12 +105,16 @@ class DetectionProcessor:
         if self.processor_thread:
             self.processor_thread.join(timeout=5.0)
 
+            # Check if thread actually stopped
+            if self.processor_thread.is_alive():
+                logger.error("Detection processor thread did not stop after 5s timeout (thread may be blocked)")
+            else:
+                logger.info("Detection processor thread stopped successfully")
+
         # Clean up motion filter resources
         if self.motion_filter is not None:
             self.motion_filter.cleanup()
             logger.debug("Motion filter cleaned up")
-
-        logger.info("Detection processor thread stopped")
 
     def _get_frame_copy(self) -> Optional[Any]:
         """
