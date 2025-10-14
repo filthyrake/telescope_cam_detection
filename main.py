@@ -10,6 +10,7 @@ import logging
 import signal
 from pathlib import Path
 from queue import Queue
+from typing import Optional
 import yaml
 
 # Add src directory to path
@@ -275,7 +276,7 @@ class TelescopeDetectionSystem:
 
         return enabled_cameras
 
-    def _initialize_snapshot_saver(self) -> SnapshotSaver:
+    def _initialize_snapshot_saver(self) -> Optional[SnapshotSaver]:
         """
         Initialize shared snapshot saver if enabled in configuration.
 
@@ -401,7 +402,7 @@ class TelescopeDetectionSystem:
 
         return camera_detection_config
 
-    def _initialize_two_stage_pipeline(self, camera_config: dict, camera_detection_config: dict) -> TwoStageDetectionPipeline:
+    def _initialize_two_stage_pipeline(self, camera_config: dict, camera_detection_config: dict) -> Optional[TwoStageDetectionPipeline]:
         """
         Initialize two-stage detection pipeline for a camera.
 
@@ -488,7 +489,7 @@ class TelescopeDetectionSystem:
 
     def _create_inference_engine(self, camera_config: dict, camera_detection_config: dict,
                                   frame_queue: Queue, inference_queue: Queue,
-                                  two_stage_pipeline: TwoStageDetectionPipeline) -> InferenceEngine:
+                                  two_stage_pipeline: Optional[TwoStageDetectionPipeline]) -> InferenceEngine:
         """
         Create YOLOX inference engine for a camera.
 
@@ -530,7 +531,7 @@ class TelescopeDetectionSystem:
 
     def _create_detection_processor(self, camera_config: dict, inference_queue: Queue,
                                      stream_capture: RTSPStreamCapture,
-                                     snapshot_saver: SnapshotSaver) -> DetectionProcessor:
+                                     snapshot_saver: Optional[SnapshotSaver]) -> DetectionProcessor:
         """
         Create detection processor for a camera.
 
@@ -538,7 +539,7 @@ class TelescopeDetectionSystem:
             camera_config: Camera configuration dictionary
             inference_queue: Input queue for inference results
             stream_capture: Stream capture instance for frame access
-            snapshot_saver: Shared snapshot saver instance
+            snapshot_saver: Shared snapshot saver instance (or None)
 
         Returns:
             DetectionProcessor instance
@@ -571,13 +572,13 @@ class TelescopeDetectionSystem:
         logger.info(f"  [{camera_id}] Detection processor initialized")
         return detection_processor
 
-    def _initialize_camera_pipeline(self, camera_config: dict, snapshot_saver: SnapshotSaver):
+    def _initialize_camera_pipeline(self, camera_config: dict, snapshot_saver: Optional[SnapshotSaver]):
         """
         Initialize complete processing pipeline for a single camera.
 
         Args:
             camera_config: Camera configuration dictionary
-            snapshot_saver: Shared snapshot saver instance
+            snapshot_saver: Shared snapshot saver instance (or None)
         """
         camera_id = camera_config.get('id', 'default')
         camera_name = camera_config.get('name', 'Default Camera')
