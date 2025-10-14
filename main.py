@@ -226,7 +226,7 @@ class TelescopeDetectionSystem:
 
                 # Check Real-ESRGAN model if enhancement is enabled
                 enhancement_config = species_config.get('enhancement', {})
-                if enhancement_config.get('enabled', False) and enhancement_config.get('method') == 'realesrgan':
+                if enhancement_config.get('enabled', False) and enhancement_config.get('method', '') == 'realesrgan':
                     realesrgan_config = enhancement_config.get('realesrgan', {})
                     model_path_esrgan = realesrgan_config.get('model_path', 'models/enhancement/RealESRGAN_x4plus.pth')
                     esrgan_path = Path(model_path_esrgan)
