@@ -86,7 +86,7 @@ class TimeOfDayFilter:
         confidence_penalty: float = 0.5,  # Multiply confidence by this for out-of-pattern detections
         hard_filter: bool = False,  # If True, completely remove out-of-pattern detections
         activity_patterns: Optional[Dict[str, ActivityPattern]] = None,
-        timezone_offset: int = 0  # Hours to add/subtract from UTC (e.g., -7 for MST)
+        use_system_timezone: bool = True  # Automatically use system timezone (recommended)
     ):
         """
         Initialize time-of-day filter.
@@ -96,12 +96,12 @@ class TimeOfDayFilter:
             confidence_penalty: Multiplier for confidence (0.0-1.0) when species detected out of pattern
             hard_filter: If True, remove out-of-pattern detections entirely
             activity_patterns: Custom activity patterns (overrides defaults)
-            timezone_offset: Timezone offset from UTC in hours
+            use_system_timezone: Use system timezone automatically (handles DST automatically)
         """
         self.enabled = enabled
         self.confidence_penalty = confidence_penalty
         self.hard_filter = hard_filter
-        self.timezone_offset = timezone_offset
+        self.use_system_timezone = use_system_timezone
 
         # Merge custom patterns with defaults
         self.activity_patterns = self.DEFAULT_ACTIVITY_PATTERNS.copy()
@@ -113,7 +113,10 @@ class TimeOfDayFilter:
         self.penalized_count = 0
         self.total_processed = 0
 
-        logger.info(f"TimeOfDayFilter initialized (enabled={enabled}, penalty={confidence_penalty}, hard_filter={hard_filter})")
+        if self.use_system_timezone:
+            logger.info(f"TimeOfDayFilter initialized (enabled={enabled}, penalty={confidence_penalty}, hard_filter={hard_filter}, timezone=system)")
+        else:
+            logger.info(f"TimeOfDayFilter initialized (enabled={enabled}, penalty={confidence_penalty}, hard_filter={hard_filter}, timezone=UTC)")
 
     def get_current_time_of_day(self, current_time: Optional[datetime] = None) -> TimeOfDay:
         """
@@ -128,10 +131,13 @@ class TimeOfDayFilter:
         if current_time is None:
             current_time = datetime.now()
 
-        # Apply timezone offset
-        if self.timezone_offset != 0:
-            from datetime import timedelta
-            current_time = current_time + timedelta(hours=self.timezone_offset)
+        # Convert to local timezone if requested (handles DST automatically)
+        if self.use_system_timezone:
+            # If current_time is naive (no timezone), assume it's already local
+            # If it's UTC or another timezone, convert to local
+            if current_time.tzinfo is not None:
+                current_time = current_time.astimezone()
+            # If naive, assume it's already in local time (from timestamp)
 
         current_hour_minute = current_time.time()
 
@@ -246,11 +252,12 @@ if __name__ == "__main__":
     # Test the time-of-day filter
     logger.info("Testing TimeOfDayFilter")
 
-    # Create filter
+    # Create filter (uses system timezone automatically)
     tod_filter = TimeOfDayFilter(
         enabled=True,
         confidence_penalty=0.5,
-        hard_filter=False
+        hard_filter=False,
+        use_system_timezone=True
     )
 
     # Test detections at different times
