@@ -79,6 +79,7 @@ class DetectionProcessor:
         # Statistics
         self.processed_count = 0
         self.last_detection_time = None
+        self.dropped_results = 0  # Track dropped results when queue is full
 
     def start(self) -> bool:
         """
@@ -171,8 +172,11 @@ class DetectionProcessor:
                 # Send to output queue
                 try:
                     self.output_queue.put_nowait(processed_result)
-                except:
-                    pass  # Drop if queue is full
+                except Exception as e:
+                    self.dropped_results += 1
+                    # Log every 10th drop to avoid spam
+                    if self.dropped_results % 10 == 0:
+                        logger.warning(f"Output queue full, dropped {self.dropped_results} results total (system overloaded)")
 
                 self.processed_count += 1
                 if processed_result['detections']:
@@ -279,8 +283,15 @@ class DetectionProcessor:
             'history_size': len(self.detection_history),
             'last_detection_time': self.last_detection_time,
             'motion_filter_enabled': self.enable_motion_filter,
-            'time_of_day_filter_enabled': self.enable_time_of_day_filter
+            'time_of_day_filter_enabled': self.enable_time_of_day_filter,
+            'dropped_results': self.dropped_results,
         }
+
+        # Add drop rate
+        if self.processed_count > 0:
+            stats['drop_rate'] = self.dropped_results / self.processed_count
+        else:
+            stats['drop_rate'] = 0.0
 
         # Add motion filter stats if enabled
         if self.enable_motion_filter and self.motion_filter:
@@ -289,6 +300,16 @@ class DetectionProcessor:
         # Add time-of-day filter stats if enabled
         if self.enable_time_of_day_filter and self.time_of_day_filter:
             stats['time_of_day_filter_stats'] = self.time_of_day_filter.get_stats()
+
+        # Add memory usage if psutil is available
+        try:
+            import psutil
+            process = psutil.Process()
+            mem_info = process.memory_info()
+            stats['memory_mb'] = mem_info.rss / 1024 / 1024
+            stats['memory_percent'] = process.memory_percent()
+        except ImportError:
+            pass  # psutil not available
 
         return stats
 
