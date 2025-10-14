@@ -440,6 +440,9 @@ class TelescopeDetectionSystem:
 
                 # 1. Update inference engines (detection thresholds, class overrides, size constraints)
                 detection_config = new_config.get('detection', {})
+                old_detection_config = old_config.get('detection', {})
+                detection_changed = set()
+
                 for i, inference_engine in enumerate(self.inference_engines):
                     if inference_engine is None:
                         continue
@@ -457,41 +460,67 @@ class TelescopeDetectionSystem:
                     # Merge detection config with camera overrides
                     camera_detection_config = self._merge_camera_detection_config(camera_config, detection_config)
 
-                    # Update settings
-                    inference_engine.update_settings(
-                        conf_threshold=camera_detection_config.get('conf_threshold'),
-                        nms_threshold=camera_detection_config.get('nms_threshold'),
-                        min_box_area=camera_detection_config.get('min_box_area'),
-                        max_det=camera_detection_config.get('max_detections'),
-                        class_confidence_overrides=camera_detection_config.get('class_confidence_overrides'),
-                        class_size_constraints=camera_detection_config.get('class_size_constraints')
-                    )
+                    # Track which settings changed
+                    update_kwargs = {}
+                    setting_map = [
+                        ('conf_threshold', 'conf_threshold', 'detection.conf_threshold'),
+                        ('nms_threshold', 'nms_threshold', 'detection.nms_threshold'),
+                        ('min_box_area', 'min_box_area', 'detection.min_box_area'),
+                        ('max_detections', 'max_det', 'detection.max_detections'),
+                        ('class_confidence_overrides', 'class_confidence_overrides', 'detection.class_confidence_overrides'),
+                        ('class_size_constraints', 'class_size_constraints', 'detection.class_size_constraints'),
+                    ]
 
-                result['reloaded'].append('detection.conf_threshold')
-                result['reloaded'].append('detection.nms_threshold')
-                result['reloaded'].append('detection.class_confidence_overrides')
-                result['reloaded'].append('detection.class_size_constraints')
-                result['reloaded'].append('detection.min_box_area')
-                result['reloaded'].append('detection.max_detections')
+                    for config_key, attr_name, result_key in setting_map:
+                        new_value = camera_detection_config.get(config_key)
+                        current_value = getattr(inference_engine, attr_name, None)
+                        if new_value != current_value:
+                            update_kwargs[attr_name] = new_value
+                            detection_changed.add(result_key)
+
+                    # Only update if something changed
+                    if update_kwargs:
+                        inference_engine.update_settings(**update_kwargs)
+
+                # Add changed settings to reloaded list
+                result['reloaded'].extend(sorted(detection_changed))
 
                 # 2. Update snapshot saver (cooldown, trigger classes, min_confidence)
                 snapshot_config = new_config.get('snapshots', {})
-                if snapshot_config.get('enabled', False):
-                    # Find snapshot saver from detection processors
-                    for processor in self.detection_processors:
-                        if processor and processor.snapshot_saver:
-                            processor.snapshot_saver.update_settings(
-                                cooldown_seconds=snapshot_config.get('cooldown_seconds'),
-                                trigger_classes=snapshot_config.get('trigger_classes'),
-                                min_confidence=snapshot_config.get('min_confidence'),
-                                save_annotated=snapshot_config.get('save_annotated')
-                            )
-                            break  # Only update once (shared instance)
+                old_snapshot_config = old_config.get('snapshots', {})
 
-                    result['reloaded'].append('snapshots.cooldown_seconds')
-                    result['reloaded'].append('snapshots.trigger_classes')
-                    result['reloaded'].append('snapshots.min_confidence')
-                    result['reloaded'].append('snapshots.save_annotated')
+                if snapshot_config.get('enabled', False):
+                    # Track which snapshot settings changed
+                    snapshot_keys = [
+                        ('cooldown_seconds', 'snapshots.cooldown_seconds'),
+                        ('trigger_classes', 'snapshots.trigger_classes'),
+                        ('min_confidence', 'snapshots.min_confidence'),
+                        ('save_annotated', 'snapshots.save_annotated'),
+                    ]
+
+                    changed_settings = {}
+                    for key, label in snapshot_keys:
+                        old_val = old_snapshot_config.get(key)
+                        new_val = snapshot_config.get(key)
+                        if old_val != new_val:
+                            changed_settings[key] = (label, new_val)
+
+                    # Only update if something changed
+                    if changed_settings:
+                        # Find snapshot saver from detection processors
+                        for processor in self.detection_processors:
+                            if processor and processor.snapshot_saver:
+                                processor.snapshot_saver.update_settings(
+                                    cooldown_seconds=snapshot_config.get('cooldown_seconds'),
+                                    trigger_classes=snapshot_config.get('trigger_classes'),
+                                    min_confidence=snapshot_config.get('min_confidence'),
+                                    save_annotated=snapshot_config.get('save_annotated')
+                                )
+                                break  # Only update once (shared instance)
+
+                        # Add changed settings to reloaded list
+                        for label, _ in changed_settings.values():
+                            result['reloaded'].append(label)
 
                 # 3. Update motion filter (if enabled)
                 motion_filter_config = new_config.get('motion_filter', {})

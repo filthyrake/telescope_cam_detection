@@ -4,6 +4,7 @@ Serves web interface and streams detection results in real-time.
 """
 
 import asyncio
+import copy
 import json
 import time
 import logging
@@ -501,7 +502,6 @@ class WebServer:
             try:
                 config = self.config_getter()
                 # Deep copy to avoid exposing internal references
-                import copy
                 return {"config": copy.deepcopy(config)}
             except Exception as e:
                 logger.error(f"Error getting config: {e}")
