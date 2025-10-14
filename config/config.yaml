@@ -33,6 +33,11 @@ cameras:
       class_confidence_overrides:
         bird: 0.65  # Higher confidence for cam1 to reduce telescope cover false positives
 
+    # Stage 2 preprocessing overrides (elevated camera sees smaller/distant animals)
+    stage2_preprocessing:
+      crop_padding_percent: 35  # Extra padding for small detections (vs global 30%)
+      min_crop_size: 40         # Allow classification of small crops
+
   # Second camera (ground level - Reolink E1 Pro with better resolution)
   - id: "cam2"
     name: "Secondary View"
@@ -219,8 +224,8 @@ species_classification:
   # Stage 2 Preprocessing (global defaults)
   # Improves crop quality for better species identification
   preprocessing:
-    crop_padding_percent: 20  # Add 20% padding around detection bbox for context
-    min_crop_size: 64         # Skip Stage 2 if crop smaller than 64x64 pixels
+    crop_padding_percent: 30  # Add 30% padding around detection bbox for context (increased for small detections)
+    min_crop_size: 40         # Skip Stage 2 if crop smaller than 40x40 pixels (lowered to classify small/distant animals)
 
   # Universal iNaturalist model (covers 10,000 species)
   inat_classifier:
