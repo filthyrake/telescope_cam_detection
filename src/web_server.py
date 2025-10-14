@@ -313,12 +313,14 @@ class WebServer:
 
         while True:
             if frame_source and hasattr(frame_source, 'latest_frame'):
-                frame = frame_source.latest_frame
+                # Get frame copy with thread safety
+                with frame_source.frame_lock:
+                    frame = frame_source.latest_frame.copy() if frame_source.latest_frame is not None else None
 
                 if frame is not None:
                     # Draw detections on frame for this camera
                     if camera_id in self.latest_detections:
-                        frame = self._draw_detections(frame.copy(), self.latest_detections[camera_id])
+                        frame = self._draw_detections(frame, self.latest_detections[camera_id])
 
                     # Encode frame as JPEG
                     ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])

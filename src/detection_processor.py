@@ -120,10 +120,11 @@ class DetectionProcessor:
 
                 detection_result = self.input_queue.get()
 
-                # Get current frame for motion filtering
+                # Get current frame for motion filtering (thread-safe)
                 current_frame = None
                 if self.frame_source and hasattr(self.frame_source, 'latest_frame'):
-                    current_frame = self.frame_source.latest_frame
+                    with self.frame_source.frame_lock:
+                        current_frame = self.frame_source.latest_frame.copy() if self.frame_source.latest_frame is not None else None
 
                 # Process detections (includes motion filtering)
                 processed_result = self._process_detections(detection_result, current_frame)
@@ -131,30 +132,35 @@ class DetectionProcessor:
                 # Add to history
                 self.detection_history.append(processed_result)
 
-                # Save snapshot if enabled and triggered
+                # Save snapshot if enabled and triggered (thread-safe frame access)
                 if self.snapshot_saver and self.frame_source:
-                    if hasattr(self.frame_source, 'latest_frame') and self.frame_source.latest_frame is not None:
-                        # Add current frame to buffer for clip mode
-                        self.snapshot_saver.add_frame_to_buffer(
-                            self.frame_source.latest_frame,
-                            processed_result['timestamp']
-                        )
+                    if hasattr(self.frame_source, 'latest_frame'):
+                        # Get frame copy with lock
+                        with self.frame_source.frame_lock:
+                            frame_copy = self.frame_source.latest_frame.copy() if self.frame_source.latest_frame is not None else None
 
-                        # Check if snapshot should be saved
-                        if processed_result['detections']:
-                            # Create annotated frame with bounding boxes
-                            annotated_frame = draw_detections(
-                                self.frame_source.latest_frame,
-                                processed_result['detections']
+                        if frame_copy is not None:
+                            # Add current frame to buffer for clip mode
+                            self.snapshot_saver.add_frame_to_buffer(
+                                frame_copy,
+                                processed_result['timestamp']
                             )
 
-                            saved_path = self.snapshot_saver.process_detection(
-                                self.frame_source.latest_frame,
-                                processed_result,
-                                annotated_frame=annotated_frame
-                            )
-                            if saved_path:
-                                processed_result['snapshot_saved'] = saved_path
+                            # Check if snapshot should be saved
+                            if processed_result['detections']:
+                                # Create annotated frame with bounding boxes
+                                annotated_frame = draw_detections(
+                                    frame_copy,
+                                    processed_result['detections']
+                                )
+
+                                saved_path = self.snapshot_saver.process_detection(
+                                    frame_copy,
+                                    processed_result,
+                                    annotated_frame=annotated_frame
+                                )
+                                if saved_path:
+                                    processed_result['snapshot_saved'] = saved_path
 
                 # Send to output queue
                 try:

@@ -187,7 +187,7 @@ class InferenceEngine:
                 self.inference_count += 1
                 self.total_inference_count += 1  # Cumulative total (never reset)
                 self.total_inference_time += inference_time
-                self.avg_inference_time = self.total_inference_time / self.inference_count
+                self.avg_inference_time = self.total_inference_time / self.total_inference_count
 
                 # Calculate FPS
                 if time.time() - self.last_fps_check >= 1.0:

@@ -73,6 +73,7 @@ class SnapshotSaver:
 
         # Statistics
         self.total_saved = 0
+        self.save_failures = 0
         self.saves_by_class: Dict[str, int] = {}
 
         logger.info(f"SnapshotSaver initialized: mode={save_mode}, output={output_dir}")
@@ -168,11 +169,20 @@ class SnapshotSaver:
         # Save images
         try:
             # Always save raw frame (for training data)
-            cv2.imwrite(str(raw_filepath), frame)
+            success = cv2.imwrite(str(raw_filepath), frame)
+            if not success:
+                logger.error(f"Failed to save raw frame: {raw_filepath}")
+                logger.error("Possible causes: disk full, permission denied, or invalid path")
+                self.save_failures += 1
+                return None
 
             # Save annotated frame if available (for web display)
             if self.save_annotated and annotated_frame is not None:
-                cv2.imwrite(str(annotated_filepath), annotated_frame)
+                success = cv2.imwrite(str(annotated_filepath), annotated_frame)
+                if not success:
+                    logger.warning(f"Failed to save annotated frame: {annotated_filepath}")
+                    logger.warning("Raw frame saved successfully, continuing without annotated version")
+                    # Don't fail - raw frame is more important
 
             # Save metadata JSON
             metadata = {
@@ -187,8 +197,12 @@ class SnapshotSaver:
             }
 
             metadata_file = raw_filepath.with_suffix('.json')
-            with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
+            try:
+                with open(metadata_file, 'w') as f:
+                    json.dump(metadata, f, indent=2)
+            except Exception as e:
+                logger.warning(f"Failed to save metadata: {e}")
+                # Continue - snapshot is more important than metadata
 
             # Update statistics
             self.total_saved += 1
@@ -199,6 +213,7 @@ class SnapshotSaver:
 
         except Exception as e:
             logger.error(f"Failed to save snapshot: {e}")
+            self.save_failures += 1
             return None
 
     def save_clip(
@@ -324,6 +339,7 @@ class SnapshotSaver:
         """
         return {
             'total_saved': self.total_saved,
+            'save_failures': self.save_failures,
             'saves_by_class': self.saves_by_class,
             'output_dir': str(self.output_dir),
             'save_mode': self.save_mode
