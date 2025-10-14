@@ -35,7 +35,27 @@ class TimeOfDayFilter:
     Example:
         - Birds are diurnal (active during day)
         - Bird detections at night are likely bugs/bats → reduce confidence or filter
+
+    Also provides context hints for Stage 2 species classification:
+        - Suggests alternative taxonomies (e.g., "bird" at night → suggest "bat")
+        - Adds time-of-day metadata for species filtering
     """
+
+    # Alternative suggestions when detection is out of pattern
+    # Format: {detected_class: {time_of_day: [alternative_classes]}}
+    ALTERNATIVE_SUGGESTIONS = {
+        'bird': {
+            TimeOfDay.NIGHT: ['bat', 'insect', 'moth'],  # Birds at night are likely bats/bugs
+            TimeOfDay.DUSK: ['bat'],  # Could be bats at dusk
+        },
+        'lizard': {
+            TimeOfDay.NIGHT: ['gecko'],  # Most lizards diurnal, but geckos are nocturnal
+        },
+        'snake': {
+            TimeOfDay.DAY: ['snake'],  # Some snakes are diurnal
+            TimeOfDay.NIGHT: ['snake'],  # Some snakes are nocturnal (both valid)
+        }
+    }
 
     # Default activity patterns for common classes
     DEFAULT_ACTIVITY_PATTERNS = {
@@ -214,10 +234,16 @@ class TimeOfDayFilter:
             class_name = detection.get('class_name', '').lower()
             confidence = detection.get('confidence', 0.0)
 
+            # Add time-of-day context to detection (for Stage 2)
+            detection['time_of_day'] = time_of_day.value
+
             # Check if activity is likely for this species
             is_likely = self.is_activity_likely(class_name, time_of_day)
 
             if not is_likely:
+                # Get alternative suggestions for this detection
+                alternatives = self.ALTERNATIVE_SUGGESTIONS.get(class_name, {}).get(time_of_day, [])
+
                 if self.hard_filter:
                     # Remove detection entirely
                     self.filtered_count += 1
@@ -229,8 +255,15 @@ class TimeOfDayFilter:
                     detection['confidence'] = confidence * self.confidence_penalty
                     detection['time_of_day_penalty'] = True
                     detection['original_confidence'] = original_confidence
+
+                    # Add alternative suggestions for Stage 2
+                    if alternatives:
+                        detection['time_of_day_alternatives'] = alternatives
+                        logger.debug(f"Penalized {class_name} at {time_of_day.value}: {original_confidence:.2f} → {detection['confidence']:.2f} (suggest: {alternatives})")
+                    else:
+                        logger.debug(f"Penalized {class_name} at {time_of_day.value}: {original_confidence:.2f} → {detection['confidence']:.2f}")
+
                     self.penalized_count += 1
-                    logger.debug(f"Penalized {class_name} at {time_of_day.value}: {original_confidence:.2f} → {detection['confidence']:.2f}")
 
             filtered_detections.append(detection)
 
