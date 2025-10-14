@@ -158,7 +158,11 @@ class InferenceEngine:
         if self.inference_thread:
             self.inference_thread.join(timeout=5.0)
 
-        logger.info("Inference thread stopped")
+            # Check if thread actually stopped
+            if self.inference_thread.is_alive():
+                logger.error("Inference thread did not stop after 5s timeout (thread may be blocked)")
+            else:
+                logger.info("Inference thread stopped successfully")
 
     def _inference_loop(self):
         """Main inference loop running in separate thread"""

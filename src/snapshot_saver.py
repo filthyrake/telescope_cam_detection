@@ -350,6 +350,13 @@ class SnapshotSaver:
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(str(filepath), fourcc, self.fps, (width, height))
 
+            # Check if VideoWriter opened successfully
+            if not out.isOpened():
+                logger.error(f"Failed to open VideoWriter for {filepath}")
+                logger.error("Possible causes: missing codec, invalid path, or disk full")
+                self.save_failures += 1
+                return None
+
             # Write pre-detection frames (decode as needed)
             frames_written = 0
             for frame_data in buffered_frames:

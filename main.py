@@ -505,6 +505,9 @@ class TelescopeDetectionSystem:
 
         Returns:
             Merged detection configuration for this camera
+
+        Raises:
+            ValueError: If per-camera detection overrides contain invalid values
         """
         camera_id = camera_config.get('id', 'default')
         camera_detection_config = detection_config.copy()
@@ -515,7 +518,55 @@ class TelescopeDetectionSystem:
 
         logger.info(f"  [{camera_id}] Applying per-camera detection overrides")
 
-        # Override scalar values
+        # Validate per-camera overrides before applying
+        if 'conf_threshold' in camera_overrides:
+            value = camera_overrides['conf_threshold']
+            if not isinstance(value, (int, float)) or not (0.0 <= value <= 1.0):
+                raise ValueError(f"Camera '{camera_id}' has invalid conf_threshold: {value} (must be 0.0-1.0)")
+
+        if 'nms_threshold' in camera_overrides:
+            value = camera_overrides['nms_threshold']
+            if not isinstance(value, (int, float)) or not (0.0 <= value <= 1.0):
+                raise ValueError(f"Camera '{camera_id}' has invalid nms_threshold: {value} (must be 0.0-1.0)")
+
+        if 'min_box_area' in camera_overrides:
+            value = camera_overrides['min_box_area']
+            if not isinstance(value, int) or value < 0:
+                raise ValueError(f"Camera '{camera_id}' has invalid min_box_area: {value} (must be >= 0)")
+
+        if 'max_detections' in camera_overrides:
+            value = camera_overrides['max_detections']
+            if not isinstance(value, int) or value < 1:
+                raise ValueError(f"Camera '{camera_id}' has invalid max_detections: {value} (must be >= 1)")
+
+        # Validate per-class confidence overrides
+        if 'class_confidence_overrides' in camera_overrides:
+            class_conf = camera_overrides['class_confidence_overrides']
+            if not isinstance(class_conf, dict):
+                raise ValueError(f"Camera '{camera_id}' has invalid class_confidence_overrides: must be a dictionary")
+            for class_name, threshold in class_conf.items():
+                if not isinstance(threshold, (int, float)) or not (0.0 <= threshold <= 1.0):
+                    raise ValueError(f"Camera '{camera_id}' has invalid class confidence override for '{class_name}': {threshold} (must be 0.0-1.0)")
+
+        # Validate per-class size constraints
+        if 'class_size_constraints' in camera_overrides:
+            class_size = camera_overrides['class_size_constraints']
+            if not isinstance(class_size, dict):
+                raise ValueError(f"Camera '{camera_id}' has invalid class_size_constraints: must be a dictionary")
+            for class_name, constraints in class_size.items():
+                if not isinstance(constraints, dict):
+                    raise ValueError(f"Camera '{camera_id}' has invalid size constraints for '{class_name}': must be a dictionary")
+                if 'min' in constraints:
+                    if not isinstance(constraints['min'], int) or constraints['min'] < 0:
+                        raise ValueError(f"Camera '{camera_id}' has invalid min size for '{class_name}': {constraints['min']} (must be >= 0)")
+                if 'max' in constraints:
+                    if not isinstance(constraints['max'], int) or constraints['max'] < 0:
+                        raise ValueError(f"Camera '{camera_id}' has invalid max size for '{class_name}': {constraints['max']} (must be >= 0)")
+                if 'min' in constraints and 'max' in constraints:
+                    if constraints['min'] > constraints['max']:
+                        raise ValueError(f"Camera '{camera_id}' has invalid size constraints for '{class_name}': min ({constraints['min']}) > max ({constraints['max']})")
+
+        # Override scalar values (after validation)
         for key in ['conf_threshold', 'min_box_area', 'max_detections', 'nms_threshold']:
             if key in camera_overrides:
                 camera_detection_config[key] = camera_overrides[key]
