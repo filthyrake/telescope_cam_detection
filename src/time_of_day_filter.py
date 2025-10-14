@@ -8,7 +8,6 @@ from datetime import datetime, time
 from typing import List, Dict, Any, Optional
 from enum import Enum
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

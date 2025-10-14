@@ -11,7 +11,6 @@ from typing import Dict, Any, Optional, List, Tuple
 from pathlib import Path
 import timm
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

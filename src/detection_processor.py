@@ -14,7 +14,6 @@ from visualization_utils import draw_detections
 from src.motion_filter import MotionFilter
 from src.time_of_day_filter import TimeOfDayFilter
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

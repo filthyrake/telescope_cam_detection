@@ -14,7 +14,6 @@ import numpy as np
 
 from src.yolox_detector import YOLOXDetector
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

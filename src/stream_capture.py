@@ -12,7 +12,6 @@ import numpy as np
 from queue import Queue, Full
 from threading import Thread, Event, Lock
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # RTSP connection timeout in microseconds (5 seconds)

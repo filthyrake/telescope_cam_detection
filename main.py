@@ -122,6 +122,129 @@ class TelescopeDetectionSystem:
             logger.error(f"Failed to load configuration: {e}")
             return False
 
+    def validate_config(self) -> bool:
+        """
+        Validate configuration for required fields and value ranges.
+
+        Returns:
+            True if configuration is valid, False otherwise
+        """
+        try:
+            logger.info("Validating configuration...")
+
+            # Validate cameras array exists
+            if 'cameras' not in self.config or not self.config['cameras']:
+                logger.error("Configuration validation failed: 'cameras' array is missing or empty")
+                return False
+
+            # Validate each camera configuration
+            for camera in self.config['cameras']:
+                camera_id = camera.get('id', 'unknown')
+
+                # Required fields
+                required_fields = ['id', 'name', 'ip']
+                for field in required_fields:
+                    if field not in camera:
+                        logger.error(f"Camera '{camera_id}' is missing required field: '{field}'")
+                        return False
+
+                # Validate IP address format (basic check)
+                ip = camera['ip']
+                if not ip or not isinstance(ip, str):
+                    logger.error(f"Camera '{camera_id}' has invalid IP address: {ip}")
+                    return False
+
+            # Validate web server port
+            web_config = self.config.get('web', {})
+            port = web_config.get('port', 8000)
+            if not isinstance(port, int) or port < 1 or port > 65535:
+                logger.error(f"Invalid web server port: {port} (must be 1-65535)")
+                return False
+
+            # Validate detection configuration
+            detection_config = self.config.get('detection', {})
+            conf_threshold = detection_config.get('conf_threshold', 0.25)
+            if not isinstance(conf_threshold, (int, float)) or conf_threshold < 0.0 or conf_threshold > 1.0:
+                logger.error(f"Invalid conf_threshold: {conf_threshold} (must be 0.0-1.0)")
+                return False
+
+            # Validate min_box_area
+            min_box_area = detection_config.get('min_box_area', 0)
+            if not isinstance(min_box_area, int) or min_box_area < 0:
+                logger.error(f"Invalid min_box_area: {min_box_area} (must be >= 0)")
+                return False
+
+            logger.info("✓ Configuration validation passed")
+            return True
+
+        except Exception as e:
+            logger.error(f"Configuration validation error: {e}")
+            return False
+
+    def validate_model_files(self) -> bool:
+        """
+        Validate that required model files exist before loading.
+
+        Returns:
+            True if all required model files exist, False otherwise
+        """
+        try:
+            logger.info("Validating model files...")
+
+            detection_config = self.config.get('detection', {})
+            model_config = detection_config.get('model', {})
+
+            # Check YOLOX model weights
+            model_path = model_config.get('weights', 'models/yolox/yolox_s.pth')
+            model_file = Path(model_path)
+
+            if not model_file.exists():
+                logger.error(f"❌ Model weights file not found: {model_path}")
+                logger.error(f"   Absolute path: {model_file.absolute()}")
+                logger.error(f"   Please download YOLOX weights:")
+                logger.error(f"   wget https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_s.pth")
+                logger.error(f"   mv yolox_s.pth {model_path}")
+                return False
+
+            logger.info(f"✓ YOLOX model weights found: {model_path}")
+
+            # Check taxonomy file if Stage 2 is enabled
+            if detection_config.get('use_two_stage', False):
+                species_config = self.config.get('species_classification', {})
+                inat_config = species_config.get('inat_classifier', {})
+                taxonomy_file = inat_config.get('taxonomy_file', 'models/inat2021_taxonomy.json')
+                taxonomy_path = Path(taxonomy_file)
+
+                if not taxonomy_path.exists():
+                    logger.error(f"❌ Taxonomy file not found: {taxonomy_file}")
+                    logger.error(f"   Absolute path: {taxonomy_path.absolute()}")
+                    logger.error(f"   Please download iNaturalist taxonomy:")
+                    logger.error(f"   See docs/features/STAGE2_SETUP.md for instructions")
+                    return False
+
+                logger.info(f"✓ Taxonomy file found: {taxonomy_file}")
+
+                # Check Real-ESRGAN model if enhancement is enabled
+                enhancement_config = species_config.get('enhancement', {})
+                if enhancement_config.get('enabled', False) and enhancement_config.get('method', '') == 'realesrgan':
+                    realesrgan_config = enhancement_config.get('realesrgan', {})
+                    model_path_esrgan = realesrgan_config.get('model_path', 'models/enhancement/RealESRGAN_x4plus.pth')
+                    esrgan_path = Path(model_path_esrgan)
+
+                    if not esrgan_path.exists():
+                        logger.warning(f"⚠️  Real-ESRGAN model not found: {model_path_esrgan}")
+                        logger.warning(f"   Stage 2 enhancement will be disabled")
+                        logger.warning(f"   Download from: https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth")
+                    else:
+                        logger.info(f"✓ Real-ESRGAN model found: {model_path_esrgan}")
+
+            logger.info("✓ Model file validation passed")
+            return True
+
+        except Exception as e:
+            logger.error(f"Model file validation error: {e}")
+            return False
+
     def initialize_components(self) -> bool:
         """
         Initialize all system components.
@@ -610,6 +733,16 @@ def main():
         # Load configuration
         if not system.load_config():
             logger.error("Failed to load configuration")
+            sys.exit(1)
+
+        # Validate configuration
+        if not system.validate_config():
+            logger.error("Configuration validation failed")
+            sys.exit(1)
+
+        # Validate model files
+        if not system.validate_model_files():
+            logger.error("Model file validation failed")
             sys.exit(1)
 
         # Initialize components

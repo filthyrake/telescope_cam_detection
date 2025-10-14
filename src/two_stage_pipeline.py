@@ -12,7 +12,6 @@ from typing import Dict, Any, List, Optional, Tuple
 from ultralytics import YOLOWorld
 from species_classifier import SpeciesClassifier, TaxonomySpecificClassifier
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

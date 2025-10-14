@@ -15,7 +15,6 @@ import cv2
 from pathlib import Path
 from groundingdino.util.inference import Model
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Constants
