@@ -446,6 +446,22 @@ motion_filter:
   min_motion_area: 100  # Minimum motion area in pixels² to consider valid
   motion_blur_size: 21  # Gaussian blur kernel size for noise reduction (must be odd)
 
+# Time-of-Day Filter (reduces false positives based on species activity patterns)
+# Example: Birds are diurnal (daytime), so "bird" detections at night are likely bugs/bats
+time_of_day_filter:
+  enabled: true  # Enable time-based filtering
+  confidence_penalty: 0.3  # Multiply confidence by this for out-of-pattern detections (0.0-1.0)
+  hard_filter: false  # If true, completely remove out-of-pattern detections (strict mode)
+  use_system_timezone: true  # Automatically use system timezone (handles DST automatically)
+
+  # Activity patterns are defined in src/time_of_day_filter.py
+  # Defaults:
+  #   - Birds: diurnal (6am-8pm active)
+  #   - Reptiles: diurnal (8am-6pm)
+  #   - Coyotes/rabbits: crepuscular (dawn/dusk/night)
+  #   - Owls/bats: nocturnal (night only)
+  #   - Humans/cats/dogs: cathemeral (any time)
+
 # Future configuration for Phase 3
 detection_zones: []
   # Example:

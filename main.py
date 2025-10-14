@@ -372,6 +372,11 @@ class TelescopeDetectionSystem:
                 enable_motion_filter = motion_filter_config.get('enabled', False)
                 motion_filter_params = {k: v for k, v in motion_filter_config.items() if k != 'enabled'}
 
+                # Get time-of-day filter configuration
+                time_of_day_filter_config = self.config.get('time_of_day_filter', {})
+                enable_time_of_day_filter = time_of_day_filter_config.get('enabled', False)
+                time_of_day_filter_params = {k: v for k, v in time_of_day_filter_config.items() if k != 'enabled'}
+
                 detection_processor = DetectionProcessor(
                     input_queue=inference_queue,
                     output_queue=self.detection_queue,  # All cameras write to shared detection queue
@@ -379,7 +384,9 @@ class TelescopeDetectionSystem:
                     snapshot_saver=snapshot_saver,  # Shared snapshot saver
                     frame_source=stream_capture,
                     enable_motion_filter=enable_motion_filter,
-                    motion_filter_config=motion_filter_params
+                    motion_filter_config=motion_filter_params,
+                    enable_time_of_day_filter=enable_time_of_day_filter,
+                    time_of_day_filter_config=time_of_day_filter_params
                 )
 
                 self.detection_processors.append(detection_processor)

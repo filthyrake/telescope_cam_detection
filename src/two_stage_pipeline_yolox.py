@@ -16,6 +16,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from species_classifier import SpeciesClassifier
 from src.coco_constants import CLASS_ID_TO_CATEGORY
 from src.image_enhancement import ImageEnhancer
+from src.species_activity_patterns import is_species_likely_active, get_species_activity
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,6 +39,8 @@ class TwoStageDetectionPipeline:
         rejected_taxonomic_levels: Optional[List[str]] = None,
         crop_padding_percent: int = 20,
         min_crop_size: int = 64,
+        time_of_day_top_k: int = 5,
+        time_of_day_penalty: float = 0.3,
     ):
         """
         Initialize two-stage pipeline.
@@ -50,6 +53,8 @@ class TwoStageDetectionPipeline:
             rejected_taxonomic_levels: Taxonomic levels to reject (e.g., ['order', 'class'])
             crop_padding_percent: Percent to expand bbox for better context (e.g., 20 = 20% padding)
             min_crop_size: Skip Stage 2 if crop smaller than this (e.g., 64 = 64x64 pixels minimum)
+            time_of_day_top_k: Number of species to consider for time-of-day re-ranking (default: 5)
+            time_of_day_penalty: Confidence penalty for unlikely species (default: 0.3 = 70% reduction)
         """
         self.enable_species_classification = enable_species_classification
         self.stage2_confidence_threshold = stage2_confidence_threshold
@@ -61,6 +66,10 @@ class TwoStageDetectionPipeline:
         # Preprocessing configuration
         self.crop_padding_percent = crop_padding_percent
         self.min_crop_size = min_crop_size
+
+        # Time-of-day filtering configuration
+        self.time_of_day_top_k = time_of_day_top_k
+        self.time_of_day_penalty = time_of_day_penalty
 
         # Species classifiers (will be added via add_species_classifier)
         self.species_classifiers: Dict[str, SpeciesClassifier] = {}
@@ -241,19 +250,62 @@ class TwoStageDetectionPipeline:
         # Run species classification
         classifier = self.species_classifiers[category]
 
+        # Get time-of-day context if available (from time-of-day filter)
+        time_of_day = detection.get('time_of_day')
+        time_alternatives = detection.get('time_of_day_alternatives', [])
+
         try:
             classification_start = time.time()
             # classifier.classify() returns List[Dict[str, Any]]
-            results = classifier.classify(crop, top_k=1)
+            # Request more results if we need to filter by time of day
+            top_k = self.time_of_day_top_k if time_of_day else 1
+            results = classifier.classify(crop, top_k=top_k)
             classification_time = (time.time() - classification_start) * 1000
             self.classification_times.append(classification_time)
 
             if results and len(results) > 0:
-                # Get top prediction
+                # Filter results by time-of-day activity if we have the context
+                if time_of_day:
+                    # Re-rank results based on activity patterns
+                    filtered_results = []
+                    for result in results:
+                        species_name = result['species']
+                        confidence = result['confidence']
+                        is_active = is_species_likely_active(species_name, time_of_day)
+
+                        # Boost confidence for species likely active at this time
+                        # Reduce confidence for species unlikely to be active
+                        if is_active:
+                            result['activity_boosted'] = True
+                            result['confidence_original'] = confidence
+                            # Keep confidence as-is or slightly boost it
+                        else:
+                            result['activity_boosted'] = False
+                            result['confidence_original'] = confidence
+                            # Penalize unlikely species using configured penalty
+                            result['confidence'] = confidence * self.time_of_day_penalty
+
+                        filtered_results.append(result)
+
+                    # Re-sort by adjusted confidence
+                    filtered_results.sort(key=lambda x: x['confidence'], reverse=True)
+                    results = filtered_results
+
+                    if time_alternatives:
+                        logger.debug(f"Stage 2 filtering by time-of-day: {time_of_day} (alternatives: {time_alternatives})")
+
+                # Get top prediction after filtering
                 top_result = results[0]
                 species_name = top_result['species']
                 confidence = top_result['confidence']
                 taxonomic_level = top_result.get('taxonomic_level', 'species')
+
+                # Log if confidence was adjusted
+                if top_result.get('confidence_original'):
+                    original_conf = top_result['confidence_original']
+                    if abs(original_conf - confidence) > 0.01:
+                        activity = get_species_activity(species_name)
+                        logger.debug(f"Time-of-day adjusted: {species_name} @ {time_of_day} ({activity.value}) {original_conf:.2f} → {confidence:.2f}")
 
                 # Filter out vague taxonomic level classifications (Option 2)
                 # Only accept specific identifications (species, genus, family)
