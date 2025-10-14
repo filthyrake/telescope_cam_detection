@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 # With multi-camera systems, this helps prevent OOM errors
 MAX_BUFFER_MEMORY_MB = 500
 
+# Frequency to check memory usage (in frames)
+# Check every N frames to avoid excessive overhead
+MEMORY_CHECK_INTERVAL = 30
+
 
 class SnapshotSaver:
     """
@@ -111,7 +115,7 @@ class SnapshotSaver:
                     })
 
                     # Update memory estimate (periodically)
-                    if len(self.frame_buffer) % 30 == 0:  # Check every 30 frames
+                    if len(self.frame_buffer) % MEMORY_CHECK_INTERVAL == 0:
                         self._update_memory_estimate()
                 else:
                     logger.warning("Failed to compress frame for buffer, skipping")

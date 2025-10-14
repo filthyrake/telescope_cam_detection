@@ -221,6 +221,8 @@ class WebServer:
                             "type": "heartbeat",
                             "timestamp": time.time()
                         })
+                        # Rate limit heartbeats to avoid overwhelming clients
+                        await asyncio.sleep(1.0)
 
             except WebSocketDisconnect:
                 logger.info("WebSocket disconnected")

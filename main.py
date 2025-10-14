@@ -9,7 +9,7 @@ import time
 import logging
 import signal
 from pathlib import Path
-from queue import Queue
+from queue import Queue, Empty
 from typing import Optional
 import yaml
 
@@ -701,7 +701,7 @@ class TelescopeDetectionSystem:
                     while not self.frame_queues[camera_index].empty():
                         try:
                             self.frame_queues[camera_index].get_nowait()
-                        except:
+                        except Empty:
                             break
                     self.frame_queues[camera_index] = None
 
@@ -711,7 +711,7 @@ class TelescopeDetectionSystem:
                     while not self.inference_queues[camera_index].empty():
                         try:
                             self.inference_queues[camera_index].get_nowait()
-                        except:
+                        except Empty:
                             break
                     self.inference_queues[camera_index] = None
 
