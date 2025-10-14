@@ -270,6 +270,30 @@ class TimeOfDayFilter:
 
         return filtered_detections
 
+    def update_params(self, config: Dict[str, Any]):
+        """
+        Update time-of-day filter parameters (hot-reload).
+
+        Args:
+            config: Dictionary with new time-of-day filter configuration
+        """
+        updated_params = []
+
+        if 'enabled' in config and config['enabled'] != self.enabled:
+            self.enabled = config['enabled']
+            updated_params.append(f"enabled: {self.enabled}")
+
+        if 'confidence_penalty' in config and config['confidence_penalty'] != self.confidence_penalty:
+            self.confidence_penalty = config['confidence_penalty']
+            updated_params.append(f"confidence_penalty: {self.confidence_penalty}")
+
+        if 'hard_filter' in config and config['hard_filter'] != self.hard_filter:
+            self.hard_filter = config['hard_filter']
+            updated_params.append(f"hard_filter: {self.hard_filter}")
+
+        if updated_params:
+            logger.info(f"TimeOfDayFilter params updated: {', '.join(updated_params)}")
+
     def get_stats(self) -> Dict[str, Any]:
         """Get filter statistics."""
         return {

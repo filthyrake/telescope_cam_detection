@@ -25,3 +25,4 @@ python-dotenv>=1.0.0
 numpy>=1.24.0
 Pillow>=10.0.0
 psutil>=5.9.0  # For process and memory statistics
+watchdog>=3.0.0  # For config file monitoring and hot-reload

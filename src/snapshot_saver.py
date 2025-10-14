@@ -426,6 +426,45 @@ class SnapshotSaver:
             logger.error(f"Unknown save mode: {self.save_mode}")
             return None
 
+    def update_settings(
+        self,
+        cooldown_seconds: Optional[int] = None,
+        trigger_classes: Optional[List[str]] = None,
+        min_confidence: Optional[float] = None,
+        save_annotated: Optional[bool] = None
+    ):
+        """
+        Update snapshot settings without restarting (hot-reload).
+
+        Args:
+            cooldown_seconds: New cooldown duration
+            trigger_classes: New list of trigger classes
+            min_confidence: New minimum confidence threshold
+            save_annotated: Whether to save annotated frames
+        """
+        updated_settings = []
+
+        if cooldown_seconds is not None and cooldown_seconds != self.cooldown_seconds:
+            self.cooldown_seconds = cooldown_seconds
+            updated_settings.append(f"cooldown_seconds: {cooldown_seconds}")
+
+        if trigger_classes is not None:
+            new_trigger_set = set(trigger_classes) if trigger_classes else None
+            if new_trigger_set != self.trigger_classes:
+                self.trigger_classes = new_trigger_set
+                updated_settings.append(f"trigger_classes: {trigger_classes}")
+
+        if min_confidence is not None and min_confidence != self.min_confidence:
+            self.min_confidence = min_confidence
+            updated_settings.append(f"min_confidence: {min_confidence}")
+
+        if save_annotated is not None and save_annotated != self.save_annotated:
+            self.save_annotated = save_annotated
+            updated_settings.append(f"save_annotated: {save_annotated}")
+
+        if updated_settings:
+            logger.info(f"SnapshotSaver settings updated: {', '.join(updated_settings)}")
+
     def get_stats(self) -> Dict[str, Any]:
         """
         Get snapshot saver statistics.
