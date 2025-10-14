@@ -17,7 +17,6 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

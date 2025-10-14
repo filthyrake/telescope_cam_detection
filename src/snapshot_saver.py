@@ -14,7 +14,6 @@ from threading import Thread, Event, Lock
 from collections import deque
 import json
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

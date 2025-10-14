@@ -18,7 +18,6 @@ from src.coco_constants import CLASS_ID_TO_CATEGORY
 from src.image_enhancement import ImageEnhancer
 from src.species_activity_patterns import is_species_likely_active, get_species_activity
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

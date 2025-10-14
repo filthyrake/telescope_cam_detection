@@ -22,7 +22,6 @@ import logging
 from typing import Optional, Tuple
 from pathlib import Path
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

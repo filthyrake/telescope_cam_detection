@@ -251,7 +251,6 @@ if __name__ == "__main__":
     # Test visualization utilities
     import logging
 
-    logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
     # Create test frame
