@@ -119,6 +119,17 @@ class MotionFilter:
 
         return has_motion, motion_ratio
 
+    def cleanup(self):
+        """
+        Release background subtractor resources.
+        Should be called when filter is no longer needed.
+        """
+        if self.bg_subtractor is not None:
+            # Release OpenCV background subtractor
+            # This frees internal buffers and GPU memory (if CUDA-enabled)
+            self.bg_subtractor = None
+            logger.debug("Motion filter resources released")
+
     def filter_detections(
         self,
         frame: np.ndarray,

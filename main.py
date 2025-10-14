@@ -9,7 +9,7 @@ import time
 import logging
 import signal
 from pathlib import Path
-from queue import Queue
+from queue import Queue, Empty
 from typing import Optional
 import yaml
 
@@ -686,6 +686,39 @@ class TelescopeDetectionSystem:
             logger.error(f"Failed to initialize components: {e}")
             return False
 
+    def _cleanup_failed_camera(self, camera_index: int):
+        """
+        Clean up resources for a failed camera.
+
+        Args:
+            camera_index: Index of the failed camera
+        """
+        try:
+            # Clear queue references to allow garbage collection
+            if camera_index < len(self.frame_queues):
+                # Empty the queue before clearing reference
+                if self.frame_queues[camera_index]:
+                    while not self.frame_queues[camera_index].empty():
+                        try:
+                            self.frame_queues[camera_index].get_nowait()
+                        except Empty:
+                            break
+                    self.frame_queues[camera_index] = None
+
+            if camera_index < len(self.inference_queues):
+                # Empty the queue before clearing reference
+                if self.inference_queues[camera_index]:
+                    while not self.inference_queues[camera_index].empty():
+                        try:
+                            self.inference_queues[camera_index].get_nowait()
+                        except Empty:
+                            break
+                    self.inference_queues[camera_index] = None
+
+            logger.debug(f"Cleaned up resources for failed camera index {camera_index}")
+        except Exception as e:
+            logger.warning(f"Error during camera cleanup for index {camera_index}: {e}")
+
     def _validate_active_cameras(self, active_cameras: list, component_name: str) -> bool:
         """
         Validate that at least one camera is active.
@@ -727,6 +760,8 @@ class TelescopeDetectionSystem:
                     logger.info(f"  [{camera_id}] ✓ Stream capture started")
                 else:
                     logger.warning(f"  [{camera_id}] ✗ Failed to start stream capture - camera will be skipped")
+                    # Clean up failed camera resources immediately
+                    self._cleanup_failed_camera(i)
 
             if not self._validate_active_cameras(active_cameras, "cameras"):
                 return False
@@ -743,6 +778,7 @@ class TelescopeDetectionSystem:
                     logger.warning(f"  [{camera_id}] ✗ Failed to start inference engine - camera disabled")
                     # Stop this camera's stream capture
                     self.stream_captures[i].stop()
+                    self._cleanup_failed_camera(i)
                     failed_inference.append(i)
 
             # Remove failed cameras
@@ -764,6 +800,7 @@ class TelescopeDetectionSystem:
                     # Stop this camera's inference and stream
                     self.inference_engines[i].stop()
                     self.stream_captures[i].stop()
+                    self._cleanup_failed_camera(i)
                     failed_processors.append(i)
 
             # Remove failed cameras
@@ -833,34 +870,43 @@ class TelescopeDetectionSystem:
         logger.info("System stopped")
 
     def print_stats(self):
-        """Print system statistics."""
+        """Print system statistics (handles None components gracefully)."""
         logger.info("=" * 80)
         logger.info("System Statistics:")
 
-        # Print stats for each camera
+        # Print stats for each camera (skip None components)
         for i, stream_capture in enumerate(self.stream_captures):
             if stream_capture:
-                stats = stream_capture.get_stats()
-                logger.info(f"  Camera {i} ({stream_capture.camera_name}):")
-                logger.info(f"    Stream Capture:")
-                logger.info(f"      - Connected: {stats['is_connected']}")
-                logger.info(f"      - FPS: {stats['fps']:.1f}")
-                logger.info(f"      - Dropped frames: {stats['dropped_frames']}")
+                try:
+                    stats = stream_capture.get_stats()
+                    logger.info(f"  Camera {i} ({stream_capture.camera_name}):")
+                    logger.info(f"    Stream Capture:")
+                    logger.info(f"      - Connected: {stats['is_connected']}")
+                    logger.info(f"      - FPS: {stats['fps']:.1f}")
+                    logger.info(f"      - Dropped frames: {stats['dropped_frames']}")
+                except Exception as e:
+                    logger.warning(f"  Camera {i}: Unable to get stats - {e}")
 
         for i, inference_engine in enumerate(self.inference_engines):
             if inference_engine:
-                stats = inference_engine.get_stats()
-                logger.info(f"    Inference Engine:")
-                logger.info(f"      - Device: {stats['device']}")
-                logger.info(f"      - FPS: {stats['fps']:.1f}")
-                logger.info(f"      - Avg inference time: {stats['avg_inference_time_ms']:.1f}ms")
+                try:
+                    stats = inference_engine.get_stats()
+                    logger.info(f"    Inference Engine:")
+                    logger.info(f"      - Device: {stats['device']}")
+                    logger.info(f"      - FPS: {stats['fps']:.1f}")
+                    logger.info(f"      - Avg inference time: {stats['avg_inference_time_ms']:.1f}ms")
+                except Exception as e:
+                    logger.warning(f"  Inference Engine {i}: Unable to get stats - {e}")
 
         for i, detection_processor in enumerate(self.detection_processors):
             if detection_processor:
-                stats = detection_processor.get_stats()
-                logger.info(f"    Detection Processor:")
-                logger.info(f"      - Processed: {stats['processed_count']}")
-                logger.info(f"      - History size: {stats['history_size']}")
+                try:
+                    stats = detection_processor.get_stats()
+                    logger.info(f"    Detection Processor:")
+                    logger.info(f"      - Processed: {stats['processed_count']}")
+                    logger.info(f"      - History size: {stats['history_size']}")
+                except Exception as e:
+                    logger.warning(f"  Detection Processor {i}: Unable to get stats - {e}")
 
         logger.info("=" * 80)
 

@@ -16,6 +16,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+from queue import Empty
 
 logger = logging.getLogger(__name__)
 
@@ -199,8 +200,10 @@ class WebServer:
 
                 # Stream detection results
                 while True:
-                    if self.detection_queue and not self.detection_queue.empty():
-                        detection_result = self.detection_queue.get()
+                    # Use blocking get with timeout to avoid busy-waiting
+                    # This also properly handles shutdown signals
+                    try:
+                        detection_result = self.detection_queue.get(timeout=1.0)
 
                         # Store latest detection for this camera
                         camera_id = detection_result.get('camera_id', 'default')
@@ -212,13 +215,14 @@ class WebServer:
                         # Send to client
                         await websocket.send_json(message)
 
-                    else:
-                        # Send heartbeat to keep connection alive
-                        await asyncio.sleep(1.0)
+                    except Empty:
+                        # No detection available, send heartbeat to keep connection alive
                         await websocket.send_json({
                             "type": "heartbeat",
                             "timestamp": time.time()
                         })
+                        # Rate limit heartbeats to avoid overwhelming clients
+                        await asyncio.sleep(1.0)
 
             except WebSocketDisconnect:
                 logger.info("WebSocket disconnected")
@@ -322,12 +326,19 @@ class WebServer:
                         frame = self._draw_detections(frame, self.latest_detections[camera_id])
 
                     # Encode frame as JPEG
-                    ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    try:
+                        ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
-                    if ret:
-                        frame_bytes = buffer.tobytes()
-                        yield (b'--frame\r\n'
-                               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                        if ret:
+                            frame_bytes = buffer.tobytes()
+                            yield (b'--frame\r\n'
+                                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                        else:
+                            logger.error(f"Failed to encode frame for camera {camera_id} - frame may be corrupted or empty")
+                            # Continue to next frame instead of breaking stream
+                    except Exception as e:
+                        logger.error(f"Exception encoding frame for camera {camera_id}: {e}")
+                        # Continue streaming - don't let one bad frame kill the stream
 
             await asyncio.sleep(0.033)  # ~30 FPS
 
