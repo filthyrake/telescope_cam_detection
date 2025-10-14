@@ -368,7 +368,12 @@ class CameraHealthMonitor:
 
                     # Trigger recovery alert if configured
                     if self.config['alert_on_recovery']:
-                        # TODO: Implement alert system (issue #73)
+                        # TODO(issue #73): Implement alert system for camera recovery notifications
+                        # When implemented, this should send notifications via:
+                        # - Email (configurable SMTP settings)
+                        # - Webhook (POST to configured URL with camera recovery details)
+                        # - Push notification (optional mobile app integration)
+                        # Alert should include: camera_id, downtime_duration, restart_count
                         pass
                 else:
                     logger.error(f"[{camera_id}] ✗ Camera restart failed")
@@ -380,7 +385,12 @@ class CameraHealthMonitor:
 
                     # Trigger failure alert if configured
                     if self.config['alert_on_failure']:
-                        # TODO: Implement alert system (issue #73)
+                        # TODO(issue #73): Implement alert system for camera failure notifications
+                        # When implemented, this should send notifications via:
+                        # - Email (configurable SMTP settings)
+                        # - Webhook (POST to configured URL with camera failure details)
+                        # - Push notification (optional mobile app integration)
+                        # Alert should include: camera_id, failure_reason, restart_attempt_count, health_metrics
                         pass
 
                     # Check if we've exhausted restart attempts

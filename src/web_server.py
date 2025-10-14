@@ -158,30 +158,17 @@ class WebServer:
                 }
             }
 
-        @self.app.get("/api/cameras/{camera_id}/health")
-        async def camera_health(camera_id: str):
-            """Get health status for a specific camera."""
-            # Use health monitor if available
-            if self.health_monitor:
-                health_data = self.health_monitor.get_camera_health(camera_id)
-                if health_data:
-                    return health_data
-                else:
-                    raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
+        def _create_fallback_health_data(self, camera_id: str, frame_source) -> dict:
+            """
+            Create basic health data from frame source when health monitor is unavailable.
 
-            # Fallback to basic stats if health monitor not available
-            # Find camera index
-            camera_idx = None
-            for idx, fs in enumerate(self.frame_sources):
-                if fs.camera_id == camera_id:
-                    camera_idx = idx
-                    break
+            Args:
+                camera_id: Camera ID
+                frame_source: RTSPStreamCapture instance
 
-            if camera_idx is None:
-                raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
-
-            frame_source = self.frame_sources[camera_idx]
-
+            Returns:
+                Dictionary with basic health information
+            """
             # Calculate uptime
             uptime_seconds = 0
             if camera_id in self.camera_start_times:
@@ -205,6 +192,31 @@ class WebServer:
                 "last_frame_time": last_frame_time,
                 "uptime_seconds": round(uptime_seconds, 1)
             }
+
+        @self.app.get("/api/cameras/{camera_id}/health")
+        async def camera_health(camera_id: str):
+            """Get health status for a specific camera."""
+            # Use health monitor if available
+            if self.health_monitor:
+                health_data = self.health_monitor.get_camera_health(camera_id)
+                if health_data:
+                    return health_data
+                else:
+                    raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
+
+            # Fallback to basic stats if health monitor not available
+            # Find camera index
+            camera_idx = None
+            for idx, fs in enumerate(self.frame_sources):
+                if fs.camera_id == camera_id:
+                    camera_idx = idx
+                    break
+
+            if camera_idx is None:
+                raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
+
+            frame_source = self.frame_sources[camera_idx]
+            return _create_fallback_health_data(camera_id, frame_source)
 
         @self.app.get("/api/cameras/{camera_id}/stats")
         async def camera_stats(camera_id: str):

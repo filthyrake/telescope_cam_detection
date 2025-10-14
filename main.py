@@ -1160,7 +1160,7 @@ class TelescopeDetectionSystem:
                     return False
 
                 # Update web server camera start time
-                if self.web_server:
+                if self.web_server and hasattr(self.web_server, 'set_camera_start_time'):
                     self.web_server.set_camera_start_time(camera_id)
 
                 logger.info(f"[{camera_id}] ✓ Camera restart successful")
