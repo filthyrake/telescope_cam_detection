@@ -3,13 +3,18 @@ YOLOX Detector - Fast Stage 1 detection (Apache 2.0 License)
 Replaces GroundingDINO for 47x faster inference (11.8ms vs 560ms)
 """
 import sys
-sys.path.insert(0, 'YOLOX')
-
 import torch
 import cv2
 import numpy as np
 import logging
 from typing import List, Dict, Any
+from pathlib import Path
+
+# Add YOLOX directory to sys.path dynamically (relative to this file)
+_yolox_path = Path(__file__).parent.parent / "YOLOX"
+if _yolox_path.exists() and str(_yolox_path) not in sys.path:
+    sys.path.insert(0, str(_yolox_path))
+
 from yolox.exp import get_exp
 from yolox.utils import postprocess
 from src.coco_constants import COCO_CLASSES, WILDLIFE_CLASSES, MAMMAL_CLASS_IDS

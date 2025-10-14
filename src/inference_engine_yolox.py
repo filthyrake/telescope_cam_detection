@@ -91,6 +91,7 @@ class InferenceEngine:
         self.avg_inference_time = 0.0
         self.fps = 0.0
         self.last_fps_check = time.time()
+        self.dropped_results = 0  # Track dropped results when queue is full
 
     def load_model(self) -> bool:
         """Load YOLOX model"""
@@ -210,8 +211,11 @@ class InferenceEngine:
                 # Send to output queue
                 try:
                     self.output_queue.put_nowait(result)
-                except:
-                    pass  # Drop if queue is full
+                except Exception as e:
+                    self.dropped_results += 1
+                    # Log every 10th drop to avoid spam
+                    if self.dropped_results % 10 == 0:
+                        logger.warning(f"Output queue full, dropped {self.dropped_results} results total (system overloaded)")
 
             except Exception as e:
                 logger.error(f"Error in inference loop: {e}")
@@ -286,10 +290,34 @@ class InferenceEngine:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get inference statistics"""
-        return {
+        stats = {
             'device': self.device,
             'fps': self.fps,
             'avg_inference_time': self.avg_inference_time,
             'avg_inference_time_ms': self.avg_inference_time * 1000,
             'total_inferences': self.total_inference_count,  # Use cumulative count
+            'dropped_results': self.dropped_results,
         }
+
+        # Add drop rate
+        if self.total_inference_count > 0:
+            stats['drop_rate'] = self.dropped_results / self.total_inference_count
+        else:
+            stats['drop_rate'] = 0.0
+
+        # Add GPU memory usage if CUDA is available
+        if torch.cuda.is_available():
+            stats['gpu_memory_allocated_mb'] = torch.cuda.memory_allocated(self.device) / 1024 / 1024
+            stats['gpu_memory_reserved_mb'] = torch.cuda.memory_reserved(self.device) / 1024 / 1024
+
+        # Add system memory usage if psutil is available
+        try:
+            import psutil
+            process = psutil.Process()
+            mem_info = process.memory_info()
+            stats['memory_mb'] = mem_info.rss / 1024 / 1024
+            stats['memory_percent'] = process.memory_percent()
+        except ImportError:
+            pass  # psutil not available
+
+        return stats

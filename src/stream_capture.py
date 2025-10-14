@@ -84,16 +84,27 @@ class RTSPStreamCapture:
         if self.use_tcp:
             logger.info(f"[{self.camera_id}] Using TCP transport (rtsp_transport=tcp)")
 
-        # OpenCV VideoCapture with optimized settings for low latency
-        # Use FFMPEG backend with TCP transport if requested
-        if self.use_tcp:
-            # Set RTSP transport to TCP via environment variable (OpenCV+FFMPEG)
-            # Set shorter timeout (5 seconds) for non-blocking startup
-            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = f'rtsp_transport;tcp|timeout;{RTSP_TIMEOUT_MICROSECONDS}'
-        else:
-            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = f'timeout;{RTSP_TIMEOUT_MICROSECONDS}'
+        # Save existing environment variable to restore later (avoid global pollution)
+        old_opencv_options = os.environ.get('OPENCV_FFMPEG_CAPTURE_OPTIONS')
 
-        self.capture = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+        try:
+            # OpenCV VideoCapture with optimized settings for low latency
+            # Use FFMPEG backend with TCP transport if requested
+            if self.use_tcp:
+                # Set RTSP transport to TCP via environment variable (OpenCV+FFMPEG)
+                # Set shorter timeout (5 seconds) for non-blocking startup
+                os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = f'rtsp_transport;tcp|timeout;{RTSP_TIMEOUT_MICROSECONDS}'
+            else:
+                os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = f'timeout;{RTSP_TIMEOUT_MICROSECONDS}'
+
+            self.capture = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+        finally:
+            # Restore original environment variable to avoid affecting other cameras
+            if old_opencv_options is not None:
+                os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = old_opencv_options
+            else:
+                # Remove if it didn't exist before
+                os.environ.pop('OPENCV_FFMPEG_CAPTURE_OPTIONS', None)
 
         # Set low latency options
         self.capture.set(cv2.CAP_PROP_BUFFERSIZE, self.buffer_size)
@@ -227,10 +238,16 @@ class RTSPStreamCapture:
         Returns:
             True if reconnection successful, False otherwise
         """
-        logger.info("Attempting to reconnect...")
+        logger.info(f"[{self.camera_id}] Attempting to reconnect...")
 
-        if self.capture:
-            self.capture.release()
+        # Always release existing capture, even if it failed
+        if self.capture is not None:
+            try:
+                self.capture.release()
+            except Exception as e:
+                logger.warning(f"[{self.camera_id}] Error releasing capture: {e}")
+            finally:
+                self.capture = None
 
         time.sleep(2.0)  # Wait before reconnecting
         return self.connect()
@@ -242,13 +259,25 @@ class RTSPStreamCapture:
         Returns:
             Dictionary containing capture stats
         """
-        return {
+        stats = {
             'is_connected': self.is_connected,
             'fps': self.fps,
             'total_frames': self.frame_count,
             'dropped_frames': self.dropped_frames,
             'queue_size': self.frame_queue.qsize()
         }
+
+        # Add memory usage info if psutil is available
+        try:
+            import psutil
+            process = psutil.Process()
+            mem_info = process.memory_info()
+            stats['memory_mb'] = mem_info.rss / 1024 / 1024
+            stats['memory_percent'] = process.memory_percent()
+        except ImportError:
+            pass  # psutil not available
+
+        return stats
 
 
 def create_rtsp_url(
