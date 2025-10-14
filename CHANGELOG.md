@@ -7,16 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Time-of-day filtering system** (#22)
-  - Detection-level confidence adjustment based on species activity patterns
-  - Stage 2 species re-ranking using time-of-day context
-  - Species activity database (128+ species with diurnal/nocturnal/crepuscular/cathemeral patterns)
-  - Automatic timezone detection with DST support
-  - Configurable confidence penalties for out-of-pattern detections
-  - Alternative suggestions (e.g., "bird" at night → suggest "bat")
-  - Examples: Birds at night penalized 70% (likely bugs/bats), reptiles at night penalized (need warmth)
-
 ### Coming Soon
 - Docker containerization for easy deployment
 - GitHub Actions CI/CD pipeline

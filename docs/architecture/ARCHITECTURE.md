@@ -107,9 +107,7 @@ The Telescope Detection System is a real-time object detection and species class
                     ┌────────────────────────────────────┐
                     │  Detection Processor Thread        │
                     │  - Post-processing                 │
-                    │  - Motion filtering (static obj)   │
-                    │  - Time-of-day filtering           │
-                    │  - Confidence & size filtering     │
+                    │  - Filtering (confidence, size)    │
                     │  - Snapshot trigger logic          │
                     │  - Detection history               │
                     └─────────────┬──────────────────────┘
@@ -303,19 +301,11 @@ species_classification:
 **Purpose**: Post-process detections and coordinate snapshots
 
 **Responsibilities**:
-- **Motion filtering**: Remove static objects (background subtraction)
-- **Time-of-day filtering**: Adjust confidence based on species activity patterns
 - Filter by confidence/size
 - Maintain detection history
 - Trigger snapshot saves
 - Manage cooldown timers
 - Forward to web server
-
-**Filters Applied (in order)**:
-1. **Motion Filter** (optional): Detections without motion are removed
-2. **Time-of-Day Filter** (optional): Out-of-pattern species get confidence penalty
-3. **Confidence Filter**: Detections below threshold removed
-4. **Size Filter**: Detections below min_box_area removed
 
 **Detection History**:
 ```python
@@ -471,11 +461,9 @@ snapshots:
                 │                         │
                 │              ┌──────────▼───────────┐
                 │              │  Filter & Process   │
-                │              │  1. Motion filter   │
-                │              │  2. Time-of-day     │
-                │              │  3. Confidence      │
-                │              │  4. Size filter     │
-                │              │  5. History         │
+                │              │  - Size filter      │
+                │              │  - Confidence       │
+                │              │  - History          │
                 │              └──────────┬───────────┘
                 │                         │
                 │              ┌──────────┴───────────┐
@@ -978,10 +966,7 @@ telescope_cam_detection/
 │   ├── inference_engine.py
 │   ├── two_stage_pipeline.py
 │   ├── species_classifier.py
-│   ├── species_activity_patterns.py  # 128+ species activity database
 │   ├── detection_processor.py
-│   ├── motion_filter.py            # Background subtraction filter
-│   ├── time_of_day_filter.py       # Activity-based filtering
 │   ├── snapshot_saver.py
 │   ├── web_server.py
 │   └── visualization_utils.py
