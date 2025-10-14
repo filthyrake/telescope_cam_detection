@@ -33,6 +33,8 @@ class WebServer:
         frame_sources: Optional[List[Any]] = None,
         inference_engines: Optional[List[Any]] = None,
         detection_processors: Optional[List[Any]] = None,
+        health_monitor: Optional[Any] = None,
+        restart_callback: Optional[Any] = None,
         host: str = "0.0.0.0",
         port: int = 8000
     ):
@@ -44,6 +46,8 @@ class WebServer:
             frame_sources: List of frame sources (RTSPStreamCapture instances)
             inference_engines: List of inference engines (InferenceEngine instances)
             detection_processors: List of detection processors (DetectionProcessor instances)
+            health_monitor: Camera health monitor instance
+            restart_callback: Callback function to restart a camera (takes camera index)
             host: Host to bind to
             port: Port to bind to
         """
@@ -51,6 +55,8 @@ class WebServer:
         self.frame_sources = frame_sources if frame_sources else []
         self.inference_engines = inference_engines if inference_engines else []
         self.detection_processors = detection_processors if detection_processors else []
+        self.health_monitor = health_monitor
+        self.restart_callback = restart_callback
         self.host = host
         self.port = port
 
@@ -152,21 +158,17 @@ class WebServer:
                 }
             }
 
-        @self.app.get("/api/cameras/{camera_id}/health")
-        async def camera_health(camera_id: str):
-            """Get health status for a specific camera."""
-            # Find camera index
-            camera_idx = None
-            for idx, fs in enumerate(self.frame_sources):
-                if fs.camera_id == camera_id:
-                    camera_idx = idx
-                    break
+        def _create_fallback_health_data(self, camera_id: str, frame_source) -> dict:
+            """
+            Create basic health data from frame source when health monitor is unavailable.
 
-            if camera_idx is None:
-                raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
+            Args:
+                camera_id: Camera ID
+                frame_source: RTSPStreamCapture instance
 
-            frame_source = self.frame_sources[camera_idx]
-
+            Returns:
+                Dictionary with basic health information
+            """
             # Calculate uptime
             uptime_seconds = 0
             if camera_id in self.camera_start_times:
@@ -190,6 +192,31 @@ class WebServer:
                 "last_frame_time": last_frame_time,
                 "uptime_seconds": round(uptime_seconds, 1)
             }
+
+        @self.app.get("/api/cameras/{camera_id}/health")
+        async def camera_health(camera_id: str):
+            """Get health status for a specific camera."""
+            # Use health monitor if available
+            if self.health_monitor:
+                health_data = self.health_monitor.get_camera_health(camera_id)
+                if health_data:
+                    return health_data
+                else:
+                    raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
+
+            # Fallback to basic stats if health monitor not available
+            # Find camera index
+            camera_idx = None
+            for idx, fs in enumerate(self.frame_sources):
+                if fs.camera_id == camera_id:
+                    camera_idx = idx
+                    break
+
+            if camera_idx is None:
+                raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
+
+            frame_source = self.frame_sources[camera_idx]
+            return _create_fallback_health_data(camera_id, frame_source)
 
         @self.app.get("/api/cameras/{camera_id}/stats")
         async def camera_stats(camera_id: str):
@@ -254,6 +281,71 @@ class WebServer:
                 }
 
             return result
+
+        @self.app.post("/api/cameras/{camera_id}/restart")
+        async def restart_camera(camera_id: str):
+            """Manually trigger camera restart."""
+            if not self.restart_callback:
+                raise HTTPException(status_code=503, detail="Camera restart not available")
+
+            # Find camera index
+            camera_idx = None
+            for idx, fs in enumerate(self.frame_sources):
+                if fs.camera_id == camera_id:
+                    camera_idx = idx
+                    break
+
+            if camera_idx is None:
+                raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
+
+            # Attempt restart (run in executor to avoid blocking)
+            try:
+                loop = asyncio.get_running_loop()
+                success = await loop.run_in_executor(
+                    None,
+                    lambda: self.restart_callback(camera_idx)
+                )
+
+                if success:
+                    return {
+                        "success": True,
+                        "camera_id": camera_id,
+                        "message": f"Camera '{camera_id}' restarted successfully"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "camera_id": camera_id,
+                        "message": f"Failed to restart camera '{camera_id}'"
+                    }
+            except Exception as e:
+                logger.error(f"Error restarting camera {camera_id}: {e}")
+                raise HTTPException(status_code=500, detail=f"Error restarting camera: {str(e)}")
+
+        @self.app.get("/api/cameras/health/summary")
+        async def cameras_health_summary():
+            """Get health summary for all cameras."""
+            if self.health_monitor:
+                return self.health_monitor.get_health_summary()
+
+            # Fallback if health monitor not available
+            cameras = []
+            for fs in self.frame_sources:
+                cameras.append({
+                    'id': fs.camera_id,
+                    'name': fs.camera_name,
+                    'status': 'healthy' if fs.is_connected else 'failed',
+                    'health_score': 100 if fs.is_connected else 0
+                })
+
+            return {
+                'total_cameras': len(self.frame_sources),
+                'healthy': sum(1 for c in cameras if c['status'] == 'healthy'),
+                'degraded': 0,
+                'failed': sum(1 for c in cameras if c['status'] == 'failed'),
+                'restarting': 0,
+                'cameras': cameras
+            }
 
         @self.app.get("/api/system/stats")
         async def system_stats():
