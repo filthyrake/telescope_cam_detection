@@ -291,6 +291,59 @@ class InferenceEngine:
 
         return self._run_inference(frame)
 
+    def update_settings(
+        self,
+        conf_threshold: Optional[float] = None,
+        nms_threshold: Optional[float] = None,
+        min_box_area: Optional[int] = None,
+        max_det: Optional[int] = None,
+        class_confidence_overrides: Optional[Dict[str, float]] = None,
+        class_size_constraints: Optional[Dict[str, Dict[str, int]]] = None
+    ):
+        """
+        Update inference settings without restarting (hot-reload).
+
+        Args:
+            conf_threshold: New confidence threshold
+            nms_threshold: New NMS threshold
+            min_box_area: New minimum box area
+            max_det: New maximum detections
+            class_confidence_overrides: New per-class confidence overrides
+            class_size_constraints: New per-class size constraints
+        """
+        updated_settings = []
+
+        if conf_threshold is not None and conf_threshold != self.conf_threshold:
+            self.conf_threshold = conf_threshold
+            if self.detector:
+                self.detector.conf_threshold = conf_threshold
+            updated_settings.append(f"conf_threshold: {conf_threshold}")
+
+        if nms_threshold is not None and nms_threshold != self.nms_threshold:
+            self.nms_threshold = nms_threshold
+            if self.detector:
+                self.detector.nms_threshold = nms_threshold
+            updated_settings.append(f"nms_threshold: {nms_threshold}")
+
+        if min_box_area is not None and min_box_area != self.min_box_area:
+            self.min_box_area = min_box_area
+            updated_settings.append(f"min_box_area: {min_box_area}")
+
+        if max_det is not None and max_det != self.max_det:
+            self.max_det = max_det
+            updated_settings.append(f"max_det: {max_det}")
+
+        if class_confidence_overrides is not None:
+            self.class_confidence_overrides = class_confidence_overrides
+            updated_settings.append(f"class_confidence_overrides: {class_confidence_overrides}")
+
+        if class_size_constraints is not None:
+            self.class_size_constraints = class_size_constraints
+            updated_settings.append(f"class_size_constraints: {class_size_constraints}")
+
+        if updated_settings:
+            logger.info(f"InferenceEngine settings updated: {', '.join(updated_settings)}")
+
     def get_stats(self) -> Dict[str, Any]:
         """Get inference statistics"""
         stats = {

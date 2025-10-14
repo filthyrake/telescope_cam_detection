@@ -4,6 +4,7 @@ Serves web interface and streams detection results in real-time.
 """
 
 import asyncio
+import copy
 import json
 import time
 import logging
@@ -35,6 +36,8 @@ class WebServer:
         detection_processors: Optional[List[Any]] = None,
         health_monitor: Optional[Any] = None,
         restart_callback: Optional[Any] = None,
+        reload_config_callback: Optional[Any] = None,
+        config_getter: Optional[Any] = None,
         host: str = "0.0.0.0",
         port: int = 8000
     ):
@@ -48,6 +51,8 @@ class WebServer:
             detection_processors: List of detection processors (DetectionProcessor instances)
             health_monitor: Camera health monitor instance
             restart_callback: Callback function to restart a camera (takes camera index)
+            reload_config_callback: Callback function to reload configuration
+            config_getter: Callback function to get current configuration
             host: Host to bind to
             port: Port to bind to
         """
@@ -57,6 +62,8 @@ class WebServer:
         self.detection_processors = detection_processors if detection_processors else []
         self.health_monitor = health_monitor
         self.restart_callback = restart_callback
+        self.reload_config_callback = reload_config_callback
+        self.config_getter = config_getter
         self.host = host
         self.port = port
 
@@ -460,6 +467,45 @@ class WebServer:
                 })
 
             return {"clips": clips}
+
+        @self.app.post("/api/config/reload")
+        async def reload_config():
+            """
+            Reload configuration from file and apply hot-reloadable changes.
+            Settings that require restart will be identified but not applied.
+            """
+            if not self.reload_config_callback:
+                raise HTTPException(status_code=503, detail="Config reload not available")
+
+            try:
+                # Run reload in executor to avoid blocking
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    self.reload_config_callback
+                )
+
+                return result
+            except Exception as e:
+                logger.error(f"Error reloading config: {e}")
+                raise HTTPException(status_code=500, detail=f"Error reloading config: {str(e)}")
+
+        @self.app.get("/api/config/current")
+        async def get_current_config():
+            """
+            Get current active configuration.
+            Useful for debugging and verifying configuration state.
+            """
+            if not self.config_getter:
+                raise HTTPException(status_code=503, detail="Config getter not available")
+
+            try:
+                config = self.config_getter()
+                # Deep copy to avoid exposing internal references
+                return {"config": copy.deepcopy(config)}
+            except Exception as e:
+                logger.error(f"Error getting config: {e}")
+                raise HTTPException(status_code=500, detail=f"Error getting config: {str(e)}")
 
         @self.app.websocket("/ws/detections")
         async def websocket_detections(websocket: WebSocket):

@@ -178,6 +178,56 @@ class MotionFilter:
         )
         logger.info("Background model reset")
 
+    def update_params(self, config: Dict[str, Any]):
+        """
+        Update motion filter parameters (hot-reload).
+
+        Args:
+            config: Dictionary with new motion filter configuration
+        """
+        updated_params = []
+
+        # Update parameters
+        if 'history' in config and config['history'] != self.history:
+            self.history = config['history']
+            updated_params.append(f"history: {self.history}")
+
+        if 'var_threshold' in config and config['var_threshold'] != self.var_threshold:
+            self.var_threshold = config['var_threshold']
+            updated_params.append(f"var_threshold: {self.var_threshold}")
+
+        if 'detect_shadows' in config and config['detect_shadows'] != self.detect_shadows:
+            self.detect_shadows = config['detect_shadows']
+            updated_params.append(f"detect_shadows: {self.detect_shadows}")
+
+        if 'min_motion_area' in config and config['min_motion_area'] != self.min_motion_area:
+            self.min_motion_area = config['min_motion_area']
+            updated_params.append(f"min_motion_area: {self.min_motion_area}")
+
+        if 'motion_blur_size' in config:
+            new_blur_size = config['motion_blur_size']
+            # Ensure odd number
+            new_blur_size = new_blur_size if new_blur_size % 2 == 1 else new_blur_size + 1
+            if new_blur_size != self.motion_blur_size:
+                self.motion_blur_size = new_blur_size
+                updated_params.append(f"motion_blur_size: {self.motion_blur_size}")
+
+        if 'min_motion_ratio' in config and config['min_motion_ratio'] != self.min_motion_ratio:
+            self.min_motion_ratio = config['min_motion_ratio']
+            updated_params.append(f"min_motion_ratio: {self.min_motion_ratio}")
+
+        # Recreate background subtractor if key parameters changed
+        if any(param.startswith(('history:', 'var_threshold:', 'detect_shadows:')) for param in updated_params):
+            self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+                history=self.history,
+                varThreshold=self.var_threshold,
+                detectShadows=self.detect_shadows
+            )
+            logger.info("Motion filter background subtractor recreated with new parameters")
+
+        if updated_params:
+            logger.info(f"MotionFilter params updated: {', '.join(updated_params)}")
+
     def get_stats(self) -> Dict[str, Any]:
         """Get motion filter statistics."""
         return {

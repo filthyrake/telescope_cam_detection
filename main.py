@@ -73,6 +73,9 @@ class TelescopeDetectionSystem:
         # Restart coordination (thread-safe)
         self._restart_lock = threading.Lock()  # Protects camera restart operations
 
+        # Hot-reload coordination (thread-safe)
+        self._reload_lock = threading.Lock()  # Protects config reload operations
+
     def load_credentials(self) -> dict:
         """
         Load camera credentials from separate YAML file.
@@ -382,6 +385,257 @@ class TelescopeDetectionSystem:
         except Exception as e:
             logger.error(f"Model file validation error: {e}")
             return False
+
+    def reload_config(self) -> Dict[str, Any]:
+        """
+        Reload configuration from file and apply hot-reloadable changes.
+        Thread-safe: uses lock to prevent concurrent reloads.
+
+        Returns:
+            Dictionary with reload status:
+            {
+                'success': bool,
+                'reloaded': List[str],  # Settings that were reloaded
+                'requires_restart': List[str],  # Settings that require restart
+                'warnings': List[str],  # Any warnings
+                'errors': List[str]  # Any errors
+            }
+        """
+        with self._reload_lock:
+            result = {
+                'success': False,
+                'reloaded': [],
+                'requires_restart': [],
+                'warnings': [],
+                'errors': []
+            }
+
+            try:
+                logger.info("Reloading configuration...")
+
+                # Load new config from file
+                config_file = Path(self.config_path)
+                if not config_file.exists():
+                    result['errors'].append(f"Configuration file not found: {self.config_path}")
+                    return result
+
+                with open(config_file, 'r') as f:
+                    new_config = yaml.safe_load(f)
+
+                # Validate new config (without updating self.config yet)
+                temp_config = self.config
+                self.config = new_config
+                if not self.validate_config():
+                    result['errors'].append("Configuration validation failed")
+                    self.config = temp_config  # Restore old config
+                    return result
+                self.config = temp_config  # Restore for now
+
+                # Compare old and new configs to determine what changed
+                old_config = self.config
+                changes = self._detect_config_changes(old_config, new_config)
+
+                # Apply hot-reloadable changes
+                logger.info("Applying hot-reloadable configuration changes...")
+
+                # 1. Update inference engines (detection thresholds, class overrides, size constraints)
+                detection_config = new_config.get('detection', {})
+                old_detection_config = old_config.get('detection', {})
+                detection_changed = set()
+
+                for i, inference_engine in enumerate(self.inference_engines):
+                    if inference_engine is None:
+                        continue
+
+                    # Get camera-specific config if available
+                    camera_config = {}
+                    if i < len(self.stream_captures) and self.stream_captures[i]:
+                        camera_id = self.stream_captures[i].camera_id
+                        # Find camera config
+                        for cam in new_config.get('cameras', []):
+                            if cam.get('id') == camera_id:
+                                camera_config = cam
+                                break
+
+                    # Merge detection config with camera overrides
+                    camera_detection_config = self._merge_camera_detection_config(camera_config, detection_config)
+
+                    # Track which settings changed
+                    update_kwargs = {}
+                    setting_map = [
+                        ('conf_threshold', 'conf_threshold', 'detection.conf_threshold'),
+                        ('nms_threshold', 'nms_threshold', 'detection.nms_threshold'),
+                        ('min_box_area', 'min_box_area', 'detection.min_box_area'),
+                        ('max_detections', 'max_det', 'detection.max_detections'),
+                        ('class_confidence_overrides', 'class_confidence_overrides', 'detection.class_confidence_overrides'),
+                        ('class_size_constraints', 'class_size_constraints', 'detection.class_size_constraints'),
+                    ]
+
+                    for config_key, attr_name, result_key in setting_map:
+                        new_value = camera_detection_config.get(config_key)
+                        current_value = getattr(inference_engine, attr_name, None)
+                        if new_value != current_value:
+                            update_kwargs[attr_name] = new_value
+                            detection_changed.add(result_key)
+
+                    # Only update if something changed
+                    if update_kwargs:
+                        inference_engine.update_settings(**update_kwargs)
+
+                # Add changed settings to reloaded list
+                result['reloaded'].extend(sorted(detection_changed))
+
+                # 2. Update snapshot saver (cooldown, trigger classes, min_confidence)
+                snapshot_config = new_config.get('snapshots', {})
+                old_snapshot_config = old_config.get('snapshots', {})
+
+                if snapshot_config.get('enabled', False):
+                    # Track which snapshot settings changed
+                    snapshot_keys = [
+                        ('cooldown_seconds', 'snapshots.cooldown_seconds'),
+                        ('trigger_classes', 'snapshots.trigger_classes'),
+                        ('min_confidence', 'snapshots.min_confidence'),
+                        ('save_annotated', 'snapshots.save_annotated'),
+                    ]
+
+                    changed_settings = {}
+                    for key, label in snapshot_keys:
+                        old_val = old_snapshot_config.get(key)
+                        new_val = snapshot_config.get(key)
+                        if old_val != new_val:
+                            changed_settings[key] = (label, new_val)
+
+                    # Only update if something changed
+                    if changed_settings:
+                        # Find snapshot saver from detection processors
+                        for processor in self.detection_processors:
+                            if processor and processor.snapshot_saver:
+                                processor.snapshot_saver.update_settings(
+                                    cooldown_seconds=snapshot_config.get('cooldown_seconds'),
+                                    trigger_classes=snapshot_config.get('trigger_classes'),
+                                    min_confidence=snapshot_config.get('min_confidence'),
+                                    save_annotated=snapshot_config.get('save_annotated')
+                                )
+                                break  # Only update once (shared instance)
+
+                        # Add changed settings to reloaded list
+                        for label, _ in changed_settings.values():
+                            result['reloaded'].append(label)
+
+                # 3. Update motion filter (if enabled)
+                motion_filter_config = new_config.get('motion_filter', {})
+                if motion_filter_config.get('enabled', False):
+                    for processor in self.detection_processors:
+                        if processor and processor.motion_filter:
+                            motion_filter_params = {k: v for k, v in motion_filter_config.items() if k != 'enabled'}
+                            processor.motion_filter.update_params(motion_filter_params)
+
+                    result['reloaded'].append('motion_filter parameters')
+
+                # 4. Update time-of-day filter (if enabled)
+                time_of_day_config = new_config.get('time_of_day_filter', {})
+                if time_of_day_config.get('enabled', False):
+                    for processor in self.detection_processors:
+                        if processor and processor.time_of_day_filter:
+                            time_of_day_params = {k: v for k, v in time_of_day_config.items() if k != 'enabled'}
+                            processor.time_of_day_filter.update_params(time_of_day_params)
+
+                    result['reloaded'].append('time_of_day_filter parameters')
+
+                # Check for settings that require restart
+                restart_required_changes = []
+
+                # Check if cameras changed
+                old_cameras = old_config.get('cameras', [])
+                new_cameras = new_config.get('cameras', [])
+                if len(old_cameras) != len(new_cameras):
+                    restart_required_changes.append("Camera count changed (add/remove)")
+                else:
+                    for old_cam, new_cam in zip(old_cameras, new_cameras):
+                        if old_cam.get('id') != new_cam.get('id'):
+                            restart_required_changes.append(f"Camera '{old_cam.get('id')}' configuration changed")
+                        if old_cam.get('ip') != new_cam.get('ip'):
+                            restart_required_changes.append(f"Camera '{old_cam.get('id')}' IP changed")
+
+                # Check if model settings changed
+                old_model = old_config.get('detection', {}).get('model', {})
+                new_model = new_config.get('detection', {}).get('model', {})
+                if old_model.get('weights') != new_model.get('weights'):
+                    restart_required_changes.append("Model weights changed")
+
+                # Check if input_size changed
+                old_input_size = old_config.get('detection', {}).get('input_size')
+                new_input_size = new_config.get('detection', {}).get('input_size')
+                if old_input_size != new_input_size:
+                    restart_required_changes.append("Input size changed")
+
+                # Check if device changed
+                old_device = old_config.get('detection', {}).get('device')
+                new_device = new_config.get('detection', {}).get('device')
+                if old_device != new_device:
+                    restart_required_changes.append("Device changed")
+
+                # Check if two-stage detection changed
+                old_two_stage = old_config.get('detection', {}).get('use_two_stage')
+                new_two_stage = new_config.get('detection', {}).get('use_two_stage')
+                if old_two_stage != new_two_stage:
+                    restart_required_changes.append("Two-stage detection enable/disable changed")
+
+                # Check if web server settings changed
+                old_web = old_config.get('web', {})
+                new_web = new_config.get('web', {})
+                if old_web.get('port') != new_web.get('port'):
+                    restart_required_changes.append("Web server port changed")
+                if old_web.get('host') != new_web.get('host'):
+                    restart_required_changes.append("Web server host changed")
+
+                result['requires_restart'] = restart_required_changes
+
+                # Update config reference
+                self.config = new_config
+
+                result['success'] = True
+                logger.info(f"✓ Configuration reloaded successfully")
+                logger.info(f"  Reloaded: {len(result['reloaded'])} settings")
+                if result['requires_restart']:
+                    logger.warning(f"  Requires restart: {len(result['requires_restart'])} settings")
+                    for change in result['requires_restart']:
+                        logger.warning(f"    - {change}")
+
+            except Exception as e:
+                logger.error(f"Failed to reload configuration: {e}")
+                result['errors'].append(str(e))
+                import traceback
+                logger.error(traceback.format_exc())
+
+            return result
+
+    def _detect_config_changes(self, old_config: dict, new_config: dict) -> Dict[str, tuple]:
+        """
+        Detect changes between old and new configurations.
+
+        Args:
+            old_config: Old configuration dictionary
+            new_config: New configuration dictionary
+
+        Returns:
+            Dictionary mapping changed keys to (old_value, new_value) tuples
+        """
+        changes = {}
+
+        def compare_dicts(old, new, prefix=''):
+            for key in set(list(old.keys()) + list(new.keys())):
+                full_key = f"{prefix}.{key}" if prefix else key
+                old_val = old.get(key)
+                new_val = new.get(key)
+
+                if isinstance(old_val, dict) and isinstance(new_val, dict):
+                    compare_dicts(old_val, new_val, full_key)
+                elif old_val != new_val:
+                    changes[full_key] = (old_val, new_val)
+
+        compare_dicts(old_config, new_config)
+        return changes
 
     def _create_shared_queue(self) -> Queue:
         """
@@ -816,6 +1070,8 @@ class TelescopeDetectionSystem:
             detection_processors=self.detection_processors,
             health_monitor=None,  # Will be set after health monitor is initialized
             restart_callback=self.restart_camera,
+            reload_config_callback=self.reload_config,
+            config_getter=lambda: self.config,
             host=self.web_config.get('host', '0.0.0.0'),
             port=self.web_config.get('port', 8000)
         )
