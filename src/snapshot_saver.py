@@ -13,8 +13,13 @@ from queue import Queue
 from threading import Thread, Event, Lock
 from collections import deque
 import json
+import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Maximum buffer memory in MB (per SnapshotSaver instance)
+# With multi-camera systems, this helps prevent OOM errors
+MAX_BUFFER_MEMORY_MB = 500
 
 
 class SnapshotSaver:
@@ -62,9 +67,14 @@ class SnapshotSaver:
         self.save_annotated = save_annotated
 
         # Ring buffer for pre-detection frames
+        # Use JPEG compression to reduce memory usage
         buffer_size = pre_buffer_seconds * fps
         self.frame_buffer = deque(maxlen=buffer_size)
         self.buffer_lock = Lock()
+        self.use_compressed_buffer = True  # Compress frames in buffer to save memory
+
+        # Memory tracking
+        self.estimated_buffer_memory_mb = 0.0
 
         # Cooldown tracking
         self.last_save_times: Dict[str, float] = {}
@@ -80,16 +90,37 @@ class SnapshotSaver:
     def add_frame_to_buffer(self, frame: Any, timestamp: float):
         """
         Add frame to ring buffer for pre-detection recording.
+        Uses JPEG compression to reduce memory usage by ~10x.
 
         Args:
-            frame: Video frame
+            frame: Video frame (BGR numpy array)
             timestamp: Frame timestamp
         """
+        if frame is None:
+            return
+
         with self.buffer_lock:
-            self.frame_buffer.append({
-                'frame': frame.copy() if frame is not None else None,
-                'timestamp': timestamp
-            })
+            if self.use_compressed_buffer:
+                # Compress frame to JPEG to save memory (~10x reduction)
+                # Quality 90 provides good balance of quality vs size
+                ret, encoded = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                if ret:
+                    self.frame_buffer.append({
+                        'frame_compressed': encoded,
+                        'timestamp': timestamp
+                    })
+
+                    # Update memory estimate (periodically)
+                    if len(self.frame_buffer) % 30 == 0:  # Check every 30 frames
+                        self._update_memory_estimate()
+                else:
+                    logger.warning("Failed to compress frame for buffer, skipping")
+            else:
+                # Fallback: store uncompressed (uses more memory)
+                self.frame_buffer.append({
+                    'frame': frame.copy(),
+                    'timestamp': timestamp
+                })
 
     def should_save(self, detection_result: Dict[str, Any]) -> bool:
         """
@@ -128,6 +159,52 @@ class SnapshotSaver:
             return True
 
         return False
+
+    def _update_memory_estimate(self):
+        """
+        Estimate current buffer memory usage.
+        Called periodically to track memory consumption.
+        """
+        if not self.frame_buffer:
+            self.estimated_buffer_memory_mb = 0.0
+            return
+
+        total_bytes = 0
+        for frame_data in self.frame_buffer:
+            if 'frame_compressed' in frame_data:
+                # Compressed frame (JPEG bytes)
+                total_bytes += frame_data['frame_compressed'].nbytes
+            elif 'frame' in frame_data and frame_data['frame'] is not None:
+                # Uncompressed frame (numpy array)
+                total_bytes += frame_data['frame'].nbytes
+
+        self.estimated_buffer_memory_mb = total_bytes / (1024 * 1024)
+
+        # Warn if buffer is using excessive memory
+        if self.estimated_buffer_memory_mb > MAX_BUFFER_MEMORY_MB:
+            logger.warning(f"Frame buffer using {self.estimated_buffer_memory_mb:.1f}MB "
+                          f"(max recommended: {MAX_BUFFER_MEMORY_MB}MB). "
+                          f"Consider reducing pre_buffer_seconds or fps.")
+
+    def _decode_frame(self, frame_data: Dict[str, Any]) -> Optional[np.ndarray]:
+        """
+        Decode frame from buffer (handles both compressed and uncompressed).
+
+        Args:
+            frame_data: Frame data dictionary
+
+        Returns:
+            Decoded frame or None if decoding fails
+        """
+        if 'frame_compressed' in frame_data:
+            # Decompress JPEG frame
+            frame = cv2.imdecode(frame_data['frame_compressed'], cv2.IMREAD_COLOR)
+            return frame
+        elif 'frame' in frame_data:
+            # Already uncompressed
+            return frame_data['frame']
+        else:
+            return None
 
     def save_snapshot(
         self,
@@ -257,18 +334,27 @@ class SnapshotSaver:
                 logger.warning("No buffered frames available for clip")
                 return None
 
-            # Get frame dimensions
-            sample_frame = buffered_frames[0]['frame']
+            # Decode first frame to get dimensions
+            sample_frame = self._decode_frame(buffered_frames[0])
+            if sample_frame is None:
+                logger.error("Failed to decode sample frame for clip")
+                return None
+
             height, width = sample_frame.shape[:2]
 
             # Initialize video writer
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(str(filepath), fourcc, self.fps, (width, height))
 
-            # Write pre-detection frames
+            # Write pre-detection frames (decode as needed)
+            frames_written = 0
             for frame_data in buffered_frames:
-                if frame_data['frame'] is not None:
-                    out.write(frame_data['frame'])
+                decoded_frame = self._decode_frame(frame_data)
+                if decoded_frame is not None:
+                    out.write(decoded_frame)
+                    frames_written += 1
+                else:
+                    logger.warning("Failed to decode frame in buffer, skipping")
 
             # Note: Post-detection frames would need to be captured in real-time
             # This is a simplified implementation that saves pre-buffer only
@@ -294,7 +380,7 @@ class SnapshotSaver:
             self.total_saved += 1
             self.saves_by_class[primary_class] = self.saves_by_class.get(primary_class, 0) + 1
 
-            logger.info(f"🎬 Saved clip: {filename} ({len(buffered_frames)} frames)")
+            logger.info(f"🎬 Saved clip: {filename} ({frames_written}/{len(buffered_frames)} frames)")
             return str(filepath)
 
         except Exception as e:
@@ -336,12 +422,19 @@ class SnapshotSaver:
         Returns:
             Dictionary with statistics
         """
+        # Update memory estimate before returning stats
+        with self.buffer_lock:
+            self._update_memory_estimate()
+
         return {
             'total_saved': self.total_saved,
             'save_failures': self.save_failures,
             'saves_by_class': self.saves_by_class,
             'output_dir': str(self.output_dir),
-            'save_mode': self.save_mode
+            'save_mode': self.save_mode,
+            'buffer_size': len(self.frame_buffer),
+            'buffer_memory_mb': self.estimated_buffer_memory_mb,
+            'compressed_buffer': self.use_compressed_buffer
         }
 
     def cleanup_old_files(self, max_age_days: int = 7):

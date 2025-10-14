@@ -98,12 +98,17 @@ class DetectionProcessor:
         return True
 
     def stop(self):
-        """Stop the processor thread."""
+        """Stop the processor thread and clean up resources."""
         logger.info("Stopping detection processor thread...")
         self.stop_event.set()
 
         if self.processor_thread:
             self.processor_thread.join(timeout=5.0)
+
+        # Clean up motion filter resources
+        if self.motion_filter is not None:
+            self.motion_filter.cleanup()
+            logger.debug("Motion filter cleaned up")
 
         logger.info("Detection processor thread stopped")
 
