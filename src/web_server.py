@@ -68,6 +68,10 @@ class WebServer:
 
     def _mount_static_files(self):
         """Mount static file directories."""
+        web_dir = Path(__file__).parent.parent / "web"
+        if web_dir.exists():
+            self.app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
+
         # Mount clips directory for browsing saved snapshots
         clips_dir = Path(__file__).parent.parent / "clips"
         if clips_dir.exists():
@@ -384,10 +388,13 @@ class WebServer:
 
                 # Stream detection results
                 while True:
-                    # Use blocking get with timeout to avoid busy-waiting
-                    # This also properly handles shutdown signals
+                    # Run blocking queue.get() in thread executor to avoid blocking event loop
                     try:
-                        detection_result = self.detection_queue.get(timeout=1.0)
+                        loop = asyncio.get_running_loop()
+                        detection_result = await loop.run_in_executor(
+                            None,
+                            lambda: self.detection_queue.get(timeout=1.0)
+                        )
 
                         # Store latest detection for this camera
                         camera_id = detection_result.get('camera_id', 'default')
