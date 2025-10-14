@@ -39,6 +39,8 @@ class TwoStageDetectionPipeline:
         rejected_taxonomic_levels: Optional[List[str]] = None,
         crop_padding_percent: int = 20,
         min_crop_size: int = 64,
+        time_of_day_top_k: int = 5,
+        time_of_day_penalty: float = 0.3,
     ):
         """
         Initialize two-stage pipeline.
@@ -51,6 +53,8 @@ class TwoStageDetectionPipeline:
             rejected_taxonomic_levels: Taxonomic levels to reject (e.g., ['order', 'class'])
             crop_padding_percent: Percent to expand bbox for better context (e.g., 20 = 20% padding)
             min_crop_size: Skip Stage 2 if crop smaller than this (e.g., 64 = 64x64 pixels minimum)
+            time_of_day_top_k: Number of species to consider for time-of-day re-ranking (default: 5)
+            time_of_day_penalty: Confidence penalty for unlikely species (default: 0.3 = 70% reduction)
         """
         self.enable_species_classification = enable_species_classification
         self.stage2_confidence_threshold = stage2_confidence_threshold
@@ -62,6 +66,10 @@ class TwoStageDetectionPipeline:
         # Preprocessing configuration
         self.crop_padding_percent = crop_padding_percent
         self.min_crop_size = min_crop_size
+
+        # Time-of-day filtering configuration
+        self.time_of_day_top_k = time_of_day_top_k
+        self.time_of_day_penalty = time_of_day_penalty
 
         # Species classifiers (will be added via add_species_classifier)
         self.species_classifiers: Dict[str, SpeciesClassifier] = {}
@@ -250,7 +258,7 @@ class TwoStageDetectionPipeline:
             classification_start = time.time()
             # classifier.classify() returns List[Dict[str, Any]]
             # Request more results if we need to filter by time of day
-            top_k = 5 if time_of_day else 1
+            top_k = self.time_of_day_top_k if time_of_day else 1
             results = classifier.classify(crop, top_k=top_k)
             classification_time = (time.time() - classification_start) * 1000
             self.classification_times.append(classification_time)
@@ -274,8 +282,8 @@ class TwoStageDetectionPipeline:
                         else:
                             result['activity_boosted'] = False
                             result['confidence_original'] = confidence
-                            # Penalize unlikely species (reduce confidence by 70%)
-                            result['confidence'] = confidence * 0.3
+                            # Penalize unlikely species using configured penalty
+                            result['confidence'] = confidence * self.time_of_day_penalty
 
                         filtered_results.append(result)
 

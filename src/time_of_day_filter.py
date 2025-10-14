@@ -103,7 +103,7 @@ class TimeOfDayFilter:
     def __init__(
         self,
         enabled: bool = True,
-        confidence_penalty: float = 0.5,  # Multiply confidence by this for out-of-pattern detections
+        confidence_penalty: float = 0.3,  # Multiply confidence by this for out-of-pattern detections (aligned with config default)
         hard_filter: bool = False,  # If True, completely remove out-of-pattern detections
         activity_patterns: Optional[Dict[str, ActivityPattern]] = None,
         use_system_timezone: bool = True  # Automatically use system timezone (recommended)
@@ -200,7 +200,9 @@ class TimeOfDayFilter:
         if pattern == ActivityPattern.CATHEMERAL:
             return True  # Active any time
         elif pattern == ActivityPattern.DIURNAL:
-            return time_of_day in [TimeOfDay.DAWN, TimeOfDay.DAY, TimeOfDay.DUSK]
+            # Most diurnal animals (especially birds) roost by sunset (~6-7pm)
+            # Dusk (5-9pm) is too late for truly diurnal species
+            return time_of_day in [TimeOfDay.DAWN, TimeOfDay.DAY]
         elif pattern == ActivityPattern.NOCTURNAL:
             return time_of_day in [TimeOfDay.DUSK, TimeOfDay.NIGHT, TimeOfDay.DAWN]
         elif pattern == ActivityPattern.CREPUSCULAR:

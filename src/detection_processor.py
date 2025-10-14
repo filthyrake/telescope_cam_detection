@@ -5,6 +5,7 @@ Processes raw detections and prepares them for web display.
 
 import time
 import logging
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 from queue import Queue
 from threading import Thread, Event
@@ -201,8 +202,8 @@ class DetectionProcessor:
         # Apply time-of-day filter if enabled
         detections_before_time_filter = len(detections)
         if self.enable_time_of_day_filter and self.time_of_day_filter:
-            from datetime import datetime
             detections = self.time_of_day_filter.filter_detections(detections, datetime.fromtimestamp(timestamp))
+        detections_after_time_filter = len(detections)
 
         # Calculate total latency (from frame capture to now)
         current_time = time.time()
@@ -230,7 +231,7 @@ class DetectionProcessor:
             'detection_counts': detection_counts,
             'total_detections': len(detections),
             'motion_filtered': detections_before_motion - len(detections) if self.enable_motion_filter else 0,
-            'time_filtered': detections_before_time_filter - len(detections) if self.enable_time_of_day_filter else 0
+            'time_filtered': detections_before_time_filter - detections_after_time_filter if self.enable_time_of_day_filter else 0
         }
 
         return processed_result
