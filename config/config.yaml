@@ -452,7 +452,7 @@ time_of_day_filter:
   enabled: true  # Enable time-based filtering
   confidence_penalty: 0.3  # Multiply confidence by this for out-of-pattern detections (0.0-1.0)
   hard_filter: false  # If true, completely remove out-of-pattern detections (strict mode)
-  timezone_offset: -7  # MST (Arizona) = UTC-7 hours (adjust for your timezone)
+  timezone_offset: -8  # PST = UTC-8 hours, PDT = UTC-7 hours (adjust for DST)
 
   # Activity patterns are defined in src/time_of_day_filter.py
   # Defaults:
