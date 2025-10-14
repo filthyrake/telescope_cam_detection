@@ -10,7 +10,7 @@ import logging
 from typing import Optional, Tuple
 import numpy as np
 from queue import Queue, Full
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,8 +63,9 @@ class RTSPStreamCapture:
         self.capture_thread: Optional[Thread] = None
         self.is_connected = False
 
-        # Latest frame for video streaming
+        # Latest frame for video streaming (thread-safe access)
         self.latest_frame: Optional[np.ndarray] = None
+        self.frame_lock = Lock()  # Protects latest_frame
 
         # Performance metrics
         self.frame_count = 0
@@ -185,8 +186,9 @@ class RTSPStreamCapture:
                 if frame.shape[1] != self.target_width or frame.shape[0] != self.target_height:
                     frame = cv2.resize(frame, (self.target_width, self.target_height))
 
-                # Store latest frame for video streaming
-                self.latest_frame = frame.copy()
+                # Store latest frame for video streaming (thread-safe)
+                with self.frame_lock:
+                    self.latest_frame = frame.copy()
 
                 # Add timestamp to frame metadata
                 timestamp = time.time()
