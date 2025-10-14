@@ -505,3 +505,24 @@ snapshots:
   clip_duration: 10  # Total clip duration in seconds
   pre_buffer_seconds: 5  # Seconds of video before detection
   fps: 30  # Frames per second for video clips
+
+# Camera Health Monitoring (automatic restart on failure)
+camera_health:
+  enabled: true  # Enable camera health monitoring
+
+  # Health check parameters
+  check_interval_seconds: 10     # Check health every 10 seconds
+  min_fps: 5                     # Alert if FPS drops below 5
+  max_frame_age_seconds: 30      # Alert if no new frame for 30 seconds
+  max_consecutive_errors: 5      # Alert after 5 consecutive errors
+
+  # Auto-restart settings
+  auto_restart: true             # Automatically restart failed cameras
+  max_restart_attempts: 10       # Give up after 10 failed restart attempts
+  restart_cooldown_seconds: 300  # Wait 5 minutes before resetting restart counter
+  backoff_multiplier: 2          # Exponential backoff (5s, 10s, 20s, 40s, 80s...)
+  initial_backoff_seconds: 5     # Initial backoff delay before first restart
+
+  # Alerts (requires alert system #73 - placeholders for future integration)
+  alert_on_failure: true         # Send alert when camera fails (not yet implemented)
+  alert_on_recovery: true        # Send alert when camera recovers (not yet implemented)

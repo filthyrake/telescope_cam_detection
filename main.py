@@ -24,6 +24,7 @@ from web_server import WebServer
 from snapshot_saver import SnapshotSaver
 from two_stage_pipeline_yolox import TwoStageDetectionPipeline  # YOLOX-compatible
 from species_classifier import SpeciesClassifier
+from camera_health_monitor import CameraHealthMonitor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,6 +59,7 @@ class TelescopeDetectionSystem:
         self.inference_engines = []  # List of InferenceEngine instances
         self.detection_processors = []  # List of DetectionProcessor instances
         self.web_server = None
+        self.health_monitor = None  # Camera health monitor
 
         # Queues for inter-component communication (per-camera)
         self.frame_queues = []  # List of frame queues
@@ -67,6 +69,9 @@ class TelescopeDetectionSystem:
         # Shutdown coordination (thread-safe)
         self.shutdown_requested = False
         self._shutdown_lock = threading.Lock()  # Protects shutdown_requested and ensures stop() is called once
+
+        # Restart coordination (thread-safe)
+        self._restart_lock = threading.Lock()  # Protects camera restart operations
 
     def load_credentials(self) -> dict:
         """
@@ -758,6 +763,8 @@ class TelescopeDetectionSystem:
             frame_sources=self.stream_captures,
             inference_engines=self.inference_engines,
             detection_processors=self.detection_processors,
+            health_monitor=None,  # Will be set after health monitor is initialized
+            restart_callback=self.restart_camera,
             host=self.web_config.get('host', '0.0.0.0'),
             port=self.web_config.get('port', 8000)
         )
@@ -813,6 +820,21 @@ class TelescopeDetectionSystem:
 
             # Initialize web server
             self._initialize_web_server()
+
+            # Initialize camera health monitor
+            health_config = self.config.get('camera_health', {})
+            if health_config.get('enabled', True):
+                logger.info("Initializing camera health monitor...")
+                self.health_monitor = CameraHealthMonitor(
+                    frame_sources=self.stream_captures,
+                    restart_callback=self.restart_camera,
+                    config=health_config
+                )
+                # Pass health monitor to web server
+                self.web_server.health_monitor = self.health_monitor
+                logger.info("Camera health monitor initialized")
+            else:
+                logger.info("Camera health monitoring disabled")
 
             return True
 
@@ -947,6 +969,12 @@ class TelescopeDetectionSystem:
 
             logger.info(f"{len(active_cameras)} detection processor(s) started successfully")
 
+            # Start camera health monitor
+            if self.health_monitor:
+                logger.info("Starting camera health monitor...")
+                self.health_monitor.start()
+                logger.info("Camera health monitor started")
+
             # Start web server (blocking)
             host = self.web_config.get('host', '0.0.0.0')
             port = self.web_config.get('port', 8000)
@@ -1000,6 +1028,10 @@ class TelescopeDetectionSystem:
             logger.info("Stopping Backyard Computer Vision System...")
 
         # Release lock before stopping components (they may take time)
+        # Stop health monitor first
+        if self.health_monitor:
+            self.health_monitor.stop()
+
         # Stop all detection processors
         for detection_processor in self.detection_processors:
             if detection_processor:
@@ -1016,6 +1048,127 @@ class TelescopeDetectionSystem:
                 stream_capture.stop()
 
         logger.info("System stopped")
+
+    def restart_camera(self, camera_index: int) -> bool:
+        """
+        Restart a specific camera without affecting others.
+
+        Args:
+            camera_index: Index of camera to restart (0-based)
+
+        Returns:
+            True if restart successful, False otherwise
+        """
+        # Use lock to ensure only one restart happens at a time
+        with self._restart_lock:
+            try:
+                # Validate camera index
+                if camera_index < 0 or camera_index >= len(self.stream_captures):
+                    logger.error(f"Invalid camera index: {camera_index}")
+                    return False
+
+                stream_capture = self.stream_captures[camera_index]
+                if stream_capture is None:
+                    logger.error(f"Camera {camera_index} not initialized")
+                    return False
+
+                camera_id = stream_capture.camera_id
+                camera_name = stream_capture.camera_name
+
+                logger.info(f"[{camera_id}] Restarting camera {camera_name}...")
+
+                # Stop components for this camera
+                if self.detection_processors[camera_index]:
+                    logger.info(f"[{camera_id}]   Stopping detection processor...")
+                    self.detection_processors[camera_index].stop()
+
+                if self.inference_engines[camera_index]:
+                    logger.info(f"[{camera_id}]   Stopping inference engine...")
+                    self.inference_engines[camera_index].stop()
+
+                if self.stream_captures[camera_index]:
+                    logger.info(f"[{camera_id}]   Stopping stream capture...")
+                    self.stream_captures[camera_index].stop()
+
+                # Small delay to ensure threads are stopped
+                time.sleep(1.0)
+
+                # Get camera configuration
+                enabled_cameras = self._get_enabled_cameras()
+                if camera_index >= len(enabled_cameras):
+                    logger.error(f"[{camera_id}] Camera index out of range in config")
+                    return False
+
+                camera_config = enabled_cameras[camera_index]
+
+                # Reinitialize components (reuse existing queues)
+                logger.info(f"[{camera_id}]   Reinitializing stream capture...")
+
+                # Create new stream capture
+                stream_capture = self._create_stream_capture(camera_config, self.frame_queues[camera_index])
+                self.stream_captures[camera_index] = stream_capture
+
+                # Get detection config and merge camera-specific overrides
+                detection_config = self.config.get('detection', {})
+                camera_detection_config = self._merge_camera_detection_config(camera_config, detection_config)
+
+                # Initialize two-stage pipeline if enabled
+                use_two_stage = detection_config.get('use_two_stage', False)
+                two_stage_pipeline = None
+                if use_two_stage:
+                    logger.info(f"[{camera_id}]   Reinitializing Stage 2 pipeline...")
+                    two_stage_pipeline = self._initialize_two_stage_pipeline(camera_config, camera_detection_config)
+
+                # Create new inference engine
+                logger.info(f"[{camera_id}]   Reinitializing inference engine...")
+                inference_engine = self._create_inference_engine(
+                    camera_config, camera_detection_config,
+                    self.frame_queues[camera_index], self.inference_queues[camera_index],
+                    two_stage_pipeline
+                )
+                self.inference_engines[camera_index] = inference_engine
+
+                # Get snapshot saver from existing detection processor (if any)
+                snapshot_saver = None
+                if self.detection_processors[camera_index]:
+                    snapshot_saver = self.detection_processors[camera_index].snapshot_saver
+
+                # Create new detection processor
+                logger.info(f"[{camera_id}]   Reinitializing detection processor...")
+                detection_processor = self._create_detection_processor(
+                    camera_config, self.inference_queues[camera_index],
+                    stream_capture, snapshot_saver
+                )
+                self.detection_processors[camera_index] = detection_processor
+
+                # Start components
+                logger.info(f"[{camera_id}]   Starting components...")
+
+                if not stream_capture.start():
+                    logger.error(f"[{camera_id}] Failed to start stream capture")
+                    return False
+
+                if not inference_engine.start():
+                    logger.error(f"[{camera_id}] Failed to start inference engine")
+                    stream_capture.stop()
+                    return False
+
+                if not detection_processor.start():
+                    logger.error(f"[{camera_id}] Failed to start detection processor")
+                    inference_engine.stop()
+                    stream_capture.stop()
+                    return False
+
+                # Update web server camera start time
+                if self.web_server:
+                    self.web_server.set_camera_start_time(camera_id)
+
+                logger.info(f"[{camera_id}] ✓ Camera restart successful")
+                return True
+
+            except Exception as e:
+                logger.error(f"Error restarting camera {camera_index}: {e}", exc_info=True)
+                return False
 
     def print_stats(self):
         """Print system statistics (handles None components gracefully)."""
