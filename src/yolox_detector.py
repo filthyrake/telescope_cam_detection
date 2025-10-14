@@ -18,7 +18,7 @@ _yolox_exp_file = _yolox_path / "yolox" / "exp" / "__init__.py"
 if not _yolox_path.exists():
     raise ImportError(
         f"YOLOX not found at {_yolox_path}. "
-        "Please clone YOLOX: git clone https://github.com/Megvii-BaseDetection/YOLOX.git"
+        "Please install YOLOX according to the official project documentation."
     )
 
 if not _yolox_exp_file.exists():

@@ -531,7 +531,7 @@ class TelescopeDetectionSystem:
 
         if 'min_box_area' in camera_overrides:
             value = camera_overrides['min_box_area']
-            if not isinstance(value, int) or value < 0:
+            if not isinstance(value, (int, float)) or value < 0:
                 raise ValueError(f"Camera '{camera_id}' has invalid min_box_area: {value} (must be >= 0)")
 
         if 'max_detections' in camera_overrides:
@@ -557,10 +557,10 @@ class TelescopeDetectionSystem:
                 if not isinstance(constraints, dict):
                     raise ValueError(f"Camera '{camera_id}' has invalid size constraints for '{class_name}': must be a dictionary")
                 if 'min' in constraints:
-                    if not isinstance(constraints['min'], int) or constraints['min'] < 0:
+                    if not isinstance(constraints['min'], (int, float)) or constraints['min'] < 0:
                         raise ValueError(f"Camera '{camera_id}' has invalid min size for '{class_name}': {constraints['min']} (must be >= 0)")
                 if 'max' in constraints:
-                    if not isinstance(constraints['max'], int) or constraints['max'] < 0:
+                    if not isinstance(constraints['max'], (int, float)) or constraints['max'] < 0:
                         raise ValueError(f"Camera '{camera_id}' has invalid max size for '{class_name}': {constraints['max']} (must be >= 0)")
                 if 'min' in constraints and 'max' in constraints:
                     if constraints['min'] > constraints['max']:
