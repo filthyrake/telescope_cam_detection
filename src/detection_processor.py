@@ -11,6 +11,7 @@ from threading import Thread, Event
 from collections import deque
 from visualization_utils import draw_detections
 from src.motion_filter import MotionFilter
+from src.time_of_day_filter import TimeOfDayFilter
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,7 +31,9 @@ class DetectionProcessor:
         snapshot_saver: Optional[Any] = None,
         frame_source: Optional[Any] = None,
         enable_motion_filter: bool = False,
-        motion_filter_config: Optional[Dict[str, Any]] = None
+        motion_filter_config: Optional[Dict[str, Any]] = None,
+        enable_time_of_day_filter: bool = False,
+        time_of_day_filter_config: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize detection processor.
@@ -43,6 +46,8 @@ class DetectionProcessor:
             frame_source: Source to get latest frames (for snapshot saving)
             enable_motion_filter: Enable motion-based filtering
             motion_filter_config: Configuration dict for motion filter
+            enable_time_of_day_filter: Enable time-of-day filtering
+            time_of_day_filter_config: Configuration dict for time-of-day filter
         """
         self.input_queue = input_queue
         self.output_queue = output_queue
@@ -61,6 +66,14 @@ class DetectionProcessor:
             config = motion_filter_config or {}
             self.motion_filter = MotionFilter(**config)
             logger.info("Motion filter enabled")
+
+        # Time-of-day filter
+        self.enable_time_of_day_filter = enable_time_of_day_filter
+        self.time_of_day_filter = None
+        if enable_time_of_day_filter:
+            config = time_of_day_filter_config or {}
+            self.time_of_day_filter = TimeOfDayFilter(**config)
+            logger.info("Time-of-day filter enabled")
 
         # Statistics
         self.processed_count = 0
@@ -185,6 +198,12 @@ class DetectionProcessor:
         if self.enable_motion_filter and self.motion_filter and frame is not None:
             detections = self.motion_filter.filter_detections(frame, detections)
 
+        # Apply time-of-day filter if enabled
+        detections_before_time_filter = len(detections)
+        if self.enable_time_of_day_filter and self.time_of_day_filter:
+            from datetime import datetime
+            detections = self.time_of_day_filter.filter_detections(detections, datetime.fromtimestamp(timestamp))
+
         # Calculate total latency (from frame capture to now)
         current_time = time.time()
         total_latency = current_time - timestamp
@@ -210,7 +229,8 @@ class DetectionProcessor:
             'detections_by_class': detections_by_class,
             'detection_counts': detection_counts,
             'total_detections': len(detections),
-            'motion_filtered': detections_before_motion - len(detections) if self.enable_motion_filter else 0
+            'motion_filtered': detections_before_motion - len(detections) if self.enable_motion_filter else 0,
+            'time_filtered': detections_before_time_filter - len(detections) if self.enable_time_of_day_filter else 0
         }
 
         return processed_result
@@ -245,12 +265,17 @@ class DetectionProcessor:
             'processed_count': self.processed_count,
             'history_size': len(self.detection_history),
             'last_detection_time': self.last_detection_time,
-            'motion_filter_enabled': self.enable_motion_filter
+            'motion_filter_enabled': self.enable_motion_filter,
+            'time_of_day_filter_enabled': self.enable_time_of_day_filter
         }
 
         # Add motion filter stats if enabled
         if self.enable_motion_filter and self.motion_filter:
             stats['motion_filter_stats'] = self.motion_filter.get_stats()
+
+        # Add time-of-day filter stats if enabled
+        if self.enable_time_of_day_filter and self.time_of_day_filter:
+            stats['time_of_day_filter_stats'] = self.time_of_day_filter.get_stats()
 
         return stats
 
