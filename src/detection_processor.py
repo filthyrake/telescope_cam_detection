@@ -7,7 +7,7 @@ import time
 import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from queue import Queue
+from queue import Queue, Empty
 from threading import Thread, Event
 from collections import deque
 from visualization_utils import draw_detections
@@ -126,12 +126,11 @@ class DetectionProcessor:
 
         while not self.stop_event.is_set():
             try:
-                # Get detections from input queue
-                if self.input_queue.empty():
-                    time.sleep(0.001)
+                # Get detections from input queue (blocking with timeout)
+                try:
+                    detection_result = self.input_queue.get(timeout=0.1)
+                except Empty:
                     continue
-
-                detection_result = self.input_queue.get()
 
                 # Get current frame for motion filtering (thread-safe)
                 current_frame = self._get_frame_copy()

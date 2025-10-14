@@ -8,7 +8,7 @@ import torch
 import time
 import logging
 from typing import Optional, List, Dict, Any
-from queue import Queue
+from queue import Queue, Empty
 from threading import Thread, Event
 import numpy as np
 
@@ -166,12 +166,12 @@ class InferenceEngine:
 
         while not self.stop_event.is_set():
             try:
-                # Get frame from input queue (non-blocking)
-                if self.input_queue.empty():
-                    time.sleep(0.001)  # Small sleep to avoid busy waiting
+                # Get frame from input queue (blocking with timeout)
+                try:
+                    frame_data = self.input_queue.get(timeout=0.1)
+                except Empty:
                     continue
 
-                frame_data = self.input_queue.get()
                 frame = frame_data['frame']
                 frame_timestamp = frame_data['timestamp']
                 frame_id = frame_data['frame_id']
