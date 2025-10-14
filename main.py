@@ -8,6 +8,7 @@ import sys
 import time
 import logging
 import signal
+import threading
 from pathlib import Path
 from queue import Queue, Empty
 from typing import Optional
@@ -63,8 +64,9 @@ class TelescopeDetectionSystem:
         self.inference_queues = []  # List of inference queues
         self.detection_queue = None  # Single queue for all detections
 
-        # Shutdown flag
+        # Shutdown coordination (thread-safe)
         self.shutdown_requested = False
+        self._shutdown_lock = threading.Lock()  # Protects shutdown_requested and ensures stop() is called once
 
     def load_credentials(self) -> dict:
         """
@@ -983,9 +985,21 @@ class TelescopeDetectionSystem:
             return False
 
     def stop(self):
-        """Stop all system components gracefully."""
-        logger.info("Stopping Backyard Computer Vision System...")
+        """
+        Stop all system components gracefully.
+        Thread-safe: can be called from signal handler or main thread.
+        """
+        # Use lock to ensure stop() is only called once, even if signal handler
+        # and finally block both try to call it
+        with self._shutdown_lock:
+            if self.shutdown_requested:
+                # Already stopping/stopped
+                return
 
+            self.shutdown_requested = True
+            logger.info("Stopping Backyard Computer Vision System...")
+
+        # Release lock before stopping components (they may take time)
         # Stop all detection processors
         for detection_processor in self.detection_processors:
             if detection_processor:
