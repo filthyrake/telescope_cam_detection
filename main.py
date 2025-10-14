@@ -754,6 +754,8 @@ class TelescopeDetectionSystem:
         self.web_server = WebServer(
             detection_queue=self.detection_queue,
             frame_sources=self.stream_captures,
+            inference_engines=self.inference_engines,
+            detection_processors=self.detection_processors,
             host=self.web_config.get('host', '0.0.0.0'),
             port=self.web_config.get('port', 8000)
         )
@@ -887,6 +889,8 @@ class TelescopeDetectionSystem:
                 logger.info(f"Starting stream capture for {camera_name} (ID: {camera_id})...")
                 if stream_capture.start():
                     active_cameras.append(i)
+                    # Track camera start time for uptime calculation
+                    self.web_server.set_camera_start_time(camera_id)
                     logger.info(f"  [{camera_id}] ✓ Stream capture started")
                 else:
                     logger.warning(f"  [{camera_id}] ✗ Failed to start stream capture - camera will be skipped")

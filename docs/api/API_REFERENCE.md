@@ -82,6 +82,234 @@ Content-Type: multipart/x-mixed-replace; boundary=frame
 
 ---
 
+### GET `/api/cameras/{camera_id}/health`
+
+**Description**: Get health status for a specific camera
+
+**Path Parameters**:
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `camera_id` | string | Unique camera identifier (e.g., `cam1`, `cam2`) |
+
+**Response**: `application/json`
+
+```json
+{
+  "camera_id": "cam1",
+  "name": "Main Backyard View",
+  "is_connected": true,
+  "fps": 28.5,
+  "dropped_frames": 12,
+  "total_frames": 45620,
+  "last_frame_time": 1697654321.123,
+  "uptime_seconds": 3600.0
+}
+```
+
+**Fields**:
+- `camera_id`: Unique camera identifier
+- `name`: Human-readable camera name
+- `is_connected`: Whether camera is currently connected
+- `fps`: Current frames per second
+- `dropped_frames`: Total frames dropped due to full queue
+- `total_frames`: Total frames captured since start
+- `last_frame_time`: Timestamp of last frame capture
+- `uptime_seconds`: Time since camera started (seconds)
+
+**HTTP Status**:
+- `200 OK`: Success
+- `404 Not Found`: Camera not found
+
+**Example**:
+```bash
+curl http://localhost:8000/api/cameras/cam1/health
+```
+
+**Use Cases**:
+- Health monitoring and alerting
+- Load balancer health checks
+- Automated diagnostics
+- Grafana/Prometheus integration
+
+---
+
+### GET `/api/cameras/{camera_id}/stats`
+
+**Description**: Get detailed statistics for a specific camera
+
+**Path Parameters**:
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `camera_id` | string | Unique camera identifier (e.g., `cam1`, `cam2`) |
+
+**Response**: `application/json`
+
+```json
+{
+  "camera_id": "cam1",
+  "capture": {
+    "is_connected": true,
+    "fps": 28.5,
+    "total_frames": 45620,
+    "dropped_frames": 12,
+    "queue_size": 1
+  },
+  "inference": {
+    "device": "cuda:0",
+    "fps": 27.3,
+    "avg_inference_time_ms": 18.5,
+    "total_inferences": 45000,
+    "dropped_results": 3,
+    "drop_rate": 0.0001
+  },
+  "detections": {
+    "total_processed": 45000,
+    "history_size": 30,
+    "last_detection_time": 1697654300.0,
+    "dropped_results": 0,
+    "drop_rate": 0.0,
+    "by_class": {
+      "bird": 456,
+      "person": 12,
+      "cat": 8
+    }
+  },
+  "filters": {
+    "motion_filter_enabled": true,
+    "time_of_day_filter_enabled": true
+  }
+}
+```
+
+**Fields**:
+- `capture`: Stream capture statistics
+  - `is_connected`: Camera connection status
+  - `fps`: Capture frames per second
+  - `total_frames`: Total frames captured
+  - `dropped_frames`: Frames dropped due to full queue
+  - `queue_size`: Current frame queue depth
+- `inference`: Inference engine statistics
+  - `device`: GPU device (e.g., `cuda:0`, `cpu`)
+  - `fps`: Inference frames per second
+  - `avg_inference_time_ms`: Average inference time in milliseconds
+  - `total_inferences`: Total inferences performed
+  - `dropped_results`: Results dropped due to full queue
+  - `drop_rate`: Percentage of dropped results (0.0-1.0)
+- `detections`: Detection processor statistics
+  - `total_processed`: Total detections processed
+  - `history_size`: Number of detections in history buffer
+  - `last_detection_time`: Timestamp of last detection
+  - `dropped_results`: Results dropped by processor
+  - `drop_rate`: Percentage of dropped results
+  - `by_class`: Detection counts by class name
+- `filters`: Filter configuration
+  - `motion_filter_enabled`: Whether motion filter is active
+  - `time_of_day_filter_enabled`: Whether time-of-day filter is active
+
+**HTTP Status**:
+- `200 OK`: Success
+- `404 Not Found`: Camera not found
+
+**Example**:
+```bash
+curl http://localhost:8000/api/cameras/cam1/stats | jq
+```
+
+**Use Cases**:
+- Performance monitoring per camera
+- Debugging camera-specific issues
+- Tuning detection settings per camera
+- Historical data collection
+
+---
+
+### GET `/api/system/stats`
+
+**Description**: Get system-wide statistics including GPU memory and aggregate metrics
+
+**Response**: `application/json`
+
+```json
+{
+  "timestamp": 1697654400.0,
+  "cameras": {
+    "total": 2,
+    "connected": 2,
+    "active_detections": 2,
+    "per_camera": [
+      {
+        "id": "cam1",
+        "name": "Main Backyard View",
+        "is_connected": true,
+        "fps": 28.5,
+        "last_detection_time": 1697654390.0
+      },
+      {
+        "id": "cam2",
+        "name": "Secondary View",
+        "is_connected": true,
+        "fps": 25.3,
+        "last_detection_time": 1697654385.0
+      }
+    ]
+  },
+  "websocket": {
+    "active_connections": 2
+  },
+  "queues": {
+    "frame_queue_total_depth": 3,
+    "detection_queue_depth": 1
+  },
+  "gpu": {
+    "memory_allocated_mb": 1250.5,
+    "memory_reserved_mb": 1536.0,
+    "device": "cuda:0"
+  },
+  "performance": {
+    "avg_fps": 26.9,
+    "avg_inference_time_ms": 19.2,
+    "total_inferences": 98000
+  }
+}
+```
+
+**Fields**:
+- `timestamp`: Current server timestamp
+- `cameras`: Camera statistics
+  - `total`: Total configured cameras
+  - `connected`: Number of connected cameras
+  - `active_detections`: Cameras with recent detections
+  - `per_camera`: Array of per-camera summaries
+- `websocket`: WebSocket statistics
+  - `active_connections`: Number of active WebSocket clients
+- `queues`: Queue depth statistics
+  - `frame_queue_total_depth`: Combined depth of all frame queues
+  - `detection_queue_depth`: Depth of shared detection queue
+- `gpu`: GPU memory statistics
+  - `memory_allocated_mb`: Current GPU memory allocated (MB)
+  - `memory_reserved_mb`: Total GPU memory reserved (MB)
+  - `device`: GPU device identifier
+- `performance`: Aggregate performance metrics
+  - `avg_fps`: Average FPS across all cameras
+  - `avg_inference_time_ms`: Average inference time across all cameras
+  - `total_inferences`: Total inferences across all cameras
+
+**HTTP Status**:
+- `200 OK`: Success
+
+**Example**:
+```bash
+curl http://localhost:8000/api/system/stats | jq '.gpu'
+```
+
+**Use Cases**:
+- System-wide monitoring dashboards
+- GPU memory monitoring and alerts
+- Performance baseline tracking
+- Capacity planning
+
+---
+
 ### GET `/clips_list`
 
 **Description**: List all saved detection clips

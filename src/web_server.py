@@ -31,6 +31,8 @@ class WebServer:
         self,
         detection_queue: Optional[Any] = None,
         frame_sources: Optional[List[Any]] = None,
+        inference_engines: Optional[List[Any]] = None,
+        detection_processors: Optional[List[Any]] = None,
         host: str = "0.0.0.0",
         port: int = 8000
     ):
@@ -40,11 +42,15 @@ class WebServer:
         Args:
             detection_queue: Queue to receive detection results from
             frame_sources: List of frame sources (RTSPStreamCapture instances)
+            inference_engines: List of inference engines (InferenceEngine instances)
+            detection_processors: List of detection processors (DetectionProcessor instances)
             host: Host to bind to
             port: Port to bind to
         """
         self.detection_queue = detection_queue
         self.frame_sources = frame_sources if frame_sources else []
+        self.inference_engines = inference_engines if inference_engines else []
+        self.detection_processors = detection_processors if detection_processors else []
         self.host = host
         self.port = port
 
@@ -53,6 +59,9 @@ class WebServer:
 
         # Latest detections per camera
         self.latest_detections: Dict[str, Dict[str, Any]] = {}  # camera_id -> detection_result
+
+        # Track camera start times for uptime calculation
+        self.camera_start_times: Dict[str, float] = {}  # camera_id -> timestamp
 
         self._setup_routes()
         self._mount_static_files()
@@ -142,6 +151,185 @@ class WebServer:
                     for cam_id, det in self.latest_detections.items()
                 }
             }
+
+        @self.app.get("/api/cameras/{camera_id}/health")
+        async def camera_health(camera_id: str):
+            """Get health status for a specific camera."""
+            # Find camera index
+            camera_idx = None
+            for idx, fs in enumerate(self.frame_sources):
+                if fs.camera_id == camera_id:
+                    camera_idx = idx
+                    break
+
+            if camera_idx is None:
+                return {"error": f"Camera '{camera_id}' not found"}, 404
+
+            frame_source = self.frame_sources[camera_idx]
+
+            # Calculate uptime
+            uptime_seconds = 0
+            if camera_id in self.camera_start_times:
+                uptime_seconds = time.time() - self.camera_start_times[camera_id]
+
+            # Get stream capture stats
+            stream_stats = frame_source.get_stats()
+
+            # Get last frame time from latest_frame timestamp
+            last_frame_time = None
+            if hasattr(frame_source, 'last_fps_check'):
+                last_frame_time = frame_source.last_fps_check
+
+            return {
+                "camera_id": camera_id,
+                "name": frame_source.camera_name,
+                "is_connected": frame_source.is_connected,
+                "fps": round(frame_source.fps, 1),
+                "dropped_frames": stream_stats.get('dropped_frames', 0),
+                "total_frames": stream_stats.get('total_frames', 0),
+                "last_frame_time": last_frame_time,
+                "uptime_seconds": round(uptime_seconds, 1)
+            }
+
+        @self.app.get("/api/cameras/{camera_id}/stats")
+        async def camera_stats(camera_id: str):
+            """Get detailed statistics for a specific camera."""
+            # Find camera index
+            camera_idx = None
+            for idx, fs in enumerate(self.frame_sources):
+                if fs.camera_id == camera_id:
+                    camera_idx = idx
+                    break
+
+            if camera_idx is None:
+                return {"error": f"Camera '{camera_id}' not found"}, 404
+
+            # Gather stats from all components
+            result = {"camera_id": camera_id}
+
+            # Stream capture stats
+            if camera_idx < len(self.frame_sources):
+                stream_stats = self.frame_sources[camera_idx].get_stats()
+                result["capture"] = {
+                    "is_connected": stream_stats.get('is_connected', False),
+                    "fps": round(stream_stats.get('fps', 0), 1),
+                    "total_frames": stream_stats.get('total_frames', 0),
+                    "dropped_frames": stream_stats.get('dropped_frames', 0),
+                    "queue_size": stream_stats.get('queue_size', 0)
+                }
+
+            # Inference engine stats
+            if camera_idx < len(self.inference_engines):
+                inference_stats = self.inference_engines[camera_idx].get_stats()
+                result["inference"] = {
+                    "device": inference_stats.get('device', 'unknown'),
+                    "fps": round(inference_stats.get('fps', 0), 1),
+                    "avg_inference_time_ms": round(inference_stats.get('avg_inference_time_ms', 0), 1),
+                    "total_inferences": inference_stats.get('total_inferences', 0),
+                    "dropped_results": inference_stats.get('dropped_results', 0),
+                    "drop_rate": round(inference_stats.get('drop_rate', 0), 3)
+                }
+
+            # Detection processor stats
+            if camera_idx < len(self.detection_processors):
+                processor_stats = self.detection_processors[camera_idx].get_stats()
+                result["detections"] = {
+                    "total_processed": processor_stats.get('processed_count', 0),
+                    "history_size": processor_stats.get('history_size', 0),
+                    "last_detection_time": processor_stats.get('last_detection_time'),
+                    "dropped_results": processor_stats.get('dropped_results', 0),
+                    "drop_rate": round(processor_stats.get('drop_rate', 0), 3)
+                }
+
+                # Get detection counts by class from latest detection
+                if camera_id in self.latest_detections:
+                    result["detections"]["by_class"] = self.latest_detections[camera_id].get("detection_counts", {})
+                else:
+                    result["detections"]["by_class"] = {}
+
+                # Filter stats
+                result["filters"] = {
+                    "motion_filter_enabled": processor_stats.get('motion_filter_enabled', False),
+                    "time_of_day_filter_enabled": processor_stats.get('time_of_day_filter_enabled', False)
+                }
+
+            return result
+
+        @self.app.get("/api/system/stats")
+        async def system_stats():
+            """Get system-wide statistics including GPU memory and queue depths."""
+            result = {
+                "timestamp": time.time(),
+                "cameras": {
+                    "total": len(self.frame_sources),
+                    "connected": sum(1 for fs in self.frame_sources if fs.is_connected),
+                    "active_detections": len(self.latest_detections)
+                },
+                "websocket": {
+                    "active_connections": len(self.active_connections)
+                },
+                "queues": {},
+                "gpu": {},
+                "performance": {}
+            }
+
+            # Aggregate queue depths
+            total_frame_queue_depth = 0
+            total_inference_queue_depth = 0
+
+            for idx, fs in enumerate(self.frame_sources):
+                stream_stats = fs.get_stats()
+                total_frame_queue_depth += stream_stats.get('queue_size', 0)
+
+            result["queues"]["frame_queue_total_depth"] = total_frame_queue_depth
+            result["queues"]["detection_queue_depth"] = self.detection_queue.qsize() if self.detection_queue else 0
+
+            # GPU memory stats (aggregate from all inference engines)
+            if self.inference_engines:
+                try:
+                    # Get GPU stats from first inference engine
+                    first_engine_stats = self.inference_engines[0].get_stats()
+                    result["gpu"]["memory_allocated_mb"] = round(first_engine_stats.get('gpu_memory_allocated_mb', 0), 1)
+                    result["gpu"]["memory_reserved_mb"] = round(first_engine_stats.get('gpu_memory_reserved_mb', 0), 1)
+                    result["gpu"]["device"] = first_engine_stats.get('device', 'unknown')
+                except Exception as e:
+                    logger.error(f"Error getting GPU stats: {e}")
+                    result["gpu"]["error"] = str(e)
+
+            # Aggregate performance metrics
+            total_fps = 0
+            total_inference_time = 0
+            total_inferences = 0
+
+            for engine in self.inference_engines:
+                engine_stats = engine.get_stats()
+                total_fps += engine_stats.get('fps', 0)
+                total_inference_time += engine_stats.get('avg_inference_time_ms', 0)
+                total_inferences += engine_stats.get('total_inferences', 0)
+
+            if self.inference_engines:
+                result["performance"]["avg_fps"] = round(total_fps / len(self.inference_engines), 1)
+                result["performance"]["avg_inference_time_ms"] = round(total_inference_time / len(self.inference_engines), 1)
+
+            result["performance"]["total_inferences"] = total_inferences
+
+            # Per-camera summary
+            result["cameras"]["per_camera"] = []
+            for idx, fs in enumerate(self.frame_sources):
+                cam_summary = {
+                    "id": fs.camera_id,
+                    "name": fs.camera_name,
+                    "is_connected": fs.is_connected,
+                    "fps": round(fs.fps, 1)
+                }
+
+                # Add last detection time
+                if fs.camera_id in self.latest_detections:
+                    cam_summary["last_detection_time"] = self.latest_detections[fs.camera_id].get("timestamp")
+
+                result["cameras"]["per_camera"].append(cam_summary)
+
+            return result
 
         @self.app.get("/clips_list")
         async def clips_list():
@@ -412,6 +600,18 @@ class WebServer:
         )
 
         return frame
+
+    def set_camera_start_time(self, camera_id: str, start_time: Optional[float] = None):
+        """
+        Set the start time for a camera (for uptime tracking).
+
+        Args:
+            camera_id: Camera ID
+            start_time: Start timestamp (defaults to current time)
+        """
+        if start_time is None:
+            start_time = time.time()
+        self.camera_start_times[camera_id] = start_time
 
     def run(self):
         """Start the web server."""
