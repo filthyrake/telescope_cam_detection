@@ -483,7 +483,7 @@ collision_detection:
 # Automatically detect and mask faces in live feeds and saved clips
 # Backend retains unmasked versions for security investigation
 privacy:
-  enable_face_masking: false  # Master switch for face masking (disabled by default)
+  enable_face_masking: true  # Master switch for face masking
   mask_style: "gaussian_blur"  # Options: gaussian_blur, pixelate, black_box, adaptive_blur
   detection_backend: "opencv_haar"  # Options: opencv_haar, mediapipe, yolox
 

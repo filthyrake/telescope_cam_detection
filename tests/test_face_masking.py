@@ -209,14 +209,13 @@ class TestFaceMaskingCache(unittest.TestCase):
         faces = [(100, 100, 80, 90)]
         self.cache.update_cache("cam1", faces)
 
-        # First few frames should use cache
-        for i in range(5):
+        # For the first (ttl - 1) frames, should use cache (should_detect is False)
+        for _ in range(self.cache.ttl - 1):
             should_detect = self.cache.should_detect("cam1")
-            if i < 5:
-                self.assertFalse(should_detect)
-                self.cache.increment_frame_count("cam1")
+            self.assertFalse(should_detect)
+            self.cache.increment_frame_count("cam1")
 
-        # After TTL frames, should detect again
+        # On the TTL-th frame, should_detect should be True
         should_detect = self.cache.should_detect("cam1")
         self.assertTrue(should_detect)
 

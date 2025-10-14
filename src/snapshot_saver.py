@@ -17,7 +17,7 @@ import json
 import numpy as np
 
 if TYPE_CHECKING:
-    from src.face_masker import FaceMasker
+    from .face_masker import FaceMasker
 
 logger = logging.getLogger(__name__)
 
@@ -275,7 +275,13 @@ class SnapshotSaver:
         # File paths
         raw_filepath = raw_dir / base_filename
         masked_filepath = masked_dir / base_filename if self.enable_face_masking else None
-        annotated_filepath = annotated_dir / base_filename if self.enable_face_masking else camera_dir / f"{primary_class}_{timestamp}_conf{confidence:.2f}_annotated.jpg"
+
+        # Determine annotated file path based on face masking setting
+        if self.enable_face_masking:
+            annotated_filepath = annotated_dir / base_filename
+        else:
+            # Legacy path for non-masked mode (backward compatibility)
+            annotated_filepath = camera_dir / f"{primary_class}_{timestamp}_conf{confidence:.2f}_annotated.jpg"
 
         # Save images
         try:

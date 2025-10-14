@@ -17,15 +17,15 @@ import yaml
 # Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from stream_capture import RTSPStreamCapture, create_rtsp_url
-from inference_engine_yolox import InferenceEngine  # YOLOX version (47x faster!)
-from detection_processor import DetectionProcessor
-from web_server import WebServer
-from snapshot_saver import SnapshotSaver
-from two_stage_pipeline_yolox import TwoStageDetectionPipeline  # YOLOX-compatible
-from species_classifier import SpeciesClassifier
-from camera_health_monitor import CameraHealthMonitor
-from face_masker import FaceMasker, FaceMaskingCache  # Privacy-preserving face masking
+from src.stream_capture import RTSPStreamCapture, create_rtsp_url
+from src.inference_engine_yolox import InferenceEngine  # YOLOX version (47x faster!)
+from src.detection_processor import DetectionProcessor
+from src.web_server import WebServer
+from src.snapshot_saver import SnapshotSaver
+from src.two_stage_pipeline_yolox import TwoStageDetectionPipeline  # YOLOX-compatible
+from src.species_classifier import SpeciesClassifier
+from src.camera_health_monitor import CameraHealthMonitor
+from src.face_masker import FaceMasker, FaceMaskingCache  # Privacy-preserving face masking
 
 logging.basicConfig(
     level=logging.INFO,

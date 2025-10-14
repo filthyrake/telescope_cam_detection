@@ -49,7 +49,18 @@ class FaceMasker:
         self.detection_backend = detection_backend
         self.mask_style = mask_style
         self.min_face_size = min_face_size
-        self.blur_strength = blur_strength if blur_strength % 2 == 1 else blur_strength + 1
+
+        # Gaussian blur requires odd kernel size - auto-adjust if needed
+        if blur_strength % 2 == 1:
+            self.blur_strength = blur_strength
+        else:
+            adjusted_blur_strength = blur_strength + 1
+            logger.warning(
+                f"blur_strength must be odd, got {blur_strength}. "
+                f"Automatically adjusted to {adjusted_blur_strength}."
+            )
+            self.blur_strength = adjusted_blur_strength
+
         self.pixelate_blocks = pixelate_blocks
         self.scale_factor = scale_factor
         self.min_neighbors = min_neighbors
@@ -60,6 +71,9 @@ class FaceMasker:
         elif detection_backend == "mediapipe":
             self._init_mediapipe()
         elif detection_backend == "yolox":
+            # TODO: YOLOX backend planned for Phase 2 (leverage existing YOLOX GPU pipeline)
+            # Would require adding face detection class to YOLOX model
+            # See issue #87 Phase 2 enhancement roadmap
             logger.warning("YOLOX backend not yet implemented, falling back to OpenCV Haar")
             self.detection_backend = "opencv_haar"
             self._init_opencv_haar()

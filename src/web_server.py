@@ -21,7 +21,7 @@ import uvicorn
 from queue import Empty
 
 if TYPE_CHECKING:
-    from src.face_masker import FaceMasker, FaceMaskingCache
+    from .face_masker import FaceMasker, FaceMaskingCache
 
 logger = logging.getLogger(__name__)
 
