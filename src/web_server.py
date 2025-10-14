@@ -390,7 +390,7 @@ class WebServer:
                 while True:
                     # Run blocking queue.get() in thread executor to avoid blocking event loop
                     try:
-                        loop = asyncio.get_event_loop()
+                        loop = asyncio.get_running_loop()
                         detection_result = await loop.run_in_executor(
                             None,
                             lambda: self.detection_queue.get(timeout=1.0)
