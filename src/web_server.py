@@ -68,10 +68,6 @@ class WebServer:
 
     def _mount_static_files(self):
         """Mount static file directories."""
-        web_dir = Path(__file__).parent.parent / "web"
-        if web_dir.exists():
-            self.app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
-
         # Mount clips directory for browsing saved snapshots
         clips_dir = Path(__file__).parent.parent / "clips"
         if clips_dir.exists():
