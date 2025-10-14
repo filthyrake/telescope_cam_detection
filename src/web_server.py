@@ -12,7 +12,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -163,7 +163,7 @@ class WebServer:
                     break
 
             if camera_idx is None:
-                return {"error": f"Camera '{camera_id}' not found"}, 404
+                raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
 
             frame_source = self.frame_sources[camera_idx]
 
@@ -202,7 +202,7 @@ class WebServer:
                     break
 
             if camera_idx is None:
-                return {"error": f"Camera '{camera_id}' not found"}, 404
+                raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
 
             # Gather stats from all components
             result = {"camera_id": camera_id}
