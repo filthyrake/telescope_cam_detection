@@ -1,6 +1,7 @@
 """
 FastAPI Web Server with WebSocket Support
 Serves web interface and streams detection results in real-time.
+Supports privacy-preserving face masking for live feeds.
 """
 
 import asyncio
@@ -8,7 +9,7 @@ import copy
 import json
 import time
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from pathlib import Path
 import cv2
 import numpy as np
@@ -18,6 +19,9 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 from queue import Empty
+
+if TYPE_CHECKING:
+    from src.face_masker import FaceMasker, FaceMaskingCache
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +42,9 @@ class WebServer:
         restart_callback: Optional[Any] = None,
         reload_config_callback: Optional[Any] = None,
         config_getter: Optional[Any] = None,
+        face_masker: Optional['FaceMasker'] = None,
+        face_masking_cache: Optional['FaceMaskingCache'] = None,
+        enable_face_masking: bool = False,
         host: str = "0.0.0.0",
         port: int = 8000
     ):
@@ -53,6 +60,9 @@ class WebServer:
             restart_callback: Callback function to restart a camera (takes camera index)
             reload_config_callback: Callback function to reload configuration
             config_getter: Callback function to get current configuration
+            face_masker: FaceMasker instance for privacy-preserving face masking
+            face_masking_cache: FaceMaskingCache instance for performance optimization
+            enable_face_masking: Enable face masking in live video feeds
             host: Host to bind to
             port: Port to bind to
         """
@@ -64,6 +74,9 @@ class WebServer:
         self.restart_callback = restart_callback
         self.reload_config_callback = reload_config_callback
         self.config_getter = config_getter
+        self.face_masker = face_masker
+        self.face_masking_cache = face_masking_cache
+        self.enable_face_masking = enable_face_masking and face_masker is not None
         self.host = host
         self.port = port
 
@@ -650,6 +663,10 @@ class WebServer:
                     frame = frame_source.latest_frame.copy() if frame_source.latest_frame is not None else None
 
                 if frame is not None:
+                    # Apply face masking if enabled
+                    if self.enable_face_masking and self.face_masker:
+                        frame = self._apply_face_masking_to_frame(frame, camera_id)
+
                     # Draw detections on frame for this camera
                     if camera_id in self.latest_detections:
                         frame = self._draw_detections(frame, self.latest_detections[camera_id])
@@ -741,6 +758,63 @@ class WebServer:
         )
 
         return frame
+
+    def _apply_face_masking_to_frame(self, frame: np.ndarray, camera_id: str) -> np.ndarray:
+        """
+        Apply face masking to a frame for live feed.
+        Uses caching to avoid detecting faces in every frame for performance.
+
+        Args:
+            frame: Input frame (BGR format)
+            camera_id: Camera identifier
+
+        Returns:
+            Masked frame
+        """
+        if not self.face_masker:
+            return frame
+
+        try:
+            # Check if we should detect faces or use cached positions
+            if self.face_masking_cache and self.face_masking_cache.should_detect(camera_id):
+                # Detect faces
+                faces = self.face_masker.detect_faces(frame)
+
+                # Update cache
+                self.face_masking_cache.update_cache(camera_id, faces)
+
+                # Apply masking
+                if faces:
+                    masked_frame = self.face_masker.apply_mask(frame, faces)
+                    return masked_frame
+                else:
+                    return frame
+            elif self.face_masking_cache:
+                # Use cached face positions
+                faces = self.face_masking_cache.get_cached_faces(camera_id)
+
+                # Increment frame count
+                self.face_masking_cache.increment_frame_count(camera_id)
+
+                # Apply masking with cached positions
+                if faces:
+                    masked_frame = self.face_masker.apply_mask(frame, faces)
+                    return masked_frame
+                else:
+                    return frame
+            else:
+                # No cache - detect and mask every frame (slower)
+                faces = self.face_masker.detect_faces(frame)
+                if faces:
+                    masked_frame = self.face_masker.apply_mask(frame, faces)
+                    return masked_frame
+                else:
+                    return frame
+
+        except Exception as e:
+            logger.error(f"Error applying face masking to frame for camera {camera_id}: {e}")
+            # Return unmasked frame on error
+            return frame
 
     def set_camera_start_time(self, camera_id: str, start_time: Optional[float] = None):
         """

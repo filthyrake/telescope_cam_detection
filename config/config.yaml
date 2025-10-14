@@ -479,6 +479,35 @@ collision_detection:
   enabled: false
   danger_threshold: 50  # pixels
 
+# Privacy Settings (Face Masking)
+# Automatically detect and mask faces in live feeds and saved clips
+# Backend retains unmasked versions for security investigation
+privacy:
+  enable_face_masking: false  # Master switch for face masking (disabled by default)
+  mask_style: "gaussian_blur"  # Options: gaussian_blur, pixelate, black_box, adaptive_blur
+  detection_backend: "opencv_haar"  # Options: opencv_haar, mediapipe, yolox
+
+  # Performance tuning
+  live_feed_detection_interval: 5  # Detect faces every N frames (reduces CPU usage)
+  min_face_size: 30  # Minimum face size in pixels (filter false positives)
+  blur_strength: 25  # Gaussian blur kernel size (odd number, higher = more blur)
+  pixelate_blocks: 10  # Pixel block size for pixelation effect
+  scale_factor: 1.1  # Haar cascade scale factor (lower = more detections, slower)
+  min_neighbors: 5  # Haar cascade min neighbors (higher = fewer false positives)
+
+  # Per-camera overrides (optional)
+  camera_overrides: {}
+    # Example:
+    # cam1:
+    #   enable_face_masking: false  # Disable for specific camera (e.g., remote area)
+    # cam2:
+    #   mask_style: "black_box"     # Use different masking style
+
+# API Access Control
+api:
+  allow_unmasked_access: false  # Require authentication for /api/clips/raw/ endpoint
+  unmasked_access_token_env: "TELESCOPE_UNMASKED_TOKEN"  # Environment variable name for auth token
+
 # Snapshot/Clip Saving
 snapshots:
   enabled: true  # Enable snapshot saving

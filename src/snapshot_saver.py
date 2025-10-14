@@ -1,6 +1,7 @@
 """
 Snapshot Saver Module
 Saves images/clips when specific detection events occur.
+Supports privacy-preserving face masking with dual storage.
 """
 
 import cv2
@@ -8,12 +9,15 @@ import time
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Set
+from typing import Optional, List, Dict, Any, Set, TYPE_CHECKING
 from queue import Queue
 from threading import Thread, Event, Lock
 from collections import deque
 import json
 import numpy as np
+
+if TYPE_CHECKING:
+    from src.face_masker import FaceMasker
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +46,9 @@ class SnapshotSaver:
         clip_duration: int = 10,
         pre_buffer_seconds: int = 5,
         fps: int = 30,
-        save_annotated: bool = True
+        save_annotated: bool = True,
+        face_masker: Optional['FaceMasker'] = None,
+        enable_face_masking: bool = False
     ):
         """
         Initialize snapshot saver.
@@ -57,9 +63,15 @@ class SnapshotSaver:
             pre_buffer_seconds: Seconds of video before detection
             fps: Frames per second for video clips
             save_annotated: Save with bounding boxes drawn
+            face_masker: FaceMasker instance for privacy-preserving face masking
+            enable_face_masking: Enable face masking feature
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Face masking
+        self.face_masker = face_masker
+        self.enable_face_masking = enable_face_masking and face_masker is not None
 
         self.save_mode = save_mode
         self.trigger_classes = set(trigger_classes) if trigger_classes else None
@@ -218,7 +230,10 @@ class SnapshotSaver:
     ) -> Optional[str]:
         """
         Save a single snapshot image.
-        Saves both raw (for training) and annotated (for web display) versions.
+        Saves three versions:
+        - raw/ : Unmasked frame (restricted access, for security investigation)
+        - masked/ : Masked frame without annotations (for web gallery)
+        - annotated/ : Masked frame with detection boxes (for web display)
 
         Args:
             frame: Raw video frame
@@ -226,7 +241,7 @@ class SnapshotSaver:
             annotated_frame: Frame with annotations (if save_annotated=True)
 
         Returns:
-            Path to saved file, or None if save failed
+            Path to masked file (for web serving), or None if save failed
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
@@ -241,14 +256,30 @@ class SnapshotSaver:
         # Get camera identifier
         camera_id = detection_result.get('camera_id', 'default')
 
-        # Create base filename with camera ID
-        base_filename = f"{camera_id}_{primary_class}_{timestamp}_conf{confidence:.2f}"
-        raw_filepath = self.output_dir / f"{base_filename}.jpg"
-        annotated_filepath = self.output_dir / f"{base_filename}_annotated.jpg"
+        # Create camera-specific directory structure
+        camera_dir = self.output_dir / camera_id
+        raw_dir = camera_dir / "raw"
+        masked_dir = camera_dir / "masked"
+        annotated_dir = camera_dir / "annotated"
+
+        # Create directories if they don't exist
+        raw_dir.mkdir(parents=True, exist_ok=True)
+
+        if self.enable_face_masking:
+            masked_dir.mkdir(parents=True, exist_ok=True)
+            annotated_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create base filename
+        base_filename = f"{primary_class}_{timestamp}_conf{confidence:.2f}.jpg"
+
+        # File paths
+        raw_filepath = raw_dir / base_filename
+        masked_filepath = masked_dir / base_filename if self.enable_face_masking else None
+        annotated_filepath = annotated_dir / base_filename if self.enable_face_masking else camera_dir / f"{primary_class}_{timestamp}_conf{confidence:.2f}_annotated.jpg"
 
         # Save images
         try:
-            # Always save raw frame (for training data)
+            # 1. Always save unmasked frame in raw/ (for security investigation)
             success = cv2.imwrite(str(raw_filepath), frame)
             if not success:
                 logger.error(f"Failed to save raw frame: {raw_filepath}")
@@ -256,15 +287,51 @@ class SnapshotSaver:
                 self.save_failures += 1
                 return None
 
-            # Save annotated frame if available (for web display)
-            if self.save_annotated and annotated_frame is not None:
+            # 2. Apply face masking if enabled
+            masked_frame = frame
+            masked_annotated_frame = annotated_frame
+            faces_detected = []
+
+            if self.enable_face_masking and self.face_masker:
+                try:
+                    # Detect faces once
+                    faces_detected = self.face_masker.detect_faces(frame)
+
+                    if faces_detected:
+                        logger.info(f"Detected {len(faces_detected)} face(s) in snapshot, applying mask")
+
+                        # Mask the raw frame
+                        masked_frame = self.face_masker.apply_mask(frame.copy(), faces_detected)
+
+                        # Mask the annotated frame if available
+                        if annotated_frame is not None:
+                            masked_annotated_frame = self.face_masker.apply_mask(annotated_frame.copy(), faces_detected)
+                except Exception as e:
+                    logger.error(f"Face masking failed: {e}, saving unmasked versions")
+                    masked_frame = frame
+                    masked_annotated_frame = annotated_frame
+
+            # 3. Save masked frame (served by web UI)
+            if self.enable_face_masking and masked_filepath:
+                success = cv2.imwrite(str(masked_filepath), masked_frame)
+                if not success:
+                    logger.warning(f"Failed to save masked frame: {masked_filepath}")
+                    # Continue - raw frame is saved
+
+            # 4. Save annotated frame (masked if face masking enabled)
+            if self.save_annotated and masked_annotated_frame is not None:
+                success = cv2.imwrite(str(annotated_filepath), masked_annotated_frame)
+                if not success:
+                    logger.warning(f"Failed to save annotated frame: {annotated_filepath}")
+                    # Continue - raw and masked frames are more important
+            elif self.save_annotated and annotated_frame is not None and not self.enable_face_masking:
+                # Fallback for no face masking - save annotated in old location
                 success = cv2.imwrite(str(annotated_filepath), annotated_frame)
                 if not success:
                     logger.warning(f"Failed to save annotated frame: {annotated_filepath}")
-                    logger.warning("Raw frame saved successfully, continuing without annotated version")
-                    # Don't fail - raw frame is more important
 
-            # Save metadata JSON
+            # 5. Save metadata JSON (in masked/ or camera root)
+            metadata_dir = masked_dir if self.enable_face_masking else camera_dir
             metadata = {
                 'timestamp': detection_result.get('timestamp'),
                 'camera_id': detection_result.get('camera_id', 'default'),
@@ -272,11 +339,13 @@ class SnapshotSaver:
                 'detections': detections,
                 'detection_counts': detection_result.get('detection_counts', {}),
                 'latency_ms': detection_result.get('total_latency_ms', 0),
-                'filename': f"{base_filename}.jpg",
-                'annotated_filename': f"{base_filename}_annotated.jpg" if (self.save_annotated and annotated_frame is not None) else None
+                'filename': base_filename,
+                'annotated_filename': f"{primary_class}_{timestamp}_conf{confidence:.2f}_annotated.jpg" if self.save_annotated else None,
+                'face_masking_enabled': self.enable_face_masking,
+                'faces_detected': len(faces_detected) if faces_detected else 0
             }
 
-            metadata_file = raw_filepath.with_suffix('.json')
+            metadata_file = metadata_dir / f"{primary_class}_{timestamp}_conf{confidence:.2f}.json"
             try:
                 with open(metadata_file, 'w') as f:
                     json.dump(metadata, f, indent=2)
@@ -288,8 +357,11 @@ class SnapshotSaver:
             self.total_saved += 1
             self.saves_by_class[primary_class] = self.saves_by_class.get(primary_class, 0) + 1
 
-            logger.info(f"📸 Saved snapshot: {base_filename}.jpg (raw + annotated)")
-            return str(raw_filepath)
+            mask_info = f" (masked, {len(faces_detected)} face(s))" if self.enable_face_masking and faces_detected else ""
+            logger.info(f"📸 Saved snapshot: {camera_id}/{base_filename}{mask_info}")
+
+            # Return masked path for web serving (or raw path if face masking disabled)
+            return str(masked_filepath) if self.enable_face_masking and masked_filepath else str(raw_filepath)
 
         except Exception as e:
             logger.error(f"Failed to save snapshot: {e}")
