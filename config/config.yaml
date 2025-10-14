@@ -35,7 +35,7 @@ cameras:
 
     # Stage 2 preprocessing overrides (elevated camera sees smaller/distant animals)
     stage2_preprocessing:
-      crop_padding_percent: 35  # Extra padding for small detections (vs global 30%)
+      crop_padding_percent: 35  # Extra padding for small detections (overrides global species_classification.preprocessing.crop_padding_percent)
       min_crop_size: 40         # Allow classification of small crops
 
   # Second camera (ground level - Reolink E1 Pro with better resolution)
