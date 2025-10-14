@@ -164,9 +164,26 @@ class TelescopeDetectionSystem:
 
             # Validate detection configuration
             detection_config = self.config.get('detection', {})
+
+            # Validate confidence threshold
             conf_threshold = detection_config.get('conf_threshold', 0.25)
-            if not isinstance(conf_threshold, (int, float)) or conf_threshold < 0.0 or conf_threshold > 1.0:
+            if not isinstance(conf_threshold, (int, float)) or not (0.0 <= conf_threshold <= 1.0):
                 logger.error(f"Invalid conf_threshold: {conf_threshold} (must be 0.0-1.0)")
+                return False
+
+            # Validate NMS threshold
+            nms_threshold = detection_config.get('nms_threshold', 0.45)
+            if not isinstance(nms_threshold, (int, float)) or not (0.0 <= nms_threshold <= 1.0):
+                logger.error(f"Invalid nms_threshold: {nms_threshold} (must be 0.0-1.0)")
+                return False
+
+            # Validate input_size
+            input_size = detection_config.get('input_size', [640, 640])
+            if not isinstance(input_size, list) or len(input_size) != 2:
+                logger.error(f"Invalid input_size: {input_size} (must be [height, width])")
+                return False
+            if not all(isinstance(dim, int) and 64 <= dim <= 4096 for dim in input_size):
+                logger.error(f"Invalid input_size dimensions: {input_size} (must be integers 64-4096)")
                 return False
 
             # Validate min_box_area
@@ -174,6 +191,113 @@ class TelescopeDetectionSystem:
             if not isinstance(min_box_area, int) or min_box_area < 0:
                 logger.error(f"Invalid min_box_area: {min_box_area} (must be >= 0)")
                 return False
+
+            # Validate max_detections
+            max_detections = detection_config.get('max_detections', 300)
+            if not isinstance(max_detections, int) or max_detections < 1:
+                logger.error(f"Invalid max_detections: {max_detections} (must be >= 1)")
+                return False
+
+            # Validate per-class confidence overrides
+            class_conf_overrides = detection_config.get('class_confidence_overrides', {})
+            if not isinstance(class_conf_overrides, dict):
+                logger.error(f"Invalid class_confidence_overrides: must be a dictionary")
+                return False
+            for class_name, threshold in class_conf_overrides.items():
+                if not isinstance(threshold, (int, float)) or not (0.0 <= threshold <= 1.0):
+                    logger.error(f"Invalid class confidence override for '{class_name}': {threshold} (must be 0.0-1.0)")
+                    return False
+
+            # Validate per-class size constraints
+            class_size_constraints = detection_config.get('class_size_constraints', {})
+            if not isinstance(class_size_constraints, dict):
+                logger.error(f"Invalid class_size_constraints: must be a dictionary")
+                return False
+            for class_name, constraints in class_size_constraints.items():
+                if not isinstance(constraints, dict):
+                    logger.error(f"Invalid size constraints for '{class_name}': must be a dictionary")
+                    return False
+                if 'min' in constraints:
+                    if not isinstance(constraints['min'], int) or constraints['min'] < 0:
+                        logger.error(f"Invalid min size for '{class_name}': {constraints['min']} (must be >= 0)")
+                        return False
+                if 'max' in constraints:
+                    if not isinstance(constraints['max'], int) or constraints['max'] < 0:
+                        logger.error(f"Invalid max size for '{class_name}': {constraints['max']} (must be >= 0)")
+                        return False
+                if 'min' in constraints and 'max' in constraints:
+                    if constraints['min'] > constraints['max']:
+                        logger.error(f"Invalid size constraints for '{class_name}': min ({constraints['min']}) > max ({constraints['max']})")
+                        return False
+
+            # Validate queue sizes
+            performance_config = self.config.get('performance', {})
+            frame_queue_size = performance_config.get('frame_queue_size', 2)
+            if not isinstance(frame_queue_size, int) or frame_queue_size < 1:
+                logger.error(f"Invalid frame_queue_size: {frame_queue_size} (must be >= 1)")
+                return False
+
+            detection_queue_size = performance_config.get('detection_queue_size', 10)
+            if not isinstance(detection_queue_size, int) or detection_queue_size < 1:
+                logger.error(f"Invalid detection_queue_size: {detection_queue_size} (must be >= 1)")
+                return False
+
+            history_size = performance_config.get('history_size', 30)
+            if not isinstance(history_size, int) or history_size < 1:
+                logger.error(f"Invalid history_size: {history_size} (must be >= 1)")
+                return False
+
+            # Validate motion filter configuration
+            motion_filter_config = self.config.get('motion_filter', {})
+            if motion_filter_config.get('enabled', False):
+                history = motion_filter_config.get('history', 500)
+                if not isinstance(history, int) or history < 1:
+                    logger.error(f"Invalid motion_filter.history: {history} (must be >= 1)")
+                    return False
+
+                var_threshold = motion_filter_config.get('var_threshold', 16)
+                if not isinstance(var_threshold, int) or var_threshold < 1:
+                    logger.error(f"Invalid motion_filter.var_threshold: {var_threshold} (must be >= 1)")
+                    return False
+
+                min_motion_area = motion_filter_config.get('min_motion_area', 100)
+                if not isinstance(min_motion_area, int) or min_motion_area < 0:
+                    logger.error(f"Invalid motion_filter.min_motion_area: {min_motion_area} (must be >= 0)")
+                    return False
+
+            # Validate snapshot configuration
+            snapshot_config = self.config.get('snapshots', {})
+            if snapshot_config.get('enabled', False):
+                min_confidence = snapshot_config.get('min_confidence', 0.5)
+                if not isinstance(min_confidence, (int, float)) or not (0.0 <= min_confidence <= 1.0):
+                    logger.error(f"Invalid snapshots.min_confidence: {min_confidence} (must be 0.0-1.0)")
+                    return False
+
+                cooldown_seconds = snapshot_config.get('cooldown_seconds', 30)
+                if not isinstance(cooldown_seconds, int) or cooldown_seconds < 0:
+                    logger.error(f"Invalid snapshots.cooldown_seconds: {cooldown_seconds} (must be >= 0)")
+                    return False
+
+                fps = snapshot_config.get('fps', 30)
+                if not isinstance(fps, int) or not (1 <= fps <= 120):
+                    logger.error(f"Invalid snapshots.fps: {fps} (must be 1-120)")
+                    return False
+
+                # Validate clip settings if save_mode is "clip"
+                if snapshot_config.get('save_mode', 'image') == 'clip':
+                    clip_duration = snapshot_config.get('clip_duration', 10)
+                    if not isinstance(clip_duration, int) or clip_duration < 1:
+                        logger.error(f"Invalid snapshots.clip_duration: {clip_duration} (must be >= 1)")
+                        return False
+
+                    pre_buffer_seconds = snapshot_config.get('pre_buffer_seconds', 5)
+                    if not isinstance(pre_buffer_seconds, int) or pre_buffer_seconds < 0:
+                        logger.error(f"Invalid snapshots.pre_buffer_seconds: {pre_buffer_seconds} (must be >= 0)")
+                        return False
+
+                    if pre_buffer_seconds > clip_duration:
+                        logger.error(f"Invalid snapshot config: pre_buffer_seconds ({pre_buffer_seconds}) > clip_duration ({clip_duration})")
+                        return False
 
             logger.info("✓ Configuration validation passed")
             return True

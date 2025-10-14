@@ -7,6 +7,7 @@ Uses background subtraction to identify regions with actual movement.
 import cv2
 import numpy as np
 import logging
+import threading
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -216,6 +217,9 @@ class AdaptiveMotionFilter(MotionFilter):
         self.day_start_hour = day_start_hour
         self.day_end_hour = day_end_hour
 
+        # Thread lock for safe bg_subtractor recreation
+        self._lock = threading.Lock()
+
     def _is_daytime(self) -> bool:
         """Check if it's currently daytime."""
         current_hour = datetime.now().hour
@@ -231,14 +235,15 @@ class AdaptiveMotionFilter(MotionFilter):
         is_day = self._is_daytime()
         current_threshold = self.day_var_threshold if is_day else self.night_var_threshold
 
-        # Update background subtractor if threshold changed
-        if current_threshold != self.var_threshold:
-            self.var_threshold = current_threshold
-            self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
-                history=self.history,
-                varThreshold=self.var_threshold,
-                detectShadows=self.detect_shadows
-            )
+        # Update background subtractor if threshold changed (thread-safe)
+        with self._lock:
+            if current_threshold != self.var_threshold:
+                self.var_threshold = current_threshold
+                self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+                    history=self.history,
+                    varThreshold=self.var_threshold,
+                    detectShadows=self.detect_shadows
+                )
 
         return super().filter_detections(frame, detections)
 
