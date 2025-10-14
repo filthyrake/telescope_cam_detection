@@ -30,6 +30,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Configuration validation constants
+MIN_INPUT_DIMENSION = 64
+MAX_INPUT_DIMENSION = 4096
+MIN_FPS = 1
+MAX_FPS = 120
+
 
 class TelescopeDetectionSystem:
     """
@@ -182,8 +188,8 @@ class TelescopeDetectionSystem:
             if not isinstance(input_size, list) or len(input_size) != 2:
                 logger.error(f"Invalid input_size: {input_size} (must be [height, width])")
                 return False
-            if not all(isinstance(dim, int) and 64 <= dim <= 4096 for dim in input_size):
-                logger.error(f"Invalid input_size dimensions: {input_size} (must be integers 64-4096)")
+            if not all(isinstance(dim, int) and MIN_INPUT_DIMENSION <= dim <= MAX_INPUT_DIMENSION for dim in input_size):
+                logger.error(f"Invalid input_size dimensions: {input_size} (must be integers {MIN_INPUT_DIMENSION}-{MAX_INPUT_DIMENSION})")
                 return False
 
             # Validate min_box_area
@@ -279,8 +285,8 @@ class TelescopeDetectionSystem:
                     return False
 
                 fps = snapshot_config.get('fps', 30)
-                if not isinstance(fps, int) or not (1 <= fps <= 120):
-                    logger.error(f"Invalid snapshots.fps: {fps} (must be 1-120)")
+                if not isinstance(fps, int) or not (MIN_FPS <= fps <= MAX_FPS):
+                    logger.error(f"Invalid snapshots.fps: {fps} (must be {MIN_FPS}-{MAX_FPS})")
                     return False
 
                 # Validate clip settings if save_mode is "clip"
