@@ -65,14 +65,17 @@ systemctl status telescope_detection.service -l
 
 ## Features
 
-### Stage 1: YOLO-World Detection
-- Detects: coyote, rabbit, quail, roadrunner, hawk, etc.
+### Stage 1: YOLOX Detection
+- Detects: person, bird, cat, dog, and 76 other COCO classes
+- Wildlife-only filter available
 - Real-time bounding boxes
+- 11-21ms inference time
 
-### Stage 2: iNaturalist Species ID
+### Stage 2: iNaturalist Species ID (Optional)
 - Fine-grained species classification
 - 10,000 species database
-- Example: "bird" → "Gambel's Quail"
+- Hierarchical taxonomy fallback
+- Example: "bird" → "Gambel's Quail" (species level)
 
 ## Common Tasks
 
@@ -99,9 +102,9 @@ sudo ./service.sh restart
 
 ## Performance Metrics
 
-- **Stage 1 only**: ~20-25ms per frame
-- **Stage 1 + 2**: ~30-35ms per frame
-- **Expected FPS**: 30+ (real-time)
+- **Stage 1 only**: ~11-21ms per frame (YOLOX-S @ 1920x1920)
+- **Stage 1 + 2**: ~30-50ms per frame (with species classification)
+- **Expected FPS**: 25-30 sustained (real-time)
 
 ## Help
 

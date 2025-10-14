@@ -35,7 +35,7 @@ The Telescope Detection System is a real-time object detection and species class
 
 | Component | Technology |
 |-----------|----------|
-| Language | Python 3.12 |
+| Language | Python 3.11+ |
 | Detection (Stage 1) | YOLOX-S (Megvii, Apache 2.0) |
 | Classification (Stage 2) | EVA02-Large (timm) + iNaturalist 2021 |
 | Video Streaming | OpenCV + RTSP/RTSP-TCP |
@@ -189,7 +189,7 @@ camera:
 
 ---
 
-### 2. Inference Engine (`src/inference_engine.py`)
+### 2. Inference Engine (`src/inference_engine_yolox.py`)
 
 **Purpose**: Run GPU-accelerated object detection
 
@@ -200,20 +200,20 @@ camera:
 │                                      │
 │  ┌────────────────────────────────┐ │
 │  │  Standard Mode:                │ │
-│  │  - Direct YOLO inference       │ │
+│  │  - Direct YOLOX inference      │ │
 │  │  - Single model                │ │
-│  │  - ~20-25ms                    │ │
+│  │  - ~11-21ms                    │ │
 │  └────────────────────────────────┘ │
 │                                      │
 │  ┌────────────────────────────────┐ │
 │  │  Two-Stage Mode:               │ │
 │  │  ┌──────────────────────────┐  │ │
 │  │  │ TwoStageDetectionPipeline│  │ │
-│  │  │  - YOLOX (Stage 1)  │  │ │
+│  │  │  - YOLOX (Stage 1)       │  │ │
 │  │  │  - SpeciesClassifier     │  │ │
 │  │  │    (Stage 2)             │  │ │
 │  │  └──────────────────────────┘  │ │
-│  │  - ~30-35ms total             │ │
+│  │  - ~30-50ms total             │ │
 │  └────────────────────────────────┘ │
 └──────────────────────────────────────┘
 ```
@@ -221,10 +221,12 @@ camera:
 **Configuration**:
 ```yaml
 detection:
-  model: "yolov8x-worldv2.pt"
+  model:
+    name: "yolox-s"
+    weights: "models/yolox/yolox_s.pth"
   device: "cuda:0"
-  confidence: 0.25
-  iou_threshold: 0.45
+  conf_threshold: 0.25
+  nms_threshold: 0.45
   min_box_area: 50
   max_detections: 300
   use_two_stage: true
@@ -240,15 +242,15 @@ detection:
 
 ---
 
-### 3. Two-Stage Pipeline (`src/two_stage_pipeline.py`)
+### 3. Two-Stage Pipeline (`src/two_stage_pipeline_yolox.py`)
 
 **Purpose**: Orchestrate detection + classification
 
 **Stage 1: YOLOX Detection**
-- Open-vocabulary object detection
-- Text prompts for classes
+- 80 pre-defined COCO classes
+- Filtered to wildlife-relevant categories
 - Generates bounding boxes
-- Confidence threshold: 0.25
+- Confidence threshold: 0.15-0.40 (configurable per-class)
 
 **Stage 2: iNaturalist Classification**
 - Crops detected objects
@@ -278,22 +280,24 @@ Frame → YOLOX → Detections (bbox + class)
 - Training: iNaturalist 2021 (10,000 species)
 - Accuracy: 92% top-1, 98% top-5
 - Input: 336x336 RGB
-- Output: Species name + confidence
+- Output: Species name + confidence + taxonomic level
 
 **Taxonomy Mapping**:
-- File: `models/inat2021_taxonomy_simple.json`
-- Format: `{class_id: "Common Name"}`
-- Includes: Kingdom, Phylum, Class, Order, Family, Genus
+- File: `models/inat2021_taxonomy.json`
+- Format: Full hierarchical taxonomy with common names
+- Includes: Kingdom, Phylum, Class, Order, Family, Genus, Species
+- Hierarchical fallback: species → genus → family → order → class
 
 **Configuration**:
 ```yaml
 species_classification:
   enabled: true
-  confidence_threshold: 0.3
+  confidence_threshold: 0.5
   inat_classifier:
     model_name: "timm/eva02_large_patch14_clip_336.merged2b_ft_inat21"
-    taxonomy_file: "models/inat2021_taxonomy_simple.json"
+    taxonomy_file: "models/inat2021_taxonomy.json"
     input_size: 336
+    use_hierarchical: true
 ```
 
 ---
@@ -558,14 +562,15 @@ snapshots:
 
 ### Stage 1: YOLOX Detection
 
-**Input**: Frame (1280x720x3 BGR)
+**Input**: Frame (1920x1080 BGR, resized internally to 1920x1920)
 
 **Process**:
-1. Preprocess image (normalize, resize if needed)
-2. Run YOLOX inference
+1. Preprocess image (normalize, letterbox resize to input_size)
+2. Run YOLOX inference on GPU
 3. Apply NMS (IoU threshold: 0.45)
-4. Filter by confidence (0.25)
-5. Filter by size (50px² minimum)
+4. Filter by per-class confidence thresholds
+5. Filter by size (min_box_area, per-class size constraints)
+6. Filter to wildlife-relevant classes (if wildlife_only: true)
 
 **Output**: List of detections
 ```python
@@ -573,12 +578,13 @@ snapshots:
   {
     'class_name': 'bird',
     'confidence': 0.85,
-    'bbox': {'x1': 100, 'y1': 200, 'x2': 300, 'y2': 400}
+    'bbox': {'x1': 100, 'y1': 200, 'x2': 300, 'y2': 400, 'area': 20000},
+    'class_id': 14
   }
 ]
 ```
 
-**Performance**: ~20-25ms on NVIDIA A30
+**Performance**: ~11-21ms on NVIDIA A30 (YOLOX-S @ 1920x1920)
 
 ---
 
@@ -603,14 +609,12 @@ snapshots:
   'bbox': {...},
   'species': "Gambel's Quail",
   'species_confidence': 0.92,
-  'species_alternatives': [
-    {'species': 'California Quail', 'confidence': 0.78},
-    {'species': 'Scaled Quail', 'confidence': 0.65}
-  ]
+  'taxonomic_level': 'species',
+  'stage2_category': 'bird'
 }
 ```
 
-**Performance**: ~5-10ms per detection on NVIDIA A30
+**Performance**: ~20-30ms per detection on NVIDIA A30
 
 ---
 
@@ -618,12 +622,12 @@ snapshots:
 
 | Scenario | Stage 1 | Stage 2 | Total | FPS |
 |----------|---------|---------|-------|-----|
-| No detections | 20ms | 0ms | 20ms | 50 |
-| 1 detection | 20ms | 8ms | 28ms | 35 |
-| 3 detections | 20ms | 24ms | 44ms | 23 |
-| 5 detections | 20ms | 40ms | 60ms | 16 |
+| No detections | 15ms | 0ms | 15ms | 66 |
+| 1 detection | 15ms | 25ms | 40ms | 25 |
+| 2 detections | 15ms | 50ms | 65ms | 15 |
+| 3 detections | 15ms | 75ms | 90ms | 11 |
 
-**Note**: Stage 2 runs sequentially per detection (can be parallelized)
+**Note**: Stage 2 runs sequentially per detection. At 1920x1920 input with YOLOX-S, typical inference is 11-21ms depending on scene complexity.
 
 ---
 
@@ -633,44 +637,54 @@ snapshots:
 
 **Structure**:
 ```yaml
-camera:
-  # Camera connection
-  ip: "192.168.1.100"
-  username: "admin"
-  password: "..."
-  stream: "main"  # "main" or "sub"
+cameras:
+  - id: "cam1"
+    name: "Main Backyard View"
+    ip: "192.168.1.100"
+    stream: "main"  # "main" or "sub"
+    enabled: true
+    protocol: "rtsp-tcp"
 
-  # Frame processing
-  target_width: 1280
-  target_height: 720
-  buffer_size: 1
+    # Frame processing
+    target_width: 1920
+    target_height: 1080
+    buffer_size: 1
+
+    # Optional per-camera overrides
+    detection_overrides:
+      conf_threshold: 0.40
+      class_confidence_overrides:
+        bird: 0.65
 
 detection:
   # Model
-  model: "yolov8x-worldv2.pt"
+  model:
+    name: "yolox-s"
+    weights: "models/yolox/yolox_s.pth"
   device: "cuda:0"
 
-  # YOLOX settings
-  use_yolo_world: true
-  yolo_world_classes: [...]
+  # Input resolution
+  input_size: [1920, 1920]
 
   # Two-stage pipeline
   use_two_stage: true
   enable_species_classification: true
 
   # Thresholds
-  confidence: 0.25
-  iou_threshold: 0.45
-  min_box_area: 50
+  conf_threshold: 0.15
+  nms_threshold: 0.45
+  min_box_area: 300
   max_detections: 300
+  wildlife_only: true
 
 species_classification:
   enabled: true
-  confidence_threshold: 0.3
+  confidence_threshold: 0.5
   inat_classifier:
     model_name: "timm/eva02_large_patch14_clip_336.merged2b_ft_inat21"
-    taxonomy_file: "models/inat2021_taxonomy_simple.json"
+    taxonomy_file: "models/inat2021_taxonomy.json"
     input_size: 336
+    use_hierarchical: true
 
 web:
   host: "0.0.0.0"
@@ -859,11 +873,12 @@ Total: ~46ms end-to-end (conservative estimate)
 
 | Component | Memory | Notes |
 |-----------|--------|-------|
-| YOLOX model | ~69MB | GPU VRAM |
-| iNaturalist model | ~1.5GB | GPU VRAM |
+| YOLOX model | ~500MB | GPU VRAM |
+| iNaturalist model | ~1.5GB | GPU VRAM (if Stage 2 enabled) |
 | Frame buffers | ~50MB | CPU RAM |
 | Python overhead | ~500MB | CPU RAM |
-| **Total** | **~2.5GB** | Peak usage |
+| **Total (Stage 1 only)** | **~1GB VRAM** | Without Stage 2 |
+| **Total (Stage 1+2)** | **~2GB VRAM** | Per camera |
 
 ### GPU Utilization
 
@@ -975,8 +990,9 @@ telescope_cam_detection/
 │   └── config.yaml                 # System configuration
 ├── src/                            # Core modules
 │   ├── stream_capture.py
-│   ├── inference_engine.py
-│   ├── two_stage_pipeline.py
+│   ├── inference_engine_yolox.py    # YOLOX detection engine
+│   ├── yolox_detector.py           # YOLOX model wrapper
+│   ├── two_stage_pipeline_yolox.py # Two-stage orchestration
 │   ├── species_classifier.py
 │   ├── species_activity_patterns.py  # 128+ species activity database
 │   ├── detection_processor.py
@@ -984,15 +1000,19 @@ telescope_cam_detection/
 │   ├── time_of_day_filter.py       # Activity-based filtering
 │   ├── snapshot_saver.py
 │   ├── web_server.py
-│   └── visualization_utils.py
+│   ├── visualization_utils.py
+│   ├── image_enhancement.py        # Optional Real-ESRGAN/CLAHE
+│   └── coco_constants.py           # COCO class mappings
 ├── web/                            # Web UI assets
 │   ├── index.html
 │   ├── style.css
 │   └── app.js
 ├── models/                         # Model weights & taxonomy
-│   ├── yolov8x-worldv2.pt         # Auto-downloaded
-│   ├── inat2021_taxonomy.json     # Species mapping
-│   └── inat2021_taxonomy_simple.json
+│   ├── yolox/
+│   │   └── yolox_s.pth            # YOLOX-S weights
+│   ├── inat2021_taxonomy.json     # Full hierarchical taxonomy
+│   └── enhancement/               # Optional enhancement models
+│       └── RealESRGAN_x4plus.pth
 ├── clips/                          # Saved detections
 │   ├── *.jpg                       # Raw captures
 │   ├── *_annotated.jpg            # With bounding boxes
@@ -1137,6 +1157,7 @@ journalctl -u telescope_detection.service -f
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2025-10-05
+**Document Version**: 2.0
+**Last Updated**: 2025-10-14
+**System Version**: v1.2 (YOLOX)
 **Author**: Claude (AI Assistant) + Damen
