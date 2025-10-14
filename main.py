@@ -1045,20 +1045,25 @@ class TelescopeDetectionSystem:
         logger.info("=" * 80)
 
 
-def signal_handler(signum, frame):
-    """Handle shutdown signals."""
-    logger.info("Shutdown signal received")
-    sys.exit(0)
-
-
 def main():
     """Main entry point."""
-    # Register signal handlers
+    # Create system instance first
+    system = TelescopeDetectionSystem()
+
+    # Signal handler that properly cleans up resources
+    def signal_handler(signum, frame):
+        """Handle shutdown signals with proper cleanup."""
+        logger.info("Shutdown signal received")
+        try:
+            system.stop()
+        except Exception as e:
+            logger.error(f"Error during shutdown cleanup: {e}")
+        finally:
+            sys.exit(0)
+
+    # Register signal handlers (after system is created)
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-
-    # Create and start system
-    system = TelescopeDetectionSystem()
 
     try:
         # Load configuration
