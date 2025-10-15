@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Performance optimizations** (#133, #134, #138) - 2025-10-15
+  - WebSocket message optimization: Skip empty detection frames, reducing network traffic by 80-95%
+  - Real-ESRGAN LRU cache: 95-99% reduction in enhancement time for repeated detections
+  - Batched GPU inference foundation: `detect_batch()` method for future multi-camera batching
+  - Perceptual hash-based cache with configurable size (default: 100 entries)
+  - Cache hit rate tracking and performance statistics
+  - Status updates sent every 5 seconds when no wildlife detected
+  - Enables Real-ESRGAN in production (previously too slow at 1000ms per enhancement)
+
 - **Grid view enhancements for multi-camera monitoring** (#94) - 2025-10-15
   - Layout selector dropdown (auto, 1×1, 2×1, 2×2, 3×2, 3×3)
   - Auto layout based on number of visible cameras
