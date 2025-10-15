@@ -319,7 +319,29 @@ species_classification:
 web:
   host: "0.0.0.0"    # Bind address (0.0.0.0 = all interfaces)
   port: 8000         # HTTP port
+  mjpeg_fps: 30      # MJPEG stream frame rate (frames per second)
+  jpeg_quality: 85   # JPEG compression quality (0-100, higher = better quality)
 ```
+
+### Web Server Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `host` | string | "0.0.0.0" | Bind address (0.0.0.0 = all network interfaces) |
+| `port` | int | 8000 | HTTP server port |
+| `mjpeg_fps` | int | 30 | MJPEG stream frame rate (1-60 fps) |
+| `jpeg_quality` | int | 85 | JPEG compression quality (0-100, higher = better quality/larger size) |
+
+**MJPEG Stream Settings:**
+- **Higher FPS** (mjpeg_fps): Smoother video, more CPU/bandwidth
+- **Lower FPS**: Less smooth, lower CPU/bandwidth
+- **Higher quality** (jpeg_quality): Better image, larger bandwidth
+- **Lower quality**: Compressed image, lower bandwidth
+
+**Bandwidth estimates (per camera at 1920x1080):**
+- `mjpeg_fps: 30, jpeg_quality: 85` → ~15-20 Mbps
+- `mjpeg_fps: 15, jpeg_quality: 75` → ~5-8 Mbps
+- `mjpeg_fps: 10, jpeg_quality: 65` → ~3-5 Mbps
 
 ### Access
 
@@ -395,6 +417,43 @@ snapshots:
 ---
 
 ## Performance Tuning
+
+### RTSP Stream Reliability
+
+Configure RTSP stream retry behavior for unreliable network conditions:
+
+```yaml
+performance:
+  rtsp_max_failures: 30      # Reconnect after N consecutive read failures
+  rtsp_retry_delay: 5.0      # Seconds to wait before retrying connection
+```
+
+**RTSP Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `rtsp_max_failures` | int | 30 | Max consecutive failures before reconnecting |
+| `rtsp_retry_delay` | float | 5.0 | Seconds to wait before retrying connection |
+
+**Use Cases:**
+- **WiFi cameras**: Increase `rtsp_retry_delay` to 10-15s for unstable connections
+- **Wired cameras**: Decrease to 2-3s for faster recovery
+- **Frequent dropouts**: Increase `rtsp_max_failures` to avoid excessive reconnects
+- **Immediate recovery**: Decrease to 10-15 for faster failover
+
+**Example - WiFi Camera:**
+```yaml
+performance:
+  rtsp_max_failures: 50      # Allow more failures before reconnect
+  rtsp_retry_delay: 10.0     # Wait longer between retries (WiFi recovery)
+```
+
+**Example - Wired Camera:**
+```yaml
+performance:
+  rtsp_max_failures: 15      # Reconnect quickly on failures
+  rtsp_retry_delay: 2.0      # Short retry delay (fast recovery)
+```
 
 ### Inference Speed vs Quality
 
