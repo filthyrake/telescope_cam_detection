@@ -18,7 +18,8 @@ from src.constants import (
     QUEUE_GET_TIMEOUT_SECONDS,
     LOG_DROPPED_EVERY_N,
     ERROR_SLEEP_SECONDS,
-    THREAD_JOIN_TIMEOUT_SECONDS
+    THREAD_JOIN_TIMEOUT_SECONDS,
+    MIN_TIME_DELTA
 )
 
 logger = logging.getLogger(__name__)
@@ -212,7 +213,7 @@ class DetectionProcessor:
                     should_log = (self.dropped_results % LOG_DROPPED_EVERY_N == 0) or (time_since_last_warning >= 10.0)
 
                     if should_log:
-                        drop_rate = self.drop_count_since_warning / max(time_since_last_warning, 0.001)
+                        drop_rate = self.drop_count_since_warning / max(time_since_last_warning, MIN_TIME_DELTA)
                         total_drop_rate = self.dropped_results / max(self.processed_count, 1)
                         logger.warning(
                             f"Output queue full: dropped {self.dropped_results} total results "

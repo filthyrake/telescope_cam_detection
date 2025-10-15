@@ -202,9 +202,19 @@ class TelescopeDetectionSystem:
             if not isinstance(input_size, list) or len(input_size) != 2:
                 logger.error(f"Invalid input_size: {input_size} (must be [height, width])")
                 return False
-            if not all(isinstance(dim, int) and dim > 0 and MIN_INPUT_DIMENSION <= dim <= MAX_INPUT_DIMENSION for dim in input_size):
-                logger.error(f"Invalid input_size dimensions: {input_size} (must be positive integers {MIN_INPUT_DIMENSION}-{MAX_INPUT_DIMENSION})")
-                return False
+
+            # Validate each dimension separately for clearer error messages
+            for idx, dim in enumerate(input_size):
+                dim_name = "height" if idx == 0 else "width"
+                if not isinstance(dim, int):
+                    logger.error(f"input_size {dim_name} at index {idx} is not an integer: {dim}")
+                    return False
+                if dim <= 0:
+                    logger.error(f"input_size {dim_name} at index {idx} is not positive: {dim}")
+                    return False
+                if not (MIN_INPUT_DIMENSION <= dim <= MAX_INPUT_DIMENSION):
+                    logger.error(f"input_size {dim_name} at index {idx} is out of range ({MIN_INPUT_DIMENSION}-{MAX_INPUT_DIMENSION}): {dim}")
+                    return False
 
             # Warn if non-square (YOLOX works best with square inputs)
             if input_size[0] != input_size[1]:

@@ -61,3 +61,6 @@ WEBSOCKET_HEARTBEAT_INTERVAL_SECONDS = 1.0
 # ============================================================================
 # FPS calculation interval (seconds)
 FPS_CALCULATION_INTERVAL_SECONDS = 1.0
+
+# Minimum time delta for rate calculations (avoids division by zero)
+MIN_TIME_DELTA = 0.001
