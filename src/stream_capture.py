@@ -239,8 +239,9 @@ class RTSPStreamCapture:
                     self.dropped_frames += 1
 
                 # Calculate FPS every second
-                if time.time() - self.last_fps_check >= FPS_CALCULATION_INTERVAL_SECONDS:
-                    self.fps = self.frame_count / (time.time() - self.last_fps_check)
+                elapsed = time.time() - self.last_fps_check
+                if elapsed >= FPS_CALCULATION_INTERVAL_SECONDS:
+                    self.fps = self.frame_count / elapsed if elapsed > 0 else 0.0
                     self.last_fps_check = time.time()
                     self.frame_count = 0
 
@@ -248,8 +249,11 @@ class RTSPStreamCapture:
                         logger.debug(f"FPS: {self.fps:.1f}, Dropped: {self.dropped_frames}")
                         self.dropped_frames = 0
 
-            except Exception as e:
-                logger.error(f"Error in capture loop: {e}")
+            except (RuntimeError, ValueError, IOError, OSError) as e:
+                logger.error(f"[{self.camera_id}] Error in capture loop: {e}", exc_info=True)
+                # Check if shutdown was requested before sleeping
+                if self.stop_event.is_set():
+                    break
                 time.sleep(ERROR_SLEEP_SECONDS)
 
     def _reconnect(self) -> bool:

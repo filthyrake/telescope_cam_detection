@@ -19,6 +19,7 @@ from species_classifier import SpeciesClassifier
 from src.coco_constants import CLASS_ID_TO_CATEGORY
 from src.image_enhancement import ImageEnhancer
 from src.species_activity_patterns import is_species_likely_active, get_species_activity
+from src.bbox_utils import ensure_valid_bbox
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ class TwoStageDetectionPipeline:
                 self.enhancer = ImageEnhancer(**enhancer_params)
                 logger.info(f"✓ Image enhancer loaded (cache size: {self.enhancement_cache_size})")
             except Exception as e:
-                logger.error(f"Failed to load image enhancer: {e}")
+                logger.error(f"Failed to load image enhancer (method={enhancement_config.get('method', 'none')}): {e}", exc_info=True)
                 logger.warning("Continuing without image enhancement")
 
         # Performance tracking
@@ -222,6 +223,14 @@ class TwoStageDetectionPipeline:
         class_name = detection.get('class_name', '')
         bbox = detection.get('bbox', {})
 
+        # Validate and normalize bbox (Issue #117)
+        validated_bbox = ensure_valid_bbox(bbox)
+        if validated_bbox != bbox:
+            detection['bbox'] = validated_bbox
+            bbox = validated_bbox
+        else:
+            bbox = validated_bbox
+
         # Determine classifier category
         category = self.class_id_to_category.get(class_id)
 
@@ -243,6 +252,7 @@ class TwoStageDetectionPipeline:
         crop_h = y2 - y1
 
         # Check minimum size BEFORE padding (skip Stage 2 for tiny detections)
+        # Note: ensure_valid_bbox() already enforces min_size=1, so crop dimensions are always >= 1
         if crop_w < self.min_crop_size or crop_h < self.min_crop_size:
             logger.debug(f"Skipping Stage 2: crop too small ({crop_w}x{crop_h} < {self.min_crop_size}x{self.min_crop_size})")
             self._set_detection_species_fields(detection, None, 0.0, category, None)
@@ -270,21 +280,34 @@ class TwoStageDetectionPipeline:
 
         if x2_padded <= x1_padded or y2_padded <= y1_padded:
             # Invalid crop
+            logger.debug(f"Invalid crop coordinates: x[{x1_padded}:{x2_padded}] y[{y1_padded}:{y2_padded}]")
             self._set_detection_species_fields(detection, None, 0.0, category, None)
             return detection
 
         # Crop frame (GPU tensor slicing or NumPy slicing)
-        crop = frame[y1_padded:y2_padded, x1_padded:x2_padded]
+        try:
+            crop = frame[y1_padded:y2_padded, x1_padded:x2_padded]
+        except (IndexError, RuntimeError) as e:
+            logger.warning(f"Failed to crop frame: {e}")
+            self._set_detection_species_fields(detection, None, 0.0, category, None)
+            return detection
 
-        # Check crop validity
+        # Check crop validity (empty tensor/array check)
         if isinstance(crop, torch.Tensor):
             if crop.numel() == 0:
+                logger.debug(f"Empty crop tensor for detection at bbox: {bbox}")
+                self._set_detection_species_fields(detection, None, 0.0, category, None)
+                return detection
+        elif isinstance(crop, np.ndarray):
+            if crop.size == 0:
+                logger.debug(f"Empty crop array for detection at bbox: {bbox}")
                 self._set_detection_species_fields(detection, None, 0.0, category, None)
                 return detection
         else:
-            if crop.size == 0:
-                self._set_detection_species_fields(detection, None, 0.0, category, None)
-                return detection
+            # Unknown type
+            logger.warning(f"Unknown crop type: {type(crop)}, skipping Stage 2")
+            self._set_detection_species_fields(detection, None, 0.0, category, None)
+            return detection
 
         # Apply image enhancement if configured (with LRU caching)
         if self.enhancer is not None:
@@ -342,7 +365,7 @@ class TwoStageDetectionPipeline:
                             logger.info(f"Enhancement performance (last {recent_count} enhancements): {avg_enhancement:.1f}ms avg")
                     self.last_perf_log_time = current_time
             except Exception as e:
-                logger.error(f"Enhancement failed, using original crop: {e}")
+                logger.error(f"Enhancement failed for {class_name} detection (bbox={bbox}), using original crop: {e}", exc_info=True)
 
         # Run species classification
         classifier = self.species_classifiers[category]
@@ -418,7 +441,7 @@ class TwoStageDetectionPipeline:
                 self._set_detection_species_fields(detection, None, 0.0, category, None)
 
         except Exception as e:
-            logger.error(f"Species classification failed: {e}")
+            logger.error(f"Species classification failed for {class_name} (category={category}, bbox={bbox}): {e}", exc_info=True)
             detection['species'] = None
             detection['species_confidence'] = 0.0
             detection['taxonomic_level'] = None

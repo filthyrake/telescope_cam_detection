@@ -9,11 +9,12 @@ import time
 import logging
 from typing import Optional, List, Dict, Any
 from queue import Queue, Empty
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 import numpy as np
 
 from src.yolox_detector import YOLOXDetector
 from src.shared_inference_coordinator import SharedInferenceCoordinator
+from src.bbox_utils import ensure_valid_bbox
 from src.constants import (
     QUEUE_GET_TIMEOUT_SECONDS,
     LOG_DROPPED_EVERY_N,
@@ -100,6 +101,9 @@ class InferenceEngine:
         self.is_loaded = False
         self.stop_event = Event()
         self.inference_thread: Optional[Thread] = None
+
+        # Thread-safe settings access (Issue #119)
+        self.settings_lock = Lock()
 
         # Performance metrics
         self.inference_count = 0  # Reset every second for FPS calculation
@@ -262,10 +266,11 @@ class InferenceEngine:
                     # Send to output queue
                     self._queue_result(result)
 
-            except Exception as e:
-                logger.error(f"Error in inference loop: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
+            except (RuntimeError, ValueError, TypeError, AttributeError) as e:
+                logger.error(f"Error in inference loop for camera {self.camera_id}: {e}", exc_info=True)
+                # Check if shutdown was requested before sleeping
+                if self.stop_event.is_set():
+                    break
                 time.sleep(ERROR_SLEEP_SECONDS)
 
     def _handle_inference_callback(
@@ -364,6 +369,7 @@ class InferenceEngine:
     ) -> List[Dict[str, Any]]:
         """
         Apply post-processing to detections (filtering, two-stage classification).
+        Thread-safe: creates snapshot of settings before processing.
 
         Args:
             detections: Raw detections from detector
@@ -372,25 +378,36 @@ class InferenceEngine:
         Returns:
             Filtered and processed detections
         """
+        # Thread-safe settings snapshot (Issue #119)
+        with self.settings_lock:
+            conf_threshold = self.conf_threshold
+            min_box_area = self.min_box_area
+            max_det = self.max_det
+            class_confidence_overrides = self.class_confidence_overrides.copy()
+            class_size_constraints = self.class_size_constraints.copy()
+
         # Filter by confidence overrides and size constraints
         filtered_detections = []
         for det in detections:
+            # Validate and normalize bbox (Issue #117)
+            det['bbox'] = ensure_valid_bbox(det['bbox'])
+
             class_name = det['class_name']
             confidence = det['confidence']
             box_area = det['bbox']['area']
 
             # Apply per-class confidence threshold
-            class_threshold = self.class_confidence_overrides.get(class_name, self.conf_threshold)
+            class_threshold = class_confidence_overrides.get(class_name, conf_threshold)
             if confidence < class_threshold:
                 continue
 
             # Filter by minimum box area (global)
-            if self.min_box_area > 0 and box_area < self.min_box_area:
+            if min_box_area > 0 and box_area < min_box_area:
                 continue
 
             # Filter by per-class size constraints
-            if class_name in self.class_size_constraints:
-                constraints = self.class_size_constraints[class_name]
+            if class_name in class_size_constraints:
+                constraints = class_size_constraints[class_name]
                 if 'min' in constraints and box_area < constraints['min']:
                     continue
                 if 'max' in constraints and box_area > constraints['max']:
@@ -399,7 +416,7 @@ class InferenceEngine:
             filtered_detections.append(det)
 
             # Stop if we hit max detections
-            if len(filtered_detections) >= self.max_det:
+            if len(filtered_detections) >= max_det:
                 break
 
         # Stage 2: Run species classification if enabled
@@ -462,6 +479,7 @@ class InferenceEngine:
     ):
         """
         Update inference settings without restarting (hot-reload).
+        Thread-safe: uses lock to prevent race conditions with inference thread.
 
         Args:
             conf_threshold: New confidence threshold
@@ -471,38 +489,39 @@ class InferenceEngine:
             class_confidence_overrides: New per-class confidence overrides
             class_size_constraints: New per-class size constraints
         """
-        updated_settings = []
+        with self.settings_lock:
+            updated_settings = []
 
-        if conf_threshold is not None and conf_threshold != self.conf_threshold:
-            self.conf_threshold = conf_threshold
-            if self.detector:
-                self.detector.conf_threshold = conf_threshold
-            updated_settings.append(f"conf_threshold: {conf_threshold}")
+            if conf_threshold is not None and conf_threshold != self.conf_threshold:
+                self.conf_threshold = conf_threshold
+                if self.detector:
+                    self.detector.conf_threshold = conf_threshold
+                updated_settings.append(f"conf_threshold: {conf_threshold}")
 
-        if nms_threshold is not None and nms_threshold != self.nms_threshold:
-            self.nms_threshold = nms_threshold
-            if self.detector:
-                self.detector.nms_threshold = nms_threshold
-            updated_settings.append(f"nms_threshold: {nms_threshold}")
+            if nms_threshold is not None and nms_threshold != self.nms_threshold:
+                self.nms_threshold = nms_threshold
+                if self.detector:
+                    self.detector.nms_threshold = nms_threshold
+                updated_settings.append(f"nms_threshold: {nms_threshold}")
 
-        if min_box_area is not None and min_box_area != self.min_box_area:
-            self.min_box_area = min_box_area
-            updated_settings.append(f"min_box_area: {min_box_area}")
+            if min_box_area is not None and min_box_area != self.min_box_area:
+                self.min_box_area = min_box_area
+                updated_settings.append(f"min_box_area: {min_box_area}")
 
-        if max_det is not None and max_det != self.max_det:
-            self.max_det = max_det
-            updated_settings.append(f"max_det: {max_det}")
+            if max_det is not None and max_det != self.max_det:
+                self.max_det = max_det
+                updated_settings.append(f"max_det: {max_det}")
 
-        if class_confidence_overrides is not None:
-            self.class_confidence_overrides = class_confidence_overrides
-            updated_settings.append(f"class_confidence_overrides: {class_confidence_overrides}")
+            if class_confidence_overrides is not None:
+                self.class_confidence_overrides = class_confidence_overrides
+                updated_settings.append(f"class_confidence_overrides: {class_confidence_overrides}")
 
-        if class_size_constraints is not None:
-            self.class_size_constraints = class_size_constraints
-            updated_settings.append(f"class_size_constraints: {class_size_constraints}")
+            if class_size_constraints is not None:
+                self.class_size_constraints = class_size_constraints
+                updated_settings.append(f"class_size_constraints: {class_size_constraints}")
 
-        if updated_settings:
-            logger.info(f"InferenceEngine settings updated: {', '.join(updated_settings)}")
+            if updated_settings:
+                logger.info(f"InferenceEngine settings updated: {', '.join(updated_settings)}")
 
     def get_stats(self) -> Dict[str, Any]:
         """Get inference statistics"""
