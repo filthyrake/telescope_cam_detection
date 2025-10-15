@@ -9,6 +9,7 @@ import copy
 import json
 import time
 import logging
+import torch
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from pathlib import Path
 import cv2
@@ -668,10 +669,23 @@ class WebServer:
             return
 
         while True:
-            if frame_source and hasattr(frame_source, 'latest_frame'):
-                # Get frame copy with thread safety
-                with frame_source.frame_lock:
-                    frame = frame_source.latest_frame.copy() if frame_source.latest_frame is not None else None
+            if frame_source:
+                # Get frame as NumPy array (handles both GPU tensors and NumPy arrays)
+                if hasattr(frame_source, 'get_latest_frame_as_numpy'):
+                    # GPU capture has helper method
+                    frame = frame_source.get_latest_frame_as_numpy()
+                elif hasattr(frame_source, 'latest_frame'):
+                    # Fallback for legacy capture
+                    with frame_source.frame_lock:
+                        if frame_source.latest_frame is not None:
+                            if isinstance(frame_source.latest_frame, torch.Tensor):
+                                frame = frame_source.latest_frame.cpu().numpy()
+                            else:
+                                frame = frame_source.latest_frame.copy()
+                        else:
+                            frame = None
+                else:
+                    frame = None
 
                 if frame is not None:
                     # Apply face masking if enabled

@@ -7,6 +7,7 @@ Supports privacy-preserving face masking with dual storage.
 import cv2
 import time
 import logging
+import torch
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Set, TYPE_CHECKING
@@ -109,11 +110,15 @@ class SnapshotSaver:
         Uses JPEG compression to reduce memory usage by ~10x.
 
         Args:
-            frame: Video frame (BGR numpy array)
+            frame: Video frame (BGR numpy array or GPU tensor)
             timestamp: Frame timestamp
         """
         if frame is None:
             return
+
+        # Convert GPU tensor to NumPy if needed (cv2.imencode needs NumPy)
+        if isinstance(frame, torch.Tensor):
+            frame = frame.cpu().numpy()
 
         with self.buffer_lock:
             if self.use_compressed_buffer:
@@ -236,13 +241,19 @@ class SnapshotSaver:
         - annotated/ : Masked frame with detection boxes (for web display)
 
         Args:
-            frame: Raw video frame
+            frame: Raw video frame (numpy array or GPU tensor)
             detection_result: Detection result
             annotated_frame: Frame with annotations (if save_annotated=True)
 
         Returns:
             Path to masked file (for web serving), or None if save failed
         """
+        # Convert GPU tensors to NumPy (cv2.imwrite needs NumPy)
+        if isinstance(frame, torch.Tensor):
+            frame = frame.cpu().numpy()
+        if isinstance(annotated_frame, torch.Tensor):
+            annotated_frame = annotated_frame.cpu().numpy()
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
         # Get primary detection class for filename
@@ -393,13 +404,19 @@ class SnapshotSaver:
         Save a video clip with pre and post detection frames.
 
         Args:
-            current_frame: Current video frame
+            current_frame: Current video frame (numpy array or GPU tensor)
             detection_result: Detection result
             annotated_frame: Current frame with annotations
 
         Returns:
             Path to saved file, or None if save failed
         """
+        # Convert GPU tensors to NumPy (cv2.VideoWriter needs NumPy)
+        if isinstance(current_frame, torch.Tensor):
+            current_frame = current_frame.cpu().numpy()
+        if isinstance(annotated_frame, torch.Tensor):
+            annotated_frame = annotated_frame.cpu().numpy()
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Get primary detection class
