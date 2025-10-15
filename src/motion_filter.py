@@ -116,8 +116,10 @@ class MotionFilter:
 
         # Count motion pixels
         motion_pixels = cv2.countNonZero(roi)
+        # Calculate bbox area (Issue #107)
+        # Guaranteed to be > 0 due to early return check above (lines 112-113)
         bbox_area = (x2 - x1) * (y2 - y1)
-        motion_ratio = motion_pixels / bbox_area if bbox_area > 0 else 0.0
+        motion_ratio = motion_pixels / bbox_area
 
         # Check if motion exceeds minimum threshold
         has_motion = motion_pixels >= min_motion_pixels and motion_ratio > self.min_motion_ratio

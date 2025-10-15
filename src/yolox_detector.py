@@ -7,6 +7,7 @@ import torch
 import cv2
 import numpy as np
 import logging
+import time
 from typing import List, Dict, Any, Union
 from pathlib import Path
 
@@ -73,37 +74,58 @@ class YOLOXDetector:
         self.model = None
         self.exp = None
 
-    def load_model(self) -> bool:
-        """Load YOLOX model"""
-        try:
-            logger.info(f"Loading YOLOX model: {self.model_name}")
-            logger.info(f"Weights: {self.model_path}")
+    def load_model(self, max_retries: int = 3) -> bool:
+        """
+        Load YOLOX model with retry logic (Issue #110).
 
-            # Get experiment config
-            self.exp = get_exp(None, self.model_name)
-            self.exp.test_size = self.input_size
+        Args:
+            max_retries: Maximum number of retry attempts (default: 3)
 
-            # Load model
-            self.model = self.exp.get_model()
-            ckpt = torch.load(self.model_path, map_location="cpu")
-            self.model.load_state_dict(ckpt["model"])
+        Returns:
+            True if loaded successfully, False otherwise
+        """
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Loading YOLOX model: {self.model_name} (attempt {attempt + 1}/{max_retries})")
+                logger.info(f"Weights: {self.model_path}")
 
-            # Move to device and set to eval mode
-            self.model.to(self.device)
-            self.model.eval()
+                # Get experiment config
+                self.exp = get_exp(None, self.model_name)
+                self.exp.test_size = self.input_size
 
-            logger.info(f"✓ YOLOX loaded successfully")
-            logger.info(f"  Input size: {self.input_size}")
-            logger.info(f"  Num classes: {self.exp.num_classes} (COCO)")
-            logger.info(f"  Confidence threshold: {self.conf_threshold}")
+                # Load model
+                self.model = self.exp.get_model()
+                ckpt = torch.load(self.model_path, map_location="cpu")
+                self.model.load_state_dict(ckpt["model"])
 
-            return True
+                # Move to device and set to eval mode
+                self.model.to(self.device)
+                self.model.eval()
 
-        except Exception as e:
-            logger.error(f"Failed to load YOLOX model: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return False
+                logger.info(f"✓ YOLOX loaded successfully")
+                logger.info(f"  Input size: {self.input_size}")
+                logger.info(f"  Num classes: {self.exp.num_classes} (COCO)")
+                logger.info(f"  Confidence threshold: {self.conf_threshold}")
+
+                return True
+
+            except (RuntimeError, OSError, IOError) as e:
+                # Retryable errors: CUDA OOM, file I/O, network issues
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    logger.warning(f"Model load failed (attempt {attempt + 1}/{max_retries}): {e}")
+                    logger.warning(f"Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Failed to load YOLOX model after {max_retries} attempts: {e}", exc_info=True)
+                    return False
+
+            except Exception as e:
+                # Non-retryable errors: configuration issues, missing files
+                logger.error(f"Failed to load YOLOX model: {e}", exc_info=True)
+                return False
+
+        return False
 
     def preprocess(self, img: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
         """
