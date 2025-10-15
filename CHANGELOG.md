@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Privacy-preserving face masking** (#88) - 2025-10-15
+  - Automatic face detection and masking in live feeds
+  - Multiple masking styles: gaussian blur, pixelate, black box, adaptive blur
+  - Configurable detection intervals for performance optimization
+  - Per-camera face masking overrides
+  - Backend retains unmasked versions for security investigation
+  - OpenCV Haar Cascade and MediaPipe backends supported
+
+- **Camera health monitoring and automatic restart** (#83) - 2025-10-14
+  - Automatic health monitoring for all cameras
+  - Configurable health checks: FPS, frame age, connection status, error rate
+  - Automatic restart with exponential backoff on failures
+  - Isolated camera restart (others continue running)
+  - Health score calculation (0-100)
+  - REST API endpoints for health status and manual restart
+  - Configurable restart attempts, cooldown periods, and backoff multipliers
+
+- **Configuration hot-reload** (#85) - 2025-10-14
+  - Reload configuration without system restart via API endpoint
+  - Hot-reloadable settings: detection thresholds, class overrides, snapshot settings, filters
+  - Identifies settings that require restart
+  - REST API: `POST /api/config/reload`
+  - Thread-safe reload with validation
+
 - **Time-of-day filtering system** (#22)
   - Detection-level confidence adjustment based on species activity patterns
   - Stage 2 species re-ranking using time-of-day context
@@ -16,6 +40,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Configurable confidence penalties for out-of-pattern detections
   - Alternative suggestions (e.g., "bird" at night → suggest "bat")
   - Examples: Birds at night penalized 70% (likely bugs/bats), reptiles at night penalized (need warmth)
+
+### Changed
+- **Code quality improvements** (#89) - 2025-10-15
+  - Removed hardcoded magic numbers throughout codebase
+  - Created centralized constants module (`src/constants.py`)
+  - Made RTSP retry settings configurable (`rtsp_max_failures`, `rtsp_retry_delay`)
+  - Made web streaming settings configurable (`mjpeg_fps`, `jpeg_quality`)
+  - Improved code maintainability and readability
+
+### Fixed
+- **Critical bug fixes** (#84) - 2025-10-14
+  - Fixed VideoWriter initialization and frame writing
+  - Fixed thread cleanup on shutdown
+  - Fixed YOLOX model validation
+  - Fixed configuration validation edge cases
+
+- **Missing type imports** (#86) - 2025-10-14
+  - Added missing Dict and Any imports from typing module
+  - Fixes type hints compatibility
 
 ### Coming Soon
 - Docker containerization for easy deployment
