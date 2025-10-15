@@ -85,21 +85,32 @@ def validate_bbox_coords(x1: float, y1: float, x2: float, y2: float, min_size: i
     return (x1, y1, x2, y2)
 
 
-def is_valid_bbox(bbox: Dict[str, float]) -> bool:
+def is_valid_bbox(bbox: Dict[str, float], min_size: int = 1) -> bool:
     """
     Check if bounding box has valid coordinates.
 
     Args:
         bbox: Bounding box dictionary with keys: x1, y1, x2, y2
+        min_size: Minimum width/height (default: 1 pixel)
 
     Returns:
         True if bbox is valid, False otherwise
+
+    Note:
+        This checks if a bbox is ALREADY valid (before normalization).
+        Use ensure_valid_bbox() to normalize an invalid bbox.
+        The definition of "valid" matches ensure_valid_bbox(): proper
+        ordering (x1 < x2, y1 < y2) and minimum size.
     """
     try:
         x1, y1, x2, y2 = bbox['x1'], bbox['y1'], bbox['x2'], bbox['y2']
 
-        # Check for invalid coordinates
+        # Check for proper ordering
         if x1 >= x2 or y1 >= y2:
+            return False
+
+        # Check for minimum size (consistent with ensure_valid_bbox)
+        if x2 - x1 < min_size or y2 - y1 < min_size:
             return False
 
         # Check for negative coordinates (optional, depends on use case)

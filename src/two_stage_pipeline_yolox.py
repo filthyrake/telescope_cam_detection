@@ -224,8 +224,12 @@ class TwoStageDetectionPipeline:
         bbox = detection.get('bbox', {})
 
         # Validate and normalize bbox (Issue #117)
-        bbox = ensure_valid_bbox(bbox)
-        detection['bbox'] = bbox
+        validated_bbox = ensure_valid_bbox(bbox)
+        if validated_bbox != bbox:
+            detection['bbox'] = validated_bbox
+            bbox = validated_bbox
+        else:
+            bbox = validated_bbox
 
         # Determine classifier category
         category = self.class_id_to_category.get(class_id)
@@ -248,12 +252,7 @@ class TwoStageDetectionPipeline:
         crop_h = y2 - y1
 
         # Check minimum size BEFORE padding (skip Stage 2 for tiny detections)
-        # Also ensure crop dimensions are positive (prevent zero-size crops - Issue #118)
-        if crop_w <= 0 or crop_h <= 0:
-            logger.debug(f"Skipping Stage 2: invalid crop dimensions ({crop_w}x{crop_h} <= 0)")
-            self._set_detection_species_fields(detection, None, 0.0, category, None)
-            return detection
-
+        # Note: ensure_valid_bbox() already enforces min_size=1, so crop dimensions are always >= 1
         if crop_w < self.min_crop_size or crop_h < self.min_crop_size:
             logger.debug(f"Skipping Stage 2: crop too small ({crop_w}x{crop_h} < {self.min_crop_size}x{self.min_crop_size})")
             self._set_detection_species_fields(detection, None, 0.0, category, None)
