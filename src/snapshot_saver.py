@@ -387,11 +387,20 @@ class SnapshotSaver:
             }
 
             metadata_file = metadata_dir / f"{primary_class}_{timestamp}_conf{confidence:.2f}.json"
+            temp_metadata_file = metadata_dir / f"{primary_class}_{timestamp}_conf{confidence:.2f}.json.tmp"
             try:
-                with open(metadata_file, 'w') as f:
+                # Atomic write: write to temp file, then rename (POSIX atomic operation)
+                with open(temp_metadata_file, 'w') as f:
                     json.dump(metadata, f, indent=2)
+                temp_metadata_file.rename(metadata_file)
             except Exception as e:
-                logger.warning(f"Failed to save metadata {metadata_file}: {e}")
+                logger.error(f"Failed to save metadata {metadata_file}: {e}", exc_info=True)
+                # Clean up temp file if it exists
+                try:
+                    if temp_metadata_file.exists():
+                        temp_metadata_file.unlink()
+                except Exception as cleanup_err:
+                    logger.debug(f"Failed to clean up temp file: {cleanup_err}")
                 # Continue - snapshot is more important than metadata
 
             # Update statistics

@@ -243,6 +243,12 @@ class TwoStageDetectionPipeline:
         crop_h = y2 - y1
 
         # Check minimum size BEFORE padding (skip Stage 2 for tiny detections)
+        # Also ensure crop dimensions are positive (prevent zero-size crops - Issue #118)
+        if crop_w <= 0 or crop_h <= 0:
+            logger.debug(f"Skipping Stage 2: invalid crop dimensions ({crop_w}x{crop_h} <= 0)")
+            self._set_detection_species_fields(detection, None, 0.0, category, None)
+            return detection
+
         if crop_w < self.min_crop_size or crop_h < self.min_crop_size:
             logger.debug(f"Skipping Stage 2: crop too small ({crop_w}x{crop_h} < {self.min_crop_size}x{self.min_crop_size})")
             self._set_detection_species_fields(detection, None, 0.0, category, None)
@@ -270,21 +276,34 @@ class TwoStageDetectionPipeline:
 
         if x2_padded <= x1_padded or y2_padded <= y1_padded:
             # Invalid crop
+            logger.debug(f"Invalid crop coordinates: x[{x1_padded}:{x2_padded}] y[{y1_padded}:{y2_padded}]")
             self._set_detection_species_fields(detection, None, 0.0, category, None)
             return detection
 
         # Crop frame (GPU tensor slicing or NumPy slicing)
-        crop = frame[y1_padded:y2_padded, x1_padded:x2_padded]
+        try:
+            crop = frame[y1_padded:y2_padded, x1_padded:x2_padded]
+        except (IndexError, RuntimeError) as e:
+            logger.warning(f"Failed to crop frame: {e}")
+            self._set_detection_species_fields(detection, None, 0.0, category, None)
+            return detection
 
-        # Check crop validity
+        # Check crop validity (empty tensor/array check)
         if isinstance(crop, torch.Tensor):
             if crop.numel() == 0:
+                logger.debug(f"Empty crop tensor for detection at bbox: {bbox}")
+                self._set_detection_species_fields(detection, None, 0.0, category, None)
+                return detection
+        elif isinstance(crop, np.ndarray):
+            if crop.size == 0:
+                logger.debug(f"Empty crop array for detection at bbox: {bbox}")
                 self._set_detection_species_fields(detection, None, 0.0, category, None)
                 return detection
         else:
-            if crop.size == 0:
-                self._set_detection_species_fields(detection, None, 0.0, category, None)
-                return detection
+            # Unknown type
+            logger.warning(f"Unknown crop type: {type(crop)}, skipping Stage 2")
+            self._set_detection_species_fields(detection, None, 0.0, category, None)
+            return detection
 
         # Apply image enhancement if configured (with LRU caching)
         if self.enhancer is not None:

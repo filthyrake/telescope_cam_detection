@@ -239,8 +239,9 @@ class RTSPStreamCapture:
                     self.dropped_frames += 1
 
                 # Calculate FPS every second
-                if time.time() - self.last_fps_check >= FPS_CALCULATION_INTERVAL_SECONDS:
-                    self.fps = self.frame_count / (time.time() - self.last_fps_check)
+                elapsed = time.time() - self.last_fps_check
+                if elapsed >= FPS_CALCULATION_INTERVAL_SECONDS:
+                    self.fps = self.frame_count / elapsed if elapsed > 0 else 0.0
                     self.last_fps_check = time.time()
                     self.frame_count = 0
 
