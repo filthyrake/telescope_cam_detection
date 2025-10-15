@@ -35,7 +35,7 @@ class RTSPStreamCaptureGPU:
         max_failures: int = 30,
         retry_delay: float = 5.0,
         keep_frames_on_gpu: bool = True,
-        device: str = "cuda:0"
+        device: Union[str, torch.device] = "cuda:0"
     ):
         """
         Initialize GPU-accelerated RTSP stream capture.

@@ -65,6 +65,10 @@ class SpeciesClassifier:
         self.mean = [0.485, 0.456, 0.406]  # ImageNet normalization
         self.std = [0.229, 0.224, 0.225]
 
+        # Cached GPU tensors for normalization (created after model is loaded)
+        self._mean_tensor: Optional[torch.Tensor] = None
+        self._std_tensor: Optional[torch.Tensor] = None
+
         # Hierarchical taxonomy thresholds
         self.hierarchy_thresholds = {
             'species': 0.5,    # Full species name (e.g., "Desert Cottontail")
@@ -207,6 +211,10 @@ class SpeciesClassifier:
             self.model = self.model.to(self.device)
             self.model.eval()
 
+            # Cache mean/std tensors on GPU for efficient preprocessing
+            self._mean_tensor = torch.tensor(self.mean, device=self.device).view(3, 1, 1)
+            self._std_tensor = torch.tensor(self.std, device=self.device).view(3, 1, 1)
+
             logger.info(f"Species classifier loaded on {self.device}")
             return True
 
@@ -253,10 +261,16 @@ class SpeciesClassifier:
             # Already correct size, just permute
             image = image.permute(2, 0, 1).float()  # HxWxC → CxHxW
 
-        # Normalize (GPU operation)
+        # Normalize (GPU operation using cached tensors)
         image = image / 255.0
-        mean = torch.tensor(self.mean, device=self.device).view(3, 1, 1)
-        std = torch.tensor(self.std, device=self.device).view(3, 1, 1)
+        # Use cached mean/std tensors (created once in load_model)
+        if self._mean_tensor is None or self._std_tensor is None:
+            # Fallback: create on-the-fly if not cached (shouldn't happen normally)
+            mean = torch.tensor(self.mean, device=self.device).view(3, 1, 1)
+            std = torch.tensor(self.std, device=self.device).view(3, 1, 1)
+        else:
+            mean = self._mean_tensor
+            std = self._std_tensor
         image = (image - mean) / std
 
         # Add batch dimension
