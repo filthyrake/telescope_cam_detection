@@ -163,19 +163,18 @@ class DetectionProcessor:
                 except Empty:
                     continue
 
-                # Get current frame for motion filtering (thread-safe)
-                current_frame = self._get_frame_copy()
+                # Get current frame once (single GPU tensor copy - Issue #115)
+                # Motion filter only reads frame, so we can reuse same copy for snapshot
+                frame_copy = self._get_frame_copy()
 
-                # Process detections (includes motion filtering)
-                processed_result = self._process_detections(detection_result, current_frame)
+                # Process detections (includes motion filtering - read-only operation)
+                processed_result = self._process_detections(detection_result, frame_copy)
 
                 # Add to history
                 self.detection_history.append(processed_result)
 
-                # Save snapshot if enabled and triggered (thread-safe frame access)
-                if self.snapshot_saver and self.frame_source:
-                    frame_copy = self._get_frame_copy()
-                    if frame_copy is not None:
+                # Save snapshot if enabled and triggered (reuse same frame_copy)
+                if self.snapshot_saver and frame_copy is not None:
                         # Add current frame to buffer for clip mode
                         self.snapshot_saver.add_frame_to_buffer(
                             frame_copy,
