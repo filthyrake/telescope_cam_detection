@@ -120,17 +120,18 @@ class SpeciesClassifier:
                     if not isinstance(taxonomy_data, dict):
                         raise ValueError(f"Invalid taxonomy format: expected dict, got {type(taxonomy_data)}")
 
-                    # Check for iNaturalist-style format (with 'classes' key)
+                    # Assign taxonomy data (before validation)
+                    self.taxonomy = taxonomy_data
+
+                    # Log based on format (iNaturalist vs direct mapping)
                     if 'classes' in taxonomy_data:
-                        self.taxonomy = taxonomy_data
                         logger.info(f"Loaded iNaturalist taxonomy with {len(taxonomy_data.get('classes', []))} classes")
                     else:
                         # Direct class_id -> species mapping
-                        self.taxonomy = taxonomy_data
                         logger.info(f"Loaded taxonomy with {len(taxonomy_data)} species")
 
-                    # Validate non-empty
-                    if not self.taxonomy or (isinstance(self.taxonomy, dict) and len(self.taxonomy) == 0):
+                    # Validate non-empty (Copilot feedback: simplified condition)
+                    if not self.taxonomy:
                         raise ValueError("Taxonomy file is empty")
 
                 else:

@@ -116,9 +116,9 @@ class MotionFilter:
 
         # Count motion pixels
         motion_pixels = cv2.countNonZero(roi)
-        # Ensure bbox_area is always positive (defensive programming - Issue #107)
-        # After validation and clamping, this should always be > 0, but guarantee it
-        bbox_area = max(1, (x2 - x1) * (y2 - y1))
+        # Calculate bbox area (Issue #107)
+        # Guaranteed to be > 0 due to early return check above (lines 112-113)
+        bbox_area = (x2 - x1) * (y2 - y1)
         motion_ratio = motion_pixels / bbox_area
 
         # Check if motion exceeds minimum threshold
