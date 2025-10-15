@@ -122,10 +122,11 @@ class YOLOXDetector:
         img_tensor = img_tensor.to(self.device)
 
         # GPU-accelerated resize using torch.nn.functional
+        # Note: Both img_tensor.shape[2:] and self.input_size are (H, W) format for PyTorch
         if img_tensor.shape[2:] != self.input_size:
             img_tensor = torch.nn.functional.interpolate(
                 img_tensor,
-                size=self.input_size,
+                size=self.input_size,  # Expects (H, W) - matches our convention
                 mode='bilinear',
                 align_corners=False
             )

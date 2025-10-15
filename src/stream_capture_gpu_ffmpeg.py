@@ -30,6 +30,7 @@ class RTSPStreamCaptureGPU:
         camera_id: str = "default",
         camera_name: str = "Default Camera",
         use_tcp: bool = False,
+        buffer_size: Optional[int] = None,
         max_failures: int = 30,
         retry_delay: float = 5.0
     ):
@@ -44,6 +45,7 @@ class RTSPStreamCaptureGPU:
             camera_id: Unique identifier for this camera
             camera_name: Human-readable name for this camera
             use_tcp: Use TCP transport instead of UDP
+            buffer_size: Accepted for API compatibility, but not used (FFmpeg uses internal buffering)
             max_failures: Reconnect after N consecutive failures
             retry_delay: Seconds to wait before retrying connection
         """
@@ -54,8 +56,16 @@ class RTSPStreamCaptureGPU:
         self.camera_id = camera_id
         self.camera_name = camera_name
         self.use_tcp = use_tcp
+        self.buffer_size = buffer_size
         self.max_failures = max_failures
         self.retry_delay = retry_delay
+
+        # Warn if buffer_size is set (not used by FFmpeg subprocess)
+        if buffer_size is not None:
+            logger.warning(
+                f"[{self.camera_id}] buffer_size parameter is not used by FFmpeg GPU capture "
+                f"(FFmpeg uses internal buffering). Ignoring buffer_size={buffer_size}"
+            )
 
         self.ffmpeg_process: Optional[subprocess.Popen] = None
         self.stop_event = Event()
@@ -67,7 +77,8 @@ class RTSPStreamCaptureGPU:
         self.frame_lock = Lock()
 
         # Performance metrics
-        self.frame_count = 0
+        self.frame_count = 0  # Reset every second for FPS calculation
+        self.frame_id_counter = 0  # Never reset - monotonically increasing frame ID
         self.dropped_frames = 0
         self.last_fps_check = time.time()
         self.fps = 0.0
@@ -170,7 +181,7 @@ class RTSPStreamCaptureGPU:
                 logger.warning(f"[{self.camera_id}] Error stopping FFmpeg: {e}")
                 try:
                     self.ffmpeg_process.kill()
-                except:
+                except Exception:
                     pass
 
         self.is_connected = False
@@ -225,11 +236,12 @@ class RTSPStreamCaptureGPU:
                     self.frame_queue.put_nowait({
                         'frame': img,
                         'timestamp': timestamp,
-                        'frame_id': self.frame_count,
+                        'frame_id': self.frame_id_counter,  # Use separate counter for frame IDs
                         'camera_id': self.camera_id,
                         'camera_name': self.camera_name
                     })
-                    self.frame_count += 1
+                    self.frame_count += 1  # For FPS calculation (reset every second)
+                    self.frame_id_counter += 1  # Monotonically increasing (never reset)
                 except Full:
                     self.dropped_frames += 1
 
@@ -270,10 +282,10 @@ class RTSPStreamCaptureGPU:
             try:
                 self.ffmpeg_process.terminate()
                 self.ffmpeg_process.wait(timeout=2.0)
-            except:
+            except Exception:
                 try:
                     self.ffmpeg_process.kill()
-                except:
+                except Exception:
                     pass
             finally:
                 self.ffmpeg_process = None

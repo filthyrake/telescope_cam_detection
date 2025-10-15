@@ -798,6 +798,7 @@ class TelescopeDetectionSystem:
         performance_config = self.config.get('performance', {})
         max_failures = performance_config.get('rtsp_max_failures', 30)
         retry_delay = performance_config.get('rtsp_retry_delay', 5.0)
+        buffer_size = camera_config.get('buffer_size', performance_config.get('buffer_size', None))
 
         # Use GPU-accelerated capture (NVDEC h264_cuvid)
         stream_capture = RTSPStreamCaptureGPU(
@@ -808,6 +809,7 @@ class TelescopeDetectionSystem:
             camera_id=camera_id,
             camera_name=camera_name,
             use_tcp=use_tcp,
+            buffer_size=buffer_size,
             max_failures=max_failures,
             retry_delay=retry_delay
         )
