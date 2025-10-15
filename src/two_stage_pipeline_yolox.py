@@ -117,7 +117,7 @@ class TwoStageDetectionPipeline:
                 self.enhancer = ImageEnhancer(**enhancer_params)
                 logger.info(f"✓ Image enhancer loaded (cache size: {self.enhancement_cache_size})")
             except Exception as e:
-                logger.error(f"Failed to load image enhancer: {e}")
+                logger.error(f"Failed to load image enhancer (method={enhancement_config.get('method', 'none')}): {e}", exc_info=True)
                 logger.warning("Continuing without image enhancement")
 
         # Performance tracking
@@ -366,7 +366,7 @@ class TwoStageDetectionPipeline:
                             logger.info(f"Enhancement performance (last {recent_count} enhancements): {avg_enhancement:.1f}ms avg")
                     self.last_perf_log_time = current_time
             except Exception as e:
-                logger.error(f"Enhancement failed, using original crop: {e}")
+                logger.error(f"Enhancement failed for {class_name} detection (bbox={bbox}), using original crop: {e}", exc_info=True)
 
         # Run species classification
         classifier = self.species_classifiers[category]
@@ -442,7 +442,7 @@ class TwoStageDetectionPipeline:
                 self._set_detection_species_fields(detection, None, 0.0, category, None)
 
         except Exception as e:
-            logger.error(f"Species classification failed: {e}")
+            logger.error(f"Species classification failed for {class_name} (category={category}, bbox={bbox}): {e}", exc_info=True)
             detection['species'] = None
             detection['species_confidence'] = 0.0
             detection['taxonomic_level'] = None
