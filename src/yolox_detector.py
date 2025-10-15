@@ -119,8 +119,8 @@ class YOLOXDetector:
         if isinstance(img, torch.Tensor):
             # Already a tensor - just add batch dimension and ensure float
             img_tensor = img.permute(2, 0, 1).unsqueeze(0).float()
-            # Ensure it's on the correct device
-            if img_tensor.device != torch.device(self.device):
+            # Ensure it's on the correct device (compare device types for efficiency)
+            if img_tensor.device.type != 'cuda' or str(img_tensor.device) != self.device:
                 img_tensor = img_tensor.to(self.device)
         else:
             # NumPy array - convert to tensor
@@ -154,11 +154,8 @@ class YOLOXDetector:
             logger.error("Model not loaded")
             return []
 
-        # Get original image size (handle both NumPy and torch)
-        if isinstance(frame, torch.Tensor):
-            orig_h, orig_w = frame.shape[0], frame.shape[1]
-        else:
-            orig_h, orig_w = frame.shape[:2]
+        # Get original image size (NumPy or torch.Tensor both support shape[:2])
+        orig_h, orig_w = frame.shape[:2]
 
         # Preprocess
         img_tensor = self.preprocess(frame)
