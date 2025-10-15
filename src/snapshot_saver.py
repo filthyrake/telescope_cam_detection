@@ -473,6 +473,13 @@ class SnapshotSaver:
                 logger.error(f"Failed to open VideoWriter for {filepath}")
                 logger.error("Possible causes: missing codec, invalid path, or disk full")
                 self.save_failures += 1
+                # Clean up partial file if it exists
+                try:
+                    if filepath.exists():
+                        filepath.unlink()
+                        logger.debug(f"Removed partial video file: {filepath}")
+                except Exception as e:
+                    logger.error(f"Failed to remove partial file {filepath}: {e}")
                 return None
 
             # Write pre-detection frames (decode as needed)

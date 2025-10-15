@@ -210,7 +210,13 @@ class RTSPStreamCapture:
 
                 # Resize frame for inference (reduces latency)
                 if frame.shape[1] != self.target_width or frame.shape[0] != self.target_height:
-                    frame = cv2.resize(frame, (self.target_width, self.target_height))
+                    resized = cv2.resize(frame, (self.target_width, self.target_height))
+                    # Validate resize succeeded
+                    if resized is not None and resized.size > 0:
+                        frame = resized
+                    else:
+                        logger.warning(f"[{self.camera_id}] Invalid frame after resize, skipping")
+                        continue
 
                 # Store latest frame for video streaming (thread-safe)
                 with self.frame_lock:

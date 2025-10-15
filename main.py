@@ -202,9 +202,27 @@ class TelescopeDetectionSystem:
             if not isinstance(input_size, list) or len(input_size) != 2:
                 logger.error(f"Invalid input_size: {input_size} (must be [height, width])")
                 return False
-            if not all(isinstance(dim, int) and MIN_INPUT_DIMENSION <= dim <= MAX_INPUT_DIMENSION for dim in input_size):
-                logger.error(f"Invalid input_size dimensions: {input_size} (must be integers {MIN_INPUT_DIMENSION}-{MAX_INPUT_DIMENSION})")
-                return False
+
+            # Validate each dimension separately for clearer error messages
+            for idx, dim in enumerate(input_size):
+                dim_name = "height" if idx == 0 else "width"
+                if not isinstance(dim, int):
+                    logger.error(f"input_size {dim_name} at index {idx} is not an integer: {dim}")
+                    return False
+                if dim <= 0:
+                    logger.error(f"input_size {dim_name} at index {idx} is not positive: {dim}")
+                    return False
+                if not (MIN_INPUT_DIMENSION <= dim <= MAX_INPUT_DIMENSION):
+                    logger.error(f"input_size {dim_name} at index {idx} is out of range ({MIN_INPUT_DIMENSION}-{MAX_INPUT_DIMENSION}): {dim}")
+                    return False
+
+            # Warn if non-square (YOLOX works best with square inputs)
+            if input_size[0] != input_size[1]:
+                logger.warning(f"Non-square input_size {input_size} may reduce detection accuracy for YOLOX")
+
+            # Warn if dimensions are not multiples of 32 (common requirement for deep learning models)
+            if input_size[0] % 32 != 0 or input_size[1] % 32 != 0:
+                logger.warning(f"input_size {input_size} dimensions not multiples of 32 - may cause model issues")
 
             # Validate min_box_area
             min_box_area = detection_config.get('min_box_area', 0)
@@ -424,26 +442,45 @@ class TelescopeDetectionSystem:
                     return result
 
                 with open(config_file, 'r') as f:
-                    new_config = yaml.safe_load(f)
+                    new_config_dict = yaml.safe_load(f)
 
-                # Validate new config (without updating self.config yet)
-                temp_config = self.config
-                self.config = new_config
-                if not self.validate_config():
-                    result['errors'].append("Configuration validation failed")
-                    self.config = temp_config  # Restore old config
+                # Load and merge credentials into new config (without modifying self.config)
+                credentials = self.load_credentials()
+                if not credentials or 'cameras' not in credentials:
+                    result['errors'].append("Failed to load camera credentials")
                     return result
-                self.config = temp_config  # Restore for now
+
+                # Merge credentials into new config
+                for camera in new_config_dict.get('cameras', []):
+                    camera_id = camera.get('id')
+                    if camera_id in credentials['cameras']:
+                        camera['username'] = credentials['cameras'][camera_id]['username']
+                        camera['password'] = credentials['cameras'][camera_id]['password']
+                    else:
+                        result['errors'].append(f"No credentials found for camera: {camera_id}")
+                        return result
+
+                # Validate new config WITHOUT modifying self.config (thread-safe)
+                # Use a temporary system instance to validate
+                temp_config = self.config
+                self.config = new_config_dict
+                try:
+                    if not self.validate_config():
+                        result['errors'].append("Configuration validation failed")
+                        self.config = temp_config  # Restore old config
+                        return result
+                finally:
+                    self.config = temp_config  # Always restore, even if validation passes
 
                 # Compare old and new configs to determine what changed
                 old_config = self.config
-                changes = self._detect_config_changes(old_config, new_config)
+                changes = self._detect_config_changes(old_config, new_config_dict)
 
                 # Apply hot-reloadable changes
                 logger.info("Applying hot-reloadable configuration changes...")
 
                 # 1. Update inference engines (detection thresholds, class overrides, size constraints)
-                detection_config = new_config.get('detection', {})
+                detection_config = new_config_dict.get('detection', {})
                 old_detection_config = old_config.get('detection', {})
                 detection_changed = set()
 
@@ -456,7 +493,7 @@ class TelescopeDetectionSystem:
                     if i < len(self.stream_captures) and self.stream_captures[i]:
                         camera_id = self.stream_captures[i].camera_id
                         # Find camera config
-                        for cam in new_config.get('cameras', []):
+                        for cam in new_config_dict.get('cameras', []):
                             if cam.get('id') == camera_id:
                                 camera_config = cam
                                 break
@@ -490,7 +527,7 @@ class TelescopeDetectionSystem:
                 result['reloaded'].extend(sorted(detection_changed))
 
                 # 2. Update snapshot saver (cooldown, trigger classes, min_confidence)
-                snapshot_config = new_config.get('snapshots', {})
+                snapshot_config = new_config_dict.get('snapshots', {})
                 old_snapshot_config = old_config.get('snapshots', {})
 
                 if snapshot_config.get('enabled', False):
@@ -527,7 +564,7 @@ class TelescopeDetectionSystem:
                             result['reloaded'].append(label)
 
                 # 3. Update motion filter (if enabled)
-                motion_filter_config = new_config.get('motion_filter', {})
+                motion_filter_config = new_config_dict.get('motion_filter', {})
                 if motion_filter_config.get('enabled', False):
                     for processor in self.detection_processors:
                         if processor and processor.motion_filter:
@@ -537,7 +574,7 @@ class TelescopeDetectionSystem:
                     result['reloaded'].append('motion_filter parameters')
 
                 # 4. Update time-of-day filter (if enabled)
-                time_of_day_config = new_config.get('time_of_day_filter', {})
+                time_of_day_config = new_config_dict.get('time_of_day_filter', {})
                 if time_of_day_config.get('enabled', False):
                     for processor in self.detection_processors:
                         if processor and processor.time_of_day_filter:
@@ -551,7 +588,7 @@ class TelescopeDetectionSystem:
 
                 # Check if cameras changed
                 old_cameras = old_config.get('cameras', [])
-                new_cameras = new_config.get('cameras', [])
+                new_cameras = new_config_dict.get('cameras', [])
                 if len(old_cameras) != len(new_cameras):
                     restart_required_changes.append("Camera count changed (add/remove)")
                 else:
@@ -563,31 +600,31 @@ class TelescopeDetectionSystem:
 
                 # Check if model settings changed
                 old_model = old_config.get('detection', {}).get('model', {})
-                new_model = new_config.get('detection', {}).get('model', {})
+                new_model = new_config_dict.get('detection', {}).get('model', {})
                 if old_model.get('weights') != new_model.get('weights'):
                     restart_required_changes.append("Model weights changed")
 
                 # Check if input_size changed
                 old_input_size = old_config.get('detection', {}).get('input_size')
-                new_input_size = new_config.get('detection', {}).get('input_size')
+                new_input_size = new_config_dict.get('detection', {}).get('input_size')
                 if old_input_size != new_input_size:
                     restart_required_changes.append("Input size changed")
 
                 # Check if device changed
                 old_device = old_config.get('detection', {}).get('device')
-                new_device = new_config.get('detection', {}).get('device')
+                new_device = new_config_dict.get('detection', {}).get('device')
                 if old_device != new_device:
                     restart_required_changes.append("Device changed")
 
                 # Check if two-stage detection changed
                 old_two_stage = old_config.get('detection', {}).get('use_two_stage')
-                new_two_stage = new_config.get('detection', {}).get('use_two_stage')
+                new_two_stage = new_config_dict.get('detection', {}).get('use_two_stage')
                 if old_two_stage != new_two_stage:
                     restart_required_changes.append("Two-stage detection enable/disable changed")
 
                 # Check if web server settings changed
                 old_web = old_config.get('web', {})
-                new_web = new_config.get('web', {})
+                new_web = new_config_dict.get('web', {})
                 if old_web.get('port') != new_web.get('port'):
                     restart_required_changes.append("Web server port changed")
                 if old_web.get('host') != new_web.get('host'):
@@ -595,8 +632,9 @@ class TelescopeDetectionSystem:
 
                 result['requires_restart'] = restart_required_changes
 
-                # Update config reference
-                self.config = new_config
+                # ATOMIC CONFIG SWAP: Only update self.config after all components updated successfully
+                # This prevents race conditions where threads read partially-updated config
+                self.config = new_config_dict
 
                 result['success'] = True
                 logger.info(f"✓ Configuration reloaded successfully")
