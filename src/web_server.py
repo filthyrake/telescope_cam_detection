@@ -731,10 +731,17 @@ class WebServer:
                                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
                         else:
                             logger.error(f"Failed to encode frame for camera {camera_id} - frame may be corrupted or empty")
-                            # Continue to next frame instead of breaking stream
+                            # Yield placeholder error frame to prevent client hang
+                            error_frame = self._create_error_frame("Encoding failed")
+                            ret_error, buffer_error = cv2.imencode('.jpg', error_frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+                            if ret_error:
+                                frame_bytes = buffer_error.tobytes()
+                                yield (b'--frame\r\n'
+                                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
                     except Exception as e:
-                        logger.error(f"Exception encoding frame for camera {camera_id}: {e}")
-                        # Continue streaming - don't let one bad frame kill the stream
+                        logger.error(f"Exception encoding frame for camera {camera_id}: {e}", exc_info=True)
+                        # Break to close connection with proper error - don't let client hang
+                        break
 
             # Calculate sleep time from target FPS
             await asyncio.sleep(1.0 / self.mjpeg_fps)
@@ -807,6 +814,43 @@ class WebServer:
             (0, 255, 0),
             2
         )
+
+        return frame
+
+    def _create_error_frame(self, error_message: str, width: int = 640, height: int = 480) -> np.ndarray:
+        """
+        Create an error frame with text message.
+
+        Args:
+            error_message: Error message to display
+            width: Frame width
+            height: Frame height
+
+        Returns:
+            Error frame as NumPy array (BGR format)
+        """
+        # Create black frame
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+
+        # Add error text
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.7
+        color = (0, 0, 255)  # Red
+        thickness = 2
+
+        # Title
+        title = "ENCODING ERROR"
+        title_size = cv2.getTextSize(title, font, font_scale, thickness)[0]
+        title_x = (width - title_size[0]) // 2
+        title_y = height // 2 - 30
+        cv2.putText(frame, title, (title_x, title_y), font, font_scale, color, thickness)
+
+        # Error message
+        msg_font_scale = 0.5
+        msg_size = cv2.getTextSize(error_message, font, msg_font_scale, 1)[0]
+        msg_x = (width - msg_size[0]) // 2
+        msg_y = height // 2 + 10
+        cv2.putText(frame, error_message, (msg_x, msg_y), font, msg_font_scale, (255, 255, 255), 1)
 
         return frame
 
