@@ -174,7 +174,7 @@ class DetectionProcessor:
                 self.detection_history.append(processed_result)
 
                 # Save snapshot if enabled and triggered (reuse same frame_copy)
-                if self.snapshot_saver and frame_copy is not None:
+                if self.snapshot_saver and self.frame_source and frame_copy is not None:
                         # Add current frame to buffer for clip mode
                         self.snapshot_saver.add_frame_to_buffer(
                             frame_copy,
