@@ -1421,6 +1421,8 @@ class TelescopeDetectionSystem:
                     self._cleanup_failed_camera(i)
 
             if not self._validate_active_cameras(active_cameras, "cameras"):
+                # No cameras started - clean up (Issue #112)
+                self.stop()
                 return False
 
             logger.info(f"{len(active_cameras)}/{len(self.stream_captures)} camera(s) started successfully")
@@ -1448,6 +1450,8 @@ class TelescopeDetectionSystem:
             active_cameras = [i for i in active_cameras if i not in failed_inference]
 
             if not self._validate_active_cameras(active_cameras, "inference engines"):
+                # No inference engines started - clean up (Issue #112)
+                self.stop()
                 return False
 
             logger.info(f"{len(active_cameras)} inference engine(s) started successfully")
@@ -1470,6 +1474,8 @@ class TelescopeDetectionSystem:
             active_cameras = [i for i in active_cameras if i not in failed_processors]
 
             if not self._validate_active_cameras(active_cameras, "detection processors"):
+                # No detection processors started - clean up (Issue #112)
+                self.stop()
                 return False
 
             logger.info(f"{len(active_cameras)} detection processor(s) started successfully")

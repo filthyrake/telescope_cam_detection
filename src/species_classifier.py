@@ -7,6 +7,7 @@ import cv2
 import torch
 import logging
 import numpy as np
+import time
 from typing import Dict, Any, Optional, List, Tuple, Union
 from pathlib import Path
 import timm
@@ -86,29 +87,82 @@ class SpeciesClassifier:
         if use_hierarchical:
             logger.info("  Hierarchical taxonomy fallback enabled")
 
-    def _load_taxonomy(self, taxonomy_file: str):
+    def _load_taxonomy(self, taxonomy_file: str, require_taxonomy: bool = False):
         """
-        Load taxonomy mapping (class_id -> species_name).
+        Load taxonomy mapping (class_id -> species_name) with validation (Issue #111).
 
         Args:
             taxonomy_file: Path to taxonomy JSON or text file
+            require_taxonomy: If True, raise error on load failure; if False, warn and continue
+
+        Raises:
+            RuntimeError: If require_taxonomy=True and loading fails
         """
         import json
 
         try:
             taxonomy_path = Path(taxonomy_file)
-            if taxonomy_path.exists():
-                with open(taxonomy_path, 'r') as f:
-                    if taxonomy_path.suffix == '.json':
-                        self.taxonomy = json.load(f)
+            if not taxonomy_path.exists():
+                error_msg = f"Taxonomy file not found: {taxonomy_file}"
+                if require_taxonomy:
+                    raise FileNotFoundError(error_msg)
+                else:
+                    logger.warning(error_msg)
+                    logger.warning("Continuing without taxonomy - classification will use generic labels")
+                    self.taxonomy = {}
+                    return
+
+            with open(taxonomy_path, 'r') as f:
+                if taxonomy_path.suffix == '.json':
+                    taxonomy_data = json.load(f)
+
+                    # Validate JSON structure (Issue #111)
+                    if not isinstance(taxonomy_data, dict):
+                        raise ValueError(f"Invalid taxonomy format: expected dict, got {type(taxonomy_data)}")
+
+                    # Check for iNaturalist-style format (with 'classes' key)
+                    if 'classes' in taxonomy_data:
+                        self.taxonomy = taxonomy_data
+                        logger.info(f"Loaded iNaturalist taxonomy with {len(taxonomy_data.get('classes', []))} classes")
                     else:
-                        # Text file: one species per line
-                        self.taxonomy = {i: line.strip() for i, line in enumerate(f.readlines())}
-                logger.info(f"Loaded taxonomy with {len(self.taxonomy)} species")
+                        # Direct class_id -> species mapping
+                        self.taxonomy = taxonomy_data
+                        logger.info(f"Loaded taxonomy with {len(taxonomy_data)} species")
+
+                    # Validate non-empty
+                    if not self.taxonomy or (isinstance(self.taxonomy, dict) and len(self.taxonomy) == 0):
+                        raise ValueError("Taxonomy file is empty")
+
+                else:
+                    # Text file: one species per line
+                    lines = f.readlines()
+                    if not lines:
+                        raise ValueError("Taxonomy text file is empty")
+
+                    self.taxonomy = {i: line.strip() for i, line in enumerate(lines) if line.strip()}
+                    logger.info(f"Loaded taxonomy with {len(self.taxonomy)} species from text file")
+
+        except (json.JSONDecodeError, ValueError) as e:
+            # Format/validation errors
+            error_msg = f"Invalid taxonomy format in {taxonomy_file}: {e}"
+            if require_taxonomy:
+                logger.error(error_msg, exc_info=True)
+                raise RuntimeError(error_msg)
             else:
-                logger.warning(f"Taxonomy file not found: {taxonomy_file}")
+                logger.error(error_msg, exc_info=True)
+                logger.warning("Continuing without taxonomy - classification will use generic labels")
+                self.taxonomy = {}
+
         except Exception as e:
-            logger.error(f"Failed to load taxonomy: {e}")
+            # Other errors (I/O, permissions, etc.)
+            error_msg = f"Failed to load taxonomy from {taxonomy_file}: {e}"
+            if require_taxonomy:
+                logger.error(error_msg, exc_info=True)
+                raise RuntimeError(error_msg)
+            else:
+                logger.error(error_msg, exc_info=True)
+                logger.warning("Continuing without taxonomy - classification will use generic labels")
+                self.taxonomy = {}
 
     def get_hierarchical_label(self, class_id: int, confidence: float) -> Tuple[str, str]:
         """
@@ -177,50 +231,68 @@ class SpeciesClassifier:
         # Too low confidence - return null
         return (None, None)
 
-    def load_model(self, num_classes: int = 1000) -> bool:
+    def load_model(self, num_classes: int = 1000, max_retries: int = 3) -> bool:
         """
-        Load the classification model.
+        Load the classification model with retry logic (Issue #110).
 
         Args:
             num_classes: Number of species classes
+            max_retries: Maximum number of retry attempts (default: 3)
 
         Returns:
-            True if loaded successfully
+            True if loaded successfully, False otherwise
         """
-        try:
-            # Handle HuggingFace hub models (format: hf-hub:org/model_name or hf_hub:org/model_name)
-            model_name = self.model_name
-            if self.model_name.startswith('timm/') or '/' in self.model_name:
-                # For HuggingFace models, use hf-hub: prefix
-                model_name = f"hf-hub:{self.model_name}"
-                logger.info(f"Loading from HuggingFace Hub: {model_name}")
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Loading species classifier: {self.model_name} (attempt {attempt + 1}/{max_retries})")
 
-            # Create model using timm
-            self.model = timm.create_model(
-                model_name,
-                pretrained=(self.checkpoint_path is None),
-                num_classes=num_classes
-            )
+                # Handle HuggingFace hub models (format: hf-hub:org/model_name or hf_hub:org/model_name)
+                model_name = self.model_name
+                if self.model_name.startswith('timm/') or '/' in self.model_name:
+                    # For HuggingFace models, use hf-hub: prefix
+                    model_name = f"hf-hub:{self.model_name}"
+                    logger.info(f"Loading from HuggingFace Hub: {model_name}")
 
-            # Load custom checkpoint if provided
-            if self.checkpoint_path:
-                checkpoint = torch.load(self.checkpoint_path, map_location=self.device)
-                self.model.load_state_dict(checkpoint['model_state_dict'] if 'model_state_dict' in checkpoint else checkpoint)
-                logger.info(f"Loaded checkpoint from {self.checkpoint_path}")
+                # Create model using timm
+                self.model = timm.create_model(
+                    model_name,
+                    pretrained=(self.checkpoint_path is None),
+                    num_classes=num_classes
+                )
 
-            self.model = self.model.to(self.device)
-            self.model.eval()
+                # Load custom checkpoint if provided
+                if self.checkpoint_path:
+                    checkpoint = torch.load(self.checkpoint_path, map_location=self.device)
+                    self.model.load_state_dict(checkpoint['model_state_dict'] if 'model_state_dict' in checkpoint else checkpoint)
+                    logger.info(f"Loaded checkpoint from {self.checkpoint_path}")
 
-            # Cache mean/std tensors on GPU for efficient preprocessing
-            self._mean_tensor = torch.tensor(self.mean, device=self.device).view(3, 1, 1)
-            self._std_tensor = torch.tensor(self.std, device=self.device).view(3, 1, 1)
+                self.model = self.model.to(self.device)
+                self.model.eval()
 
-            logger.info(f"Species classifier loaded on {self.device}")
-            return True
+                # Cache mean/std tensors on GPU for efficient preprocessing
+                self._mean_tensor = torch.tensor(self.mean, device=self.device).view(3, 1, 1)
+                self._std_tensor = torch.tensor(self.std, device=self.device).view(3, 1, 1)
 
-        except Exception as e:
-            logger.error(f"Failed to load model: {e}")
-            return False
+                logger.info(f"✓ Species classifier loaded on {self.device}")
+                return True
+
+            except (RuntimeError, OSError, IOError, ConnectionError) as e:
+                # Retryable errors: CUDA OOM, network errors, file I/O issues
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    logger.warning(f"Model load failed (attempt {attempt + 1}/{max_retries}): {e}")
+                    logger.warning(f"Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Failed to load species classifier after {max_retries} attempts: {e}", exc_info=True)
+                    return False
+
+            except Exception as e:
+                # Non-retryable errors: configuration issues, missing model
+                logger.error(f"Failed to load species classifier: {e}", exc_info=True)
+                return False
+
+        return False
 
     def preprocess(self, image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
         """
