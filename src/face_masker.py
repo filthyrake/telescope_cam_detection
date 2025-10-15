@@ -22,6 +22,9 @@ class FaceMasker:
     and various masking styles (blur, pixelate, black box, adaptive blur).
     """
 
+    # Padding percentage around detected faces (20% of face width)
+    FACE_PADDING_PERCENT = 0.2
+
     def __init__(
         self,
         detection_backend: str = "opencv_haar",
@@ -49,6 +52,10 @@ class FaceMasker:
         self.detection_backend = detection_backend
         self.mask_style = mask_style
         self.min_face_size = min_face_size
+
+        # Validate blur_strength is positive
+        if blur_strength <= 0:
+            raise ValueError(f"blur_strength must be positive, got {blur_strength}")
 
         # Gaussian blur requires odd kernel size - auto-adjust if needed
         if blur_strength % 2 == 1:
@@ -227,7 +234,7 @@ class FaceMasker:
     ) -> np.ndarray:
         """Apply Gaussian blur to face region."""
         # Add padding around face for better coverage
-        padding = int(w * 0.2)
+        padding = int(w * self.FACE_PADDING_PERCENT)
         x1 = max(0, x - padding)
         y1 = max(0, y - padding)
         x2 = min(frame.shape[1], x + w + padding)
@@ -254,7 +261,7 @@ class FaceMasker:
     ) -> np.ndarray:
         """Apply pixelation effect to face region."""
         # Add padding
-        padding = int(w * 0.2)
+        padding = int(w * self.FACE_PADDING_PERCENT)
         x1 = max(0, x - padding)
         y1 = max(0, y - padding)
         x2 = min(frame.shape[1], x + w + padding)
@@ -289,7 +296,7 @@ class FaceMasker:
     ) -> np.ndarray:
         """Apply solid black rectangle over face."""
         # Add padding
-        padding = int(w * 0.2)
+        padding = int(w * self.FACE_PADDING_PERCENT)
         x1 = max(0, x - padding)
         y1 = max(0, y - padding)
         x2 = min(frame.shape[1], x + w + padding)
@@ -320,7 +327,7 @@ class FaceMasker:
         adaptive_strength = min(99, adaptive_strength)  # Cap at 99
 
         # Add padding
-        padding = int(w * 0.2)
+        padding = int(w * self.FACE_PADDING_PERCENT)
         x1 = max(0, x - padding)
         y1 = max(0, y - padding)
         x2 = min(frame.shape[1], x + w + padding)

@@ -104,8 +104,8 @@ class TestFaceMasker(unittest.TestCase):
         self.assertEqual(masked_frame.shape, self.test_frame.shape)
 
         # Check that the face region is now black (or very dark)
-        # Add padding (20%) to account for masker's padding
-        padding = int(100 * 0.2)
+        # Add padding to account for masker's padding
+        padding = int(100 * FaceMasker.FACE_PADDING_PERCENT)
         x1 = max(0, 200 - padding)
         y1 = max(0, 150 - padding)
         x2 = min(640, 300 + padding)
@@ -209,13 +209,13 @@ class TestFaceMaskingCache(unittest.TestCase):
         faces = [(100, 100, 80, 90)]
         self.cache.update_cache("cam1", faces)
 
-        # For the first (ttl - 1) frames, should use cache (should_detect is False)
-        for _ in range(self.cache.ttl - 1):
+        # For the first ttl frames, should use cache (should_detect is False)
+        for _ in range(self.cache.ttl):
             should_detect = self.cache.should_detect("cam1")
             self.assertFalse(should_detect)
             self.cache.increment_frame_count("cam1")
 
-        # On the TTL-th frame, should_detect should be True
+        # After ttl frames, should_detect should be True
         should_detect = self.cache.should_detect("cam1")
         self.assertTrue(should_detect)
 

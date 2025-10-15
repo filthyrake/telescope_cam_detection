@@ -338,6 +338,15 @@ class SnapshotSaver:
 
             # 5. Save metadata JSON (in masked/ or camera root)
             metadata_dir = masked_dir if self.enable_face_masking else camera_dir
+            # Build annotated filename path based on directory structure
+            if self.save_annotated:
+                if self.enable_face_masking:
+                    annotated_filename = f"annotated/{primary_class}_{timestamp}_conf{confidence:.2f}.jpg"
+                else:
+                    annotated_filename = f"{primary_class}_{timestamp}_conf{confidence:.2f}_annotated.jpg"
+            else:
+                annotated_filename = None
+
             metadata = {
                 'timestamp': detection_result.get('timestamp'),
                 'camera_id': detection_result.get('camera_id', 'default'),
@@ -346,7 +355,7 @@ class SnapshotSaver:
                 'detection_counts': detection_result.get('detection_counts', {}),
                 'latency_ms': detection_result.get('total_latency_ms', 0),
                 'filename': base_filename,
-                'annotated_filename': f"{primary_class}_{timestamp}_conf{confidence:.2f}_annotated.jpg" if self.save_annotated else None,
+                'annotated_filename': annotated_filename,
                 'face_masking_enabled': self.enable_face_masking,
                 'faces_detected': len(faces_detected) if faces_detected else 0
             }
