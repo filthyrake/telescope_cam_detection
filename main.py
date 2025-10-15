@@ -17,14 +17,15 @@ import yaml
 # Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from stream_capture import RTSPStreamCapture, create_rtsp_url
-from inference_engine_yolox import InferenceEngine  # YOLOX version (47x faster!)
-from detection_processor import DetectionProcessor
-from web_server import WebServer
-from snapshot_saver import SnapshotSaver
-from two_stage_pipeline_yolox import TwoStageDetectionPipeline  # YOLOX-compatible
-from species_classifier import SpeciesClassifier
-from camera_health_monitor import CameraHealthMonitor
+from src.stream_capture import RTSPStreamCapture, create_rtsp_url
+from src.inference_engine_yolox import InferenceEngine  # YOLOX version (47x faster!)
+from src.detection_processor import DetectionProcessor
+from src.web_server import WebServer
+from src.snapshot_saver import SnapshotSaver
+from src.two_stage_pipeline_yolox import TwoStageDetectionPipeline  # YOLOX-compatible
+from src.species_classifier import SpeciesClassifier
+from src.camera_health_monitor import CameraHealthMonitor
+from src.face_masker import FaceMasker, FaceMaskingCache  # Privacy-preserving face masking
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,6 +61,8 @@ class TelescopeDetectionSystem:
         self.detection_processors = []  # List of DetectionProcessor instances
         self.web_server = None
         self.health_monitor = None  # Camera health monitor
+        self.face_masker = None  # Privacy-preserving face masker
+        self.face_masking_cache = None  # Face detection caching for performance
 
         # Queues for inter-component communication (per-camera)
         self.frame_queues = []  # List of frame queues
@@ -667,6 +670,52 @@ class TelescopeDetectionSystem:
 
         return enabled_cameras
 
+    def _initialize_face_masker(self) -> Optional[FaceMasker]:
+        """
+        Initialize face masker for privacy-preserving face detection and masking.
+
+        Returns:
+            FaceMasker instance if enabled, None otherwise
+        """
+        privacy_config = self.config.get('privacy', {})
+
+        if not privacy_config.get('enable_face_masking', False):
+            return None
+
+        try:
+            face_masker = FaceMasker(
+                detection_backend=privacy_config.get('detection_backend', 'opencv_haar'),
+                mask_style=privacy_config.get('mask_style', 'gaussian_blur'),
+                min_face_size=privacy_config.get('min_face_size', 30),
+                blur_strength=privacy_config.get('blur_strength', 25),
+                pixelate_blocks=privacy_config.get('pixelate_blocks', 10),
+                scale_factor=privacy_config.get('scale_factor', 1.1),
+                min_neighbors=privacy_config.get('min_neighbors', 5)
+            )
+            logger.info(f"Face masker initialized: {privacy_config.get('mask_style', 'gaussian_blur')} style")
+            return face_masker
+        except Exception as e:
+            logger.error(f"Failed to initialize face masker: {e}")
+            logger.warning("Face masking will be disabled")
+            return None
+
+    def _initialize_face_masking_cache(self) -> Optional[FaceMaskingCache]:
+        """
+        Initialize face masking cache for performance optimization.
+
+        Returns:
+            FaceMaskingCache instance if face masking enabled, None otherwise
+        """
+        privacy_config = self.config.get('privacy', {})
+
+        if not privacy_config.get('enable_face_masking', False):
+            return None
+
+        ttl_frames = privacy_config.get('live_feed_detection_interval', 5)
+        cache = FaceMaskingCache(ttl_frames=ttl_frames)
+        logger.info(f"Face masking cache initialized (detect every {ttl_frames} frames)")
+        return cache
+
     def _initialize_snapshot_saver(self) -> Optional[SnapshotSaver]:
         """
         Initialize shared snapshot saver if enabled in configuration.
@@ -679,6 +728,10 @@ class TelescopeDetectionSystem:
         if not snapshot_config.get('enabled', False):
             return None
 
+        # Get privacy config for face masking
+        privacy_config = self.config.get('privacy', {})
+        enable_face_masking = privacy_config.get('enable_face_masking', False) and self.face_masker is not None
+
         snapshot_saver = SnapshotSaver(
             output_dir=snapshot_config.get('output_dir', 'clips'),
             save_mode=snapshot_config.get('save_mode', 'image'),
@@ -688,9 +741,14 @@ class TelescopeDetectionSystem:
             clip_duration=snapshot_config.get('clip_duration', 10),
             pre_buffer_seconds=snapshot_config.get('pre_buffer_seconds', 5),
             fps=30,
-            save_annotated=snapshot_config.get('save_annotated', True)
+            save_annotated=snapshot_config.get('save_annotated', True),
+            face_masker=self.face_masker,
+            enable_face_masking=enable_face_masking
         )
-        logger.info("Shared snapshot saver initialized")
+        if enable_face_masking:
+            logger.info("Shared snapshot saver initialized with face masking enabled")
+        else:
+            logger.info("Shared snapshot saver initialized")
         return snapshot_saver
 
     def _create_per_camera_queues(self) -> tuple:
@@ -1062,6 +1120,8 @@ class TelescopeDetectionSystem:
     def _initialize_web_server(self):
         """Initialize web server for UI and API."""
         self.web_config = self.config.get('web', {})
+        privacy_config = self.config.get('privacy', {})
+        enable_face_masking = privacy_config.get('enable_face_masking', False) and self.face_masker is not None
 
         self.web_server = WebServer(
             detection_queue=self.detection_queue,
@@ -1072,11 +1132,17 @@ class TelescopeDetectionSystem:
             restart_callback=self.restart_camera,
             reload_config_callback=self.reload_config,
             config_getter=lambda: self.config,
+            face_masker=self.face_masker,
+            face_masking_cache=self.face_masking_cache,
+            enable_face_masking=enable_face_masking,
             host=self.web_config.get('host', '0.0.0.0'),
             port=self.web_config.get('port', 8000)
         )
 
-        logger.info("Web server initialized")
+        if enable_face_masking:
+            logger.info("Web server initialized with face masking enabled")
+        else:
+            logger.info("Web server initialized")
 
     def initialize_components(self) -> bool:
         """
@@ -1115,6 +1181,10 @@ class TelescopeDetectionSystem:
                 logger.info(f"  Expected inference time: 150-250ms (maximum detail for tiny IR wildlife)")
             else:
                 logger.info(f"  Input size: {input_size_tuple}")
+
+            # Initialize face masker (for privacy-preserving face masking)
+            self.face_masker = self._initialize_face_masker()
+            self.face_masking_cache = self._initialize_face_masking_cache()
 
             # Initialize shared snapshot saver
             snapshot_saver = self._initialize_snapshot_saver()
