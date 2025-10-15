@@ -90,7 +90,8 @@ class SnapshotSaver:
         self.buffer_lock = Lock()
         self.use_compressed_buffer = True  # Compress frames in buffer to save memory
 
-        # Memory tracking
+        # Memory tracking (incremental tracking to avoid O(n) iteration)
+        self.buffer_memory_bytes = 0  # Track memory incrementally
         self.estimated_buffer_memory_mb = 0.0
 
         # Cooldown tracking
@@ -121,6 +122,22 @@ class SnapshotSaver:
             return frame_cpu
         return frame
 
+    def _estimate_frame_size(self, frame_data: Dict[str, Any]) -> int:
+        """
+        Estimate memory size of a frame in bytes.
+
+        Args:
+            frame_data: Frame data dictionary
+
+        Returns:
+            Estimated size in bytes
+        """
+        if 'frame_compressed' in frame_data:
+            return frame_data['frame_compressed'].nbytes
+        elif 'frame' in frame_data and frame_data['frame'] is not None:
+            return frame_data['frame'].nbytes
+        return 0
+
     def add_frame_to_buffer(self, frame: Any, timestamp: float):
         """
         Add frame to ring buffer for pre-detection recording.
@@ -142,22 +159,52 @@ class SnapshotSaver:
                 # Quality 90 provides good balance of quality vs size
                 ret, encoded = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
                 if ret:
-                    self.frame_buffer.append({
+                    # If buffer is full, subtract oldest frame size before it gets evicted
+                    if len(self.frame_buffer) == self.frame_buffer.maxlen:
+                        oldest_size = self._estimate_frame_size(self.frame_buffer[0])
+                        self.buffer_memory_bytes -= oldest_size
+
+                    # Add new frame
+                    new_frame_data = {
                         'frame_compressed': encoded,
                         'timestamp': timestamp
-                    })
+                    }
+                    self.frame_buffer.append(new_frame_data)
 
-                    # Update memory estimate (periodically)
-                    if len(self.frame_buffer) % MEMORY_CHECK_INTERVAL == 0:
-                        self._update_memory_estimate()
+                    # Add new frame size to tracked memory
+                    new_frame_size = self._estimate_frame_size(new_frame_data)
+                    self.buffer_memory_bytes += new_frame_size
+
+                    # Update MB estimate
+                    self.estimated_buffer_memory_mb = self.buffer_memory_bytes / (1024 * 1024)
+
+                    # Warn if buffer is using excessive memory
+                    if self.estimated_buffer_memory_mb > MAX_BUFFER_MEMORY_MB:
+                        logger.warning(f"Frame buffer using {self.estimated_buffer_memory_mb:.1f}MB "
+                                      f"(max recommended: {MAX_BUFFER_MEMORY_MB}MB). "
+                                      f"Consider reducing pre_buffer_seconds or fps.")
                 else:
                     logger.warning("Failed to compress frame for buffer, skipping")
             else:
                 # Fallback: store uncompressed (uses more memory)
-                self.frame_buffer.append({
+                # If buffer is full, subtract oldest frame size before it gets evicted
+                if len(self.frame_buffer) == self.frame_buffer.maxlen:
+                    oldest_size = self._estimate_frame_size(self.frame_buffer[0])
+                    self.buffer_memory_bytes -= oldest_size
+
+                # Add new frame
+                new_frame_data = {
                     'frame': frame.copy(),
                     'timestamp': timestamp
-                })
+                }
+                self.frame_buffer.append(new_frame_data)
+
+                # Add new frame size to tracked memory
+                new_frame_size = self._estimate_frame_size(new_frame_data)
+                self.buffer_memory_bytes += new_frame_size
+
+                # Update MB estimate
+                self.estimated_buffer_memory_mb = self.buffer_memory_bytes / (1024 * 1024)
 
     def should_save(self, detection_result: Dict[str, Any]) -> bool:
         """
@@ -199,29 +246,25 @@ class SnapshotSaver:
 
     def _update_memory_estimate(self):
         """
-        Estimate current buffer memory usage.
-        Called periodically to track memory consumption.
+        Recalculate buffer memory usage from scratch (for validation/debugging).
+        This is now only used for validation - normal operation uses incremental tracking.
+
+        Note: This method performs O(n) iteration and should only be called for debugging.
         """
         if not self.frame_buffer:
-            self.estimated_buffer_memory_mb = 0.0
-            return
+            recalculated_bytes = 0
+        else:
+            recalculated_bytes = sum(self._estimate_frame_size(f) for f in self.frame_buffer)
 
-        total_bytes = 0
-        for frame_data in self.frame_buffer:
-            if 'frame_compressed' in frame_data:
-                # Compressed frame (JPEG bytes)
-                total_bytes += frame_data['frame_compressed'].nbytes
-            elif 'frame' in frame_data and frame_data['frame'] is not None:
-                # Uncompressed frame (numpy array)
-                total_bytes += frame_data['frame'].nbytes
+        recalculated_mb = recalculated_bytes / (1024 * 1024)
 
-        self.estimated_buffer_memory_mb = total_bytes / (1024 * 1024)
-
-        # Warn if buffer is using excessive memory
-        if self.estimated_buffer_memory_mb > MAX_BUFFER_MEMORY_MB:
-            logger.warning(f"Frame buffer using {self.estimated_buffer_memory_mb:.1f}MB "
-                          f"(max recommended: {MAX_BUFFER_MEMORY_MB}MB). "
-                          f"Consider reducing pre_buffer_seconds or fps.")
+        # Validate incremental tracking (log warning if discrepancy detected)
+        if abs(recalculated_mb - self.estimated_buffer_memory_mb) > 0.1:
+            logger.warning(f"Memory tracking discrepancy detected: "
+                          f"incremental={self.estimated_buffer_memory_mb:.1f}MB, "
+                          f"recalculated={recalculated_mb:.1f}MB")
+            self.buffer_memory_bytes = recalculated_bytes
+            self.estimated_buffer_memory_mb = recalculated_mb
 
     def _decode_frame(self, frame_data: Dict[str, Any]) -> Optional[np.ndarray]:
         """
@@ -606,10 +649,7 @@ class SnapshotSaver:
         Returns:
             Dictionary with statistics
         """
-        # Update memory estimate before returning stats
-        with self.buffer_lock:
-            self._update_memory_estimate()
-
+        # Memory is now tracked incrementally, no need to recalculate
         return {
             'total_saved': self.total_saved,
             'save_failures': self.save_failures,
