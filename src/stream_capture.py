@@ -11,11 +11,18 @@ from typing import Optional, Tuple
 import numpy as np
 from queue import Queue, Full
 from threading import Thread, Event, Lock
+from src.constants import (
+    RTSP_TIMEOUT_MICROSECONDS,
+    DEFAULT_MAX_RTSP_FAILURES,
+    DEFAULT_RTSP_RETRY_DELAY_SECONDS,
+    DEFAULT_RTSP_RECONNECT_DELAY_SECONDS,
+    THREAD_JOIN_TIMEOUT_SECONDS,
+    RTSP_FAILURE_SLEEP_SECONDS,
+    ERROR_SLEEP_SECONDS,
+    FPS_CALCULATION_INTERVAL_SECONDS
+)
 
 logger = logging.getLogger(__name__)
-
-# RTSP connection timeout in microseconds (5 seconds)
-RTSP_TIMEOUT_MICROSECONDS = 5_000_000
 
 
 class RTSPStreamCapture:
@@ -33,7 +40,9 @@ class RTSPStreamCapture:
         buffer_size: int = 1,
         camera_id: str = "default",
         camera_name: str = "Default Camera",
-        use_tcp: bool = False
+        use_tcp: bool = False,
+        max_failures: int = DEFAULT_MAX_RTSP_FAILURES,
+        retry_delay: float = DEFAULT_RTSP_RETRY_DELAY_SECONDS
     ):
         """
         Initialize RTSP stream capture.
@@ -47,6 +56,8 @@ class RTSPStreamCapture:
             camera_id: Unique identifier for this camera
             camera_name: Human-readable name for this camera
             use_tcp: Use TCP transport instead of UDP (reduces tearing)
+            max_failures: Reconnect after N consecutive failures
+            retry_delay: Seconds to wait before retrying connection
         """
         self.rtsp_url = rtsp_url
         self.frame_queue = frame_queue
@@ -56,6 +67,8 @@ class RTSPStreamCapture:
         self.camera_id = camera_id
         self.camera_name = camera_name
         self.use_tcp = use_tcp
+        self.max_failures = max_failures
+        self.retry_delay = retry_delay
 
         self.capture: Optional[cv2.VideoCapture] = None
         self.stop_event = Event()
@@ -148,11 +161,11 @@ class RTSPStreamCapture:
         self.stop_event.set()
 
         if self.capture_thread:
-            self.capture_thread.join(timeout=5.0)
+            self.capture_thread.join(timeout=THREAD_JOIN_TIMEOUT_SECONDS)
 
             # Check if thread actually stopped
             if self.capture_thread.is_alive():
-                logger.error(f"[{self.camera_id}] Capture thread did not stop after 5s timeout (thread may be blocked)")
+                logger.error(f"[{self.camera_id}] Capture thread did not stop after {THREAD_JOIN_TIMEOUT_SECONDS}s timeout (thread may be blocked)")
             else:
                 logger.info(f"[{self.camera_id}] Capture thread stopped successfully")
 
@@ -165,8 +178,6 @@ class RTSPStreamCapture:
         """Main capture loop running in separate thread."""
         logger.info(f"[{self.camera_id}] Capture loop started")
         consecutive_failures = 0
-        max_failures = 30  # Reconnect after 30 consecutive failures
-        retry_delay = 5.0  # Seconds to wait before retrying connection
 
         while not self.stop_event.is_set():
             try:
@@ -177,22 +188,22 @@ class RTSPStreamCapture:
                         logger.info(f"[{self.camera_id}] Connected successfully!")
                         consecutive_failures = 0
                     else:
-                        logger.warning(f"[{self.camera_id}] Connection failed, will retry in {retry_delay}s...")
-                        time.sleep(retry_delay)
+                        logger.warning(f"[{self.camera_id}] Connection failed, will retry in {self.retry_delay}s...")
+                        time.sleep(self.retry_delay)
                         continue
 
                 ret, frame = self.capture.read()
 
                 if not ret or frame is None:
                     consecutive_failures += 1
-                    logger.warning(f"Failed to read frame (attempt {consecutive_failures}/{max_failures})")
+                    logger.warning(f"Failed to read frame (attempt {consecutive_failures}/{self.max_failures})")
 
-                    if consecutive_failures >= max_failures:
+                    if consecutive_failures >= self.max_failures:
                         logger.error("Too many consecutive failures, attempting reconnect...")
                         if self._reconnect():
                             consecutive_failures = 0
                         else:
-                            time.sleep(1.0)
+                            time.sleep(RTSP_FAILURE_SLEEP_SECONDS)
                     continue
 
                 consecutive_failures = 0
@@ -222,7 +233,7 @@ class RTSPStreamCapture:
                     self.dropped_frames += 1
 
                 # Calculate FPS every second
-                if time.time() - self.last_fps_check >= 1.0:
+                if time.time() - self.last_fps_check >= FPS_CALCULATION_INTERVAL_SECONDS:
                     self.fps = self.frame_count / (time.time() - self.last_fps_check)
                     self.last_fps_check = time.time()
                     self.frame_count = 0
@@ -233,7 +244,7 @@ class RTSPStreamCapture:
 
             except Exception as e:
                 logger.error(f"Error in capture loop: {e}")
-                time.sleep(0.1)
+                time.sleep(ERROR_SLEEP_SECONDS)
 
     def _reconnect(self) -> bool:
         """
@@ -253,7 +264,7 @@ class RTSPStreamCapture:
             finally:
                 self.capture = None
 
-        time.sleep(2.0)  # Wait before reconnecting
+        time.sleep(DEFAULT_RTSP_RECONNECT_DELAY_SECONDS)  # Wait before reconnecting
         return self.connect()
 
     def get_stats(self) -> dict:

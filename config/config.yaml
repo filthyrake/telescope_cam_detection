@@ -433,6 +433,9 @@ species_classification:
 web:
   host: "0.0.0.0"
   port: 8000
+  # Video streaming settings
+  mjpeg_fps: 30  # Target frame rate for MJPEG streaming (lower = less bandwidth)
+  jpeg_quality: 85  # JPEG compression quality 0-100 (higher = better quality, more bandwidth)
 
 performance:
   # Queue sizes
@@ -441,6 +444,10 @@ performance:
 
   # Detection history
   history_size: 30
+
+  # RTSP stream reliability
+  rtsp_max_failures: 30  # Reconnect after N consecutive failures
+  rtsp_retry_delay: 5.0  # Seconds to wait before retrying connection
 
 # Motion Detection Filter (reduces false positives from static objects)
 motion_filter:

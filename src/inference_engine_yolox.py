@@ -13,6 +13,13 @@ from threading import Thread, Event
 import numpy as np
 
 from src.yolox_detector import YOLOXDetector
+from src.constants import (
+    QUEUE_GET_TIMEOUT_SECONDS,
+    LOG_DROPPED_EVERY_N,
+    ERROR_SLEEP_SECONDS,
+    THREAD_JOIN_TIMEOUT_SECONDS,
+    FPS_CALCULATION_INTERVAL_SECONDS
+)
 
 logger = logging.getLogger(__name__)
 
@@ -156,11 +163,11 @@ class InferenceEngine:
         self.stop_event.set()
 
         if self.inference_thread:
-            self.inference_thread.join(timeout=5.0)
+            self.inference_thread.join(timeout=THREAD_JOIN_TIMEOUT_SECONDS)
 
             # Check if thread actually stopped
             if self.inference_thread.is_alive():
-                logger.error("Inference thread did not stop after 5s timeout (thread may be blocked)")
+                logger.error(f"Inference thread did not stop after {THREAD_JOIN_TIMEOUT_SECONDS}s timeout (thread may be blocked)")
             else:
                 logger.info("Inference thread stopped successfully")
 
@@ -172,7 +179,7 @@ class InferenceEngine:
             try:
                 # Get frame from input queue (blocking with timeout)
                 try:
-                    frame_data = self.input_queue.get(timeout=0.1)
+                    frame_data = self.input_queue.get(timeout=QUEUE_GET_TIMEOUT_SECONDS)
                 except Empty:
                     continue
 
@@ -194,7 +201,7 @@ class InferenceEngine:
                 self.avg_inference_time = self.total_inference_time / self.total_inference_count
 
                 # Calculate FPS
-                if time.time() - self.last_fps_check >= 1.0:
+                if time.time() - self.last_fps_check >= FPS_CALCULATION_INTERVAL_SECONDS:
                     self.fps = self.inference_count / (time.time() - self.last_fps_check)
                     self.last_fps_check = time.time()
                     self.inference_count = 0
@@ -216,15 +223,15 @@ class InferenceEngine:
                     self.output_queue.put_nowait(result)
                 except Exception as e:
                     self.dropped_results += 1
-                    # Log every 10th drop to avoid spam
-                    if self.dropped_results % 10 == 0:
+                    # Log every Nth drop to avoid spam
+                    if self.dropped_results % LOG_DROPPED_EVERY_N == 0:
                         logger.warning(f"Output queue full, dropped {self.dropped_results} results total (system overloaded)")
 
             except Exception as e:
                 logger.error(f"Error in inference loop: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-                time.sleep(0.1)
+                time.sleep(ERROR_SLEEP_SECONDS)
 
     def _run_inference(self, frame: np.ndarray) -> List[Dict[str, Any]]:
         """

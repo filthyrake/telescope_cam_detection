@@ -19,6 +19,11 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 from queue import Empty
+from src.constants import (
+    DEFAULT_MJPEG_FPS,
+    DEFAULT_JPEG_QUALITY,
+    WEBSOCKET_HEARTBEAT_INTERVAL_SECONDS
+)
 
 if TYPE_CHECKING:
     from .face_masker import FaceMasker, FaceMaskingCache
@@ -46,7 +51,9 @@ class WebServer:
         face_masking_cache: Optional['FaceMaskingCache'] = None,
         enable_face_masking: bool = False,
         host: str = "0.0.0.0",
-        port: int = 8000
+        port: int = 8000,
+        mjpeg_fps: int = DEFAULT_MJPEG_FPS,
+        jpeg_quality: int = DEFAULT_JPEG_QUALITY
     ):
         """
         Initialize web server.
@@ -65,6 +72,8 @@ class WebServer:
             enable_face_masking: Enable face masking in live video feeds
             host: Host to bind to
             port: Port to bind to
+            mjpeg_fps: Target FPS for MJPEG video streaming
+            jpeg_quality: JPEG compression quality (0-100)
         """
         self.detection_queue = detection_queue
         self.frame_sources = frame_sources if frame_sources else []
@@ -79,6 +88,8 @@ class WebServer:
         self.enable_face_masking = enable_face_masking and face_masker is not None
         self.host = host
         self.port = port
+        self.mjpeg_fps = mjpeg_fps
+        self.jpeg_quality = jpeg_quality
 
         self.app = FastAPI(title="Backyard Computer Vision System")
         self.active_connections: list[WebSocket] = []
@@ -564,7 +575,7 @@ class WebServer:
                             "timestamp": time.time()
                         })
                         # Rate limit heartbeats to avoid overwhelming clients
-                        await asyncio.sleep(1.0)
+                        await asyncio.sleep(WEBSOCKET_HEARTBEAT_INTERVAL_SECONDS)
 
             except WebSocketDisconnect:
                 logger.info("WebSocket disconnected")
@@ -673,7 +684,7 @@ class WebServer:
 
                     # Encode frame as JPEG
                     try:
-                        ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
 
                         if ret:
                             frame_bytes = buffer.tobytes()
@@ -686,7 +697,8 @@ class WebServer:
                         logger.error(f"Exception encoding frame for camera {camera_id}: {e}")
                         # Continue streaming - don't let one bad frame kill the stream
 
-            await asyncio.sleep(0.033)  # ~30 FPS
+            # Calculate sleep time from target FPS
+            await asyncio.sleep(1.0 / self.mjpeg_fps)
 
     def _draw_detections(self, frame: np.ndarray, detection_result: Dict[str, Any]) -> np.ndarray:
         """
