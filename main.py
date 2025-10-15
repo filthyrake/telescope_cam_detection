@@ -74,7 +74,7 @@ class TelescopeDetectionSystem:
 
         # Shutdown coordination (thread-safe)
         self.shutdown_requested = False
-        self._shutdown_lock = threading.Lock()  # Protects shutdown_requested and ensures stop() is called once
+        self._shutdown_lock = threading.RLock()  # Reentrant lock: prevents deadlock if stop() called recursively from same thread
 
         # Restart coordination (thread-safe)
         self._restart_lock = threading.Lock()  # Protects camera restart operations
