@@ -793,6 +793,11 @@ class TelescopeDetectionSystem:
         # Determine if TCP transport should be used
         use_tcp = camera_config.get('protocol', 'rtsp').lower() == 'rtsp-tcp'
 
+        # Get RTSP retry settings from performance config
+        performance_config = self.config.get('performance', {})
+        max_failures = performance_config.get('rtsp_max_failures', 30)
+        retry_delay = performance_config.get('rtsp_retry_delay', 5.0)
+
         stream_capture = RTSPStreamCapture(
             rtsp_url=rtsp_url,
             frame_queue=frame_queue,
@@ -801,7 +806,9 @@ class TelescopeDetectionSystem:
             buffer_size=camera_config.get('buffer_size', 1),
             camera_id=camera_id,
             camera_name=camera_name,
-            use_tcp=use_tcp
+            use_tcp=use_tcp,
+            max_failures=max_failures,
+            retry_delay=retry_delay
         )
 
         logger.info(f"  [{camera_id}] Stream capture initialized")
@@ -1136,7 +1143,9 @@ class TelescopeDetectionSystem:
             face_masking_cache=self.face_masking_cache,
             enable_face_masking=enable_face_masking,
             host=self.web_config.get('host', '0.0.0.0'),
-            port=self.web_config.get('port', 8000)
+            port=self.web_config.get('port', 8000),
+            mjpeg_fps=self.web_config.get('mjpeg_fps', 30),
+            jpeg_quality=self.web_config.get('jpeg_quality', 85)
         )
 
         if enable_face_masking:

@@ -13,6 +13,12 @@ from collections import deque
 from visualization_utils import draw_detections
 from src.motion_filter import MotionFilter
 from src.time_of_day_filter import TimeOfDayFilter
+from src.constants import (
+    QUEUE_GET_TIMEOUT_SECONDS,
+    LOG_DROPPED_EVERY_N,
+    ERROR_SLEEP_SECONDS,
+    THREAD_JOIN_TIMEOUT_SECONDS
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,11 +109,11 @@ class DetectionProcessor:
         self.stop_event.set()
 
         if self.processor_thread:
-            self.processor_thread.join(timeout=5.0)
+            self.processor_thread.join(timeout=THREAD_JOIN_TIMEOUT_SECONDS)
 
             # Check if thread actually stopped
             if self.processor_thread.is_alive():
-                logger.error("Detection processor thread did not stop after 5s timeout (thread may be blocked)")
+                logger.error(f"Detection processor thread did not stop after {THREAD_JOIN_TIMEOUT_SECONDS}s timeout (thread may be blocked)")
             else:
                 logger.info("Detection processor thread stopped successfully")
 
@@ -137,7 +143,7 @@ class DetectionProcessor:
             try:
                 # Get detections from input queue (blocking with timeout)
                 try:
-                    detection_result = self.input_queue.get(timeout=0.1)
+                    detection_result = self.input_queue.get(timeout=QUEUE_GET_TIMEOUT_SECONDS)
                 except Empty:
                     continue
 
@@ -181,8 +187,8 @@ class DetectionProcessor:
                     self.output_queue.put_nowait(processed_result)
                 except Exception as e:
                     self.dropped_results += 1
-                    # Log every 10th drop to avoid spam
-                    if self.dropped_results % 10 == 0:
+                    # Log every Nth drop to avoid spam
+                    if self.dropped_results % LOG_DROPPED_EVERY_N == 0:
                         logger.warning(f"Output queue full, dropped {self.dropped_results} results total (system overloaded)")
 
                 self.processed_count += 1
@@ -191,7 +197,7 @@ class DetectionProcessor:
 
             except Exception as e:
                 logger.error(f"Error in processing loop: {e}")
-                time.sleep(0.1)
+                time.sleep(ERROR_SLEEP_SECONDS)
 
     def _process_detections(
         self,
