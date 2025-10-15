@@ -11,6 +11,8 @@ import torch
 import logging
 import numpy as np
 import time
+import hashlib
+from collections import OrderedDict
 from typing import Dict, Any, List, Optional, Tuple, Union
 
 from species_classifier import SpeciesClassifier
@@ -40,6 +42,7 @@ class TwoStageDetectionPipeline:
         min_crop_size: int = 64,
         time_of_day_top_k: int = 5,
         time_of_day_penalty: float = 0.3,
+        enhancement_cache_size: int = 100,
     ):
         """
         Initialize two-stage pipeline.
@@ -54,6 +57,7 @@ class TwoStageDetectionPipeline:
             min_crop_size: Skip Stage 2 if crop smaller than this (e.g., 64 = 64x64 pixels minimum)
             time_of_day_top_k: Number of species to consider for time-of-day re-ranking (default: 5)
             time_of_day_penalty: Confidence penalty for unlikely species (default: 0.3 = 70% reduction)
+            enhancement_cache_size: Max number of enhanced crops to cache (default: 100)
         """
         self.enable_species_classification = enable_species_classification
         self.stage2_confidence_threshold = stage2_confidence_threshold
@@ -75,6 +79,12 @@ class TwoStageDetectionPipeline:
 
         # Use shared COCO class mapping for Stage 2 routing
         self.class_id_to_category = CLASS_ID_TO_CATEGORY
+
+        # Enhancement LRU cache (for Real-ESRGAN caching)
+        self.enhancement_cache_size = enhancement_cache_size
+        self.enhancement_cache: OrderedDict[str, np.ndarray] = OrderedDict()
+        self.cache_hits = 0
+        self.cache_misses = 0
 
         # Image enhancement (optional)
         self.enhancer = None
@@ -104,7 +114,7 @@ class TwoStageDetectionPipeline:
                         enhancer_params[f'bilateral_{key}'] = value
 
                 self.enhancer = ImageEnhancer(**enhancer_params)
-                logger.info("✓ Image enhancer loaded")
+                logger.info(f"✓ Image enhancer loaded (cache size: {self.enhancement_cache_size})")
             except Exception as e:
                 logger.error(f"Failed to load image enhancer: {e}")
                 logger.warning("Continuing without image enhancement")
@@ -127,6 +137,35 @@ class TwoStageDetectionPipeline:
         """
         self.species_classifiers[category] = classifier
         logger.info(f"Added species classifier for category: {category}")
+
+    def _compute_crop_hash(self, crop: Union[np.ndarray, torch.Tensor]) -> str:
+        """
+        Compute perceptual hash of crop for enhancement cache key.
+        Uses downsampling to 8x8 for perceptual similarity matching.
+
+        Args:
+            crop: Crop image (BGR format) - can be NumPy array or GPU tensor
+
+        Returns:
+            Hash string for cache lookup
+        """
+        # Convert to NumPy if GPU tensor
+        if isinstance(crop, torch.Tensor):
+            crop_np = crop.cpu().numpy()
+        else:
+            crop_np = crop
+
+        # Downsample to 8x8 for perceptual similarity
+        small = cv2.resize(crop_np, (8, 8), interpolation=cv2.INTER_AREA)
+
+        # Convert to grayscale for hashing
+        if len(small.shape) == 3:
+            gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = small
+
+        # Compute MD5 hash
+        return hashlib.md5(gray.tobytes()).hexdigest()
 
     def _set_detection_species_fields(
         self,
@@ -238,21 +277,51 @@ class TwoStageDetectionPipeline:
                 self._set_detection_species_fields(detection, None, 0.0, category, None)
                 return detection
 
-        # Apply image enhancement if configured
+        # Apply image enhancement if configured (with LRU caching)
         if self.enhancer is not None:
             try:
-                enhancement_start = time.time()
-                crop = self.enhancer.enhance(crop)
-                enhancement_time = (time.time() - enhancement_start) * 1000
-                self.enhancement_times.append(enhancement_time)
+                # Compute perceptual hash for cache lookup
+                crop_hash = self._compute_crop_hash(crop)
+
+                # Check cache for existing enhanced version
+                if crop_hash in self.enhancement_cache:
+                    # Cache hit! Use cached enhanced crop
+                    crop = self.enhancement_cache[crop_hash]
+                    self.cache_hits += 1
+
+                    # Move to end (mark as recently used)
+                    self.enhancement_cache.move_to_end(crop_hash)
+
+                    logger.debug(f"Enhancement cache hit (total hits: {self.cache_hits}, misses: {self.cache_misses})")
+                else:
+                    # Cache miss - enhance and store
+                    enhancement_start = time.time()
+                    enhanced_crop = self.enhancer.enhance(crop)
+                    enhancement_time = (time.time() - enhancement_start) * 1000
+                    self.enhancement_times.append(enhancement_time)
+                    self.cache_misses += 1
+
+                    # Store in cache with LRU eviction
+                    if len(self.enhancement_cache) >= self.enhancement_cache_size:
+                        # Remove oldest entry (FIFO for OrderedDict)
+                        self.enhancement_cache.popitem(last=False)
+
+                    self.enhancement_cache[crop_hash] = enhanced_crop
+                    crop = enhanced_crop
+
+                    logger.debug(f"Enhancement cache miss: {enhancement_time:.1f}ms (cache: {len(self.enhancement_cache)}/{self.enhancement_cache_size})")
 
                 # Log enhancement performance periodically (time-based)
                 current_time = time.time()
                 if current_time - self.last_perf_log_time >= self.perf_log_interval:
-                    if self.enhancement_times:
-                        recent_count = min(len(self.enhancement_times), 10)
-                        avg_enhancement = np.mean(self.enhancement_times[-recent_count:])
-                        logger.info(f"Enhancement performance (last {recent_count}): {avg_enhancement:.1f}ms avg")
+                    if self.enhancement_times or self.cache_hits > 0:
+                        cache_hit_rate = self.cache_hits / (self.cache_hits + self.cache_misses) * 100 if (self.cache_hits + self.cache_misses) > 0 else 0
+                        logger.info(f"Enhancement cache: {cache_hit_rate:.1f}% hit rate ({self.cache_hits} hits, {self.cache_misses} misses)")
+
+                        if self.enhancement_times:
+                            recent_count = min(len(self.enhancement_times), 10)
+                            avg_enhancement = np.mean(self.enhancement_times[-recent_count:])
+                            logger.info(f"Enhancement performance (last {recent_count} misses): {avg_enhancement:.1f}ms avg")
                     self.last_perf_log_time = current_time
             except Exception as e:
                 logger.error(f"Enhancement failed, using original crop: {e}")
@@ -383,6 +452,15 @@ class TwoStageDetectionPipeline:
             if self.enhancement_times:
                 stats['avg_enhancement_ms'] = float(np.mean(self.enhancement_times))
                 stats['enhancement_count'] = len(self.enhancement_times)
+
+            # Add cache statistics
+            total_requests = self.cache_hits + self.cache_misses
+            if total_requests > 0:
+                stats['enhancement_cache_hit_rate'] = float(self.cache_hits / total_requests)
+                stats['enhancement_cache_hits'] = self.cache_hits
+                stats['enhancement_cache_misses'] = self.cache_misses
+                stats['enhancement_cache_size'] = len(self.enhancement_cache)
+                stats['enhancement_cache_max_size'] = self.enhancement_cache_size
 
         # Add classification statistics if available
         if self.classification_times:
