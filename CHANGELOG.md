@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Grid view enhancements for multi-camera monitoring** (#94) - 2025-10-15
+  - Layout selector dropdown (auto, 1×1, 2×1, 2×2, 3×2, 3×3)
+  - Auto layout based on number of visible cameras
+  - Camera visibility toggles (show/hide specific cameras)
+  - Live FPS counter per-camera in top-left corner
+  - Detection count badges (orange badge, shows for 3s after detection)
+  - Flash border animation on new detections (orange glow effect)
+  - Connection status indicator (green/red dot in top-right)
+  - Click any camera to fullscreen and switch to single view
+  - Hover effects with scale and glow
+  - Smooth CSS transitions and animations
+
 - **Privacy-preserving face masking** (#88) - 2025-10-15
   - Automatic face detection and masking in live feeds
   - Multiple masking styles: gaussian blur, pixelate, black box, adaptive blur
@@ -59,6 +71,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improved code maintainability and readability
 
 ### Fixed
+- **High-priority bug fixes** (#129) - 2025-10-15
+  - GPU device string comparison causing unnecessary GPU→GPU transfers (10-20ms improvement)
+  - Missing frame validation after cv2.resize() preventing web server crashes
+  - Queue overflow observability with drop rate tracking (drops/sec and overall %)
+  - VideoWriter failure resource leaks (cleanup of partial video files)
+  - Input size validation for aspect ratio and model compatibility
+  - Config hot-reload race condition with copy-on-write pattern
+  - Per-class confidence threshold constant (MIN_TIME_DELTA) for better maintainability
+
+- **Critical bug fixes: GPU race conditions and resource leaks** (#128) - 2025-10-15
+  - GPU tensor race condition in queue operations (cloning before queuing)
+  - Thread orphaning with enhanced timeout error logging (WARNING→ERROR level)
+  - FFmpeg zombie processes on failed termination (proper wait() after kill())
+  - GPU memory leak in snapshot frame buffer (explicit tensor cleanup)
+  - Prevents CUDA errors, system crashes, GPU OOM, and zombie processes
+
 - **Critical bug fixes** (#84) - 2025-10-14
   - Fixed VideoWriter initialization and frame writing
   - Fixed thread cleanup on shutdown
