@@ -175,10 +175,13 @@ class DetectionProcessor:
 
                 # Save snapshot if enabled and triggered (reuse same frame_copy)
                 if self.snapshot_saver and self.frame_source and frame_copy is not None:
+                        # Cache save_mode to avoid duplicate property access (Copilot suggestion)
+                        save_mode = self.snapshot_saver.save_mode
+
                         # Only buffer frames if save_mode is "clip" (pre-roll video recording)
                         # For "image" mode, skip buffering to avoid CPU-intensive JPEG encoding on every frame
                         # Fix for Issue #147: JPEG encoding bottleneck
-                        if self.snapshot_saver.save_mode == "clip":
+                        if save_mode == "clip":
                             self.snapshot_saver.add_frame_to_buffer(
                                 frame_copy,
                                 processed_result['timestamp']
@@ -193,8 +196,8 @@ class DetectionProcessor:
                                 processed_result['detections']
                             )
 
-                            # Save the snapshot (skip should_save check since we already checked)
-                            if self.snapshot_saver.save_mode == "image":
+                            # Save using appropriate method based on mode (skip should_save check since we already checked)
+                            if save_mode == "image":
                                 saved_path = self.snapshot_saver.save_snapshot(
                                     frame_copy,
                                     processed_result,
