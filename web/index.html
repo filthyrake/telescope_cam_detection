@@ -251,25 +251,30 @@
             grid-template-columns: repeat(3, 1fr);
         }
 
-        /* Manual grid layouts */
+        /* Manual grid layouts - format is columns×rows (e.g., 2x1 = 2 columns, 1 row) */
         .camera-grid.layout-1x1 {
             grid-template-columns: 1fr;
+            grid-template-rows: 1fr;
         }
 
         .camera-grid.layout-2x1 {
             grid-template-columns: repeat(2, 1fr);
+            grid-template-rows: 1fr;
         }
 
         .camera-grid.layout-2x2 {
             grid-template-columns: repeat(2, 1fr);
+            grid-template-rows: repeat(2, 1fr);
         }
 
         .camera-grid.layout-3x2 {
             grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(2, 1fr);
         }
 
         .camera-grid.layout-3x3 {
             grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
         }
 
         .grid-camera-item {
@@ -416,13 +421,13 @@
                 <div id="gridControls" style="display: none; gap: 15px; align-items: center;">
                     <div>
                         <label for="layoutSelect" style="color: #aaa; margin-right: 10px;">Layout:</label>
-                        <select id="layoutSelect" style="padding: 8px 15px; border-radius: 5px; background-color: #2a2a2a; color: #00ff88; border: 2px solid #00ff8844; font-size: 1em; cursor: pointer;">
-                            <option value="auto">Auto</option>
-                            <option value="1x1">1×1</option>
-                            <option value="2x1">2×1</option>
-                            <option value="2x2">2×2</option>
-                            <option value="3x2">3×2</option>
-                            <option value="3x3">3×3</option>
+                        <select id="layoutSelect" style="padding: 8px 15px; border-radius: 5px; background-color: #2a2a2a; color: #00ff88; border: 2px solid #00ff8844; font-size: 1em; cursor: pointer;" title="Grid layout: columns × rows">
+                            <option value="auto">Auto (adapt to camera count)</option>
+                            <option value="1x1">1×1 (1 column, 1 row)</option>
+                            <option value="2x1">2×1 (2 columns, 1 row)</option>
+                            <option value="2x2">2×2 (2 columns, 2 rows)</option>
+                            <option value="3x2">3×2 (3 columns, 2 rows)</option>
+                            <option value="3x3">3×3 (3 columns, 3 rows)</option>
                         </select>
                     </div>
                     <div>

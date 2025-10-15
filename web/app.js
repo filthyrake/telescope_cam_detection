@@ -20,6 +20,10 @@ class DetectionApp {
         this.visibleCameras = new Set(); // Track which cameras are visible in grid
         this.cameraDetectionCounts = {}; // Track detection counts per camera
         this.cameraFps = {}; // Track FPS per camera
+        this.lastProcessedFrames = {}; // Track last processed frame ID per camera to avoid overcounting
+        this.badgeTimeouts = {}; // Store timeout IDs for detection badges to prevent flickering
+        this.cameraFrameCounts = {}; // Track frame counts per camera for FPS calculation
+        this.cameraLastFpsUpdate = {}; // Track last FPS update timestamp per camera
 
         // State
         this.latestDetections = null;
@@ -463,6 +467,9 @@ class DetectionApp {
                 document.getElementById('cameraName').textContent = data.camera_name;
             }
 
+            // Update per-camera FPS based on message rate
+            this.updateCameraFPS(data);
+
             this.updateUI(data);
             this.updateFPS();
 
@@ -475,8 +482,34 @@ class DetectionApp {
         }
     }
 
+    updateCameraFPS(data) {
+        const cameraId = data.camera_id || 'default';
+        const now = Date.now();
+
+        // Initialize tracking for this camera if needed
+        if (!this.cameraFrameCounts[cameraId]) {
+            this.cameraFrameCounts[cameraId] = 0;
+            this.cameraLastFpsUpdate[cameraId] = now;
+        }
+
+        // Increment frame count for this camera
+        this.cameraFrameCounts[cameraId]++;
+
+        // Calculate FPS every second
+        const elapsed = now - this.cameraLastFpsUpdate[cameraId];
+        if (elapsed >= 1000) {
+            const fps = Math.round((this.cameraFrameCounts[cameraId] / elapsed) * 1000);
+            this.cameraFps[cameraId] = fps;
+
+            // Reset counters
+            this.cameraFrameCounts[cameraId] = 0;
+            this.cameraLastFpsUpdate[cameraId] = now;
+        }
+    }
+
     updateGridCameraStats(data) {
         const cameraId = data.camera_id || 'default';
+        const frameId = data.frame_id;
 
         // Update FPS counter
         const fpsElement = document.getElementById(`fps-${cameraId}`);
@@ -484,10 +517,13 @@ class DetectionApp {
             fpsElement.textContent = `FPS: ${Math.round(this.cameraFps[cameraId])}`;
         }
 
-        // Update detection count and badge
+        // Update detection count and badge - only if this is a new frame
         const detections = data.detections || [];
-        if (detections.length > 0) {
-            // Increment detection count
+        if (detections.length > 0 && frameId !== this.lastProcessedFrames[cameraId]) {
+            // Mark this frame as processed to avoid overcounting
+            this.lastProcessedFrames[cameraId] = frameId;
+
+            // Increment detection count by number of detections in this frame
             this.cameraDetectionCounts[cameraId] = (this.cameraDetectionCounts[cameraId] || 0) + detections.length;
 
             // Update badge
@@ -496,9 +532,15 @@ class DetectionApp {
                 badgeElement.textContent = `${this.cameraDetectionCounts[cameraId]} detection${this.cameraDetectionCounts[cameraId] !== 1 ? 's' : ''}`;
                 badgeElement.classList.add('visible');
 
+                // Clear any existing timeout for this camera to prevent flickering
+                if (this.badgeTimeouts[cameraId]) {
+                    clearTimeout(this.badgeTimeouts[cameraId]);
+                }
+
                 // Hide badge after 3 seconds
-                setTimeout(() => {
+                this.badgeTimeouts[cameraId] = setTimeout(() => {
                     badgeElement.classList.remove('visible');
+                    delete this.badgeTimeouts[cameraId];
                 }, 3000);
             }
 
@@ -743,6 +785,7 @@ class DetectionApp {
     }
 
     updateFPS() {
+        // This tracks canvas drawing FPS for single view
         this.frameCount++;
         const now = Date.now();
         const elapsed = now - this.lastFpsUpdate;
@@ -750,12 +793,6 @@ class DetectionApp {
         if (elapsed >= 1000) {
             this.fps = Math.round((this.frameCount / elapsed) * 1000);
             document.getElementById('fps').textContent = this.fps;
-
-            // Update per-camera FPS if we have detection data
-            if (this.latestDetections && this.latestDetections.camera_id) {
-                const cameraId = this.latestDetections.camera_id;
-                this.cameraFps[cameraId] = this.fps;
-            }
 
             this.frameCount = 0;
             this.lastFpsUpdate = now;
