@@ -14,6 +14,7 @@ import numpy as np
 
 from src.yolox_detector import YOLOXDetector
 from src.shared_inference_coordinator import SharedInferenceCoordinator
+from src.bbox_utils import ensure_valid_bbox
 from src.constants import (
     QUEUE_GET_TIMEOUT_SECONDS,
     LOG_DROPPED_EVERY_N,
@@ -388,6 +389,9 @@ class InferenceEngine:
         # Filter by confidence overrides and size constraints
         filtered_detections = []
         for det in detections:
+            # Validate and normalize bbox (Issue #117)
+            det['bbox'] = ensure_valid_bbox(det['bbox'])
+
             class_name = det['class_name']
             confidence = det['confidence']
             box_area = det['bbox']['area']

@@ -19,6 +19,7 @@ from species_classifier import SpeciesClassifier
 from src.coco_constants import CLASS_ID_TO_CATEGORY
 from src.image_enhancement import ImageEnhancer
 from src.species_activity_patterns import is_species_likely_active, get_species_activity
+from src.bbox_utils import ensure_valid_bbox
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +222,10 @@ class TwoStageDetectionPipeline:
         class_id = detection.get('class_id')
         class_name = detection.get('class_name', '')
         bbox = detection.get('bbox', {})
+
+        # Validate and normalize bbox (Issue #117)
+        bbox = ensure_valid_bbox(bbox)
+        detection['bbox'] = bbox
 
         # Determine classifier category
         category = self.class_id_to_category.get(class_id)

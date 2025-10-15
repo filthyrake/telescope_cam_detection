@@ -10,6 +10,7 @@ import logging
 import threading
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
+from src.bbox_utils import ensure_valid_bbox
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,9 @@ class MotionFilter:
 
         # Threshold again after blur
         fg_mask = cv2.threshold(fg_mask, 25, 255, cv2.THRESH_BINARY)[1]
+
+        # Validate and normalize bbox (Issue #117)
+        bbox = ensure_valid_bbox(bbox)
 
         # Extract ROI from motion mask
         x1, y1 = int(bbox['x1']), int(bbox['y1'])
