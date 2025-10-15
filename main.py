@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 from src.stream_capture import RTSPStreamCapture, create_rtsp_url
 from src.stream_capture_gpu_ffmpeg import RTSPStreamCaptureGPU  # GPU-accelerated via FFmpeg NVDEC
 from src.inference_engine_yolox import InferenceEngine  # YOLOX version (47x faster!)
+from src.shared_inference_coordinator import SharedInferenceCoordinator  # Batched inference
 from src.detection_processor import DetectionProcessor
 from src.web_server import WebServer
 from src.snapshot_saver import SnapshotSaver
@@ -64,6 +65,7 @@ class TelescopeDetectionSystem:
         self.health_monitor = None  # Camera health monitor
         self.face_masker = None  # Privacy-preserving face masker
         self.face_masking_cache = None  # Face detection caching for performance
+        self.shared_coordinator = None  # Shared batched inference coordinator
 
         # Queues for inter-component communication (per-camera)
         self.frame_queues = []  # List of frame queues
@@ -755,6 +757,62 @@ class TelescopeDetectionSystem:
         logger.info(f"Face masking cache initialized (detect every {ttl_frames} frames)")
         return cache
 
+    def _initialize_shared_coordinator(self) -> Optional[SharedInferenceCoordinator]:
+        """
+        Initialize shared batched inference coordinator if enabled.
+
+        Returns:
+            SharedInferenceCoordinator instance if enabled, None otherwise
+
+        Note: The coordinator loads its own YOLOX detector for batched inference.
+        InferenceEngine instances in coordinator mode skip detector creation (VRAM optimization).
+        """
+        detection_config = self.config.get('detection', {})
+        batching_config = detection_config.get('batching', {})
+
+        if not batching_config.get('enabled', False):
+            return None
+
+        try:
+            # Load first detector for coordinator (will be loaded again per-camera)
+            from src.yolox_detector import YOLOXDetector
+
+            model_config = detection_config.get('model', {})
+            input_size = detection_config.get('input_size', [640, 640])
+            input_size_tuple = tuple(input_size)
+
+            # Create temporary detector for coordinator
+            detector = YOLOXDetector(
+                model_name=model_config.get('name', 'yolox-s'),
+                model_path=model_config.get('weights', 'models/yolox/yolox_s.pth'),
+                device=detection_config.get('device', 'cuda:0'),
+                conf_threshold=detection_config.get('conf_threshold', 0.25),
+                nms_threshold=detection_config.get('nms_threshold', 0.45),
+                input_size=input_size_tuple,
+                wildlife_only=detection_config.get('wildlife_only', True)
+            )
+
+            if not detector.load_model():
+                logger.error("Failed to load YOLOX detector for coordinator")
+                return None
+
+            # Create coordinator
+            coordinator = SharedInferenceCoordinator(
+                detector=detector,
+                max_batch_size=batching_config.get('max_batch_size', 4),
+                max_batch_wait_ms=batching_config.get('max_batch_wait_ms', 10.0),
+                enable_metrics=batching_config.get('enable_metrics', True)
+            )
+
+            logger.info(f"Shared batched inference coordinator initialized")
+            logger.info(f"  Max batch size: {batching_config.get('max_batch_size', 4)}")
+            logger.info(f"  Max batch wait: {batching_config.get('max_batch_wait_ms', 10.0)}ms")
+            return coordinator
+
+        except Exception as e:
+            logger.error(f"Failed to initialize shared coordinator: {e}")
+            return None
+
     def _initialize_snapshot_saver(self) -> Optional[SnapshotSaver]:
         """
         Initialize shared snapshot saver if enabled in configuration.
@@ -1059,6 +1117,7 @@ class TelescopeDetectionSystem:
             InferenceEngine instance
         """
         camera_id = camera_config.get('id', 'default')
+        camera_name = camera_config.get('name', 'Default Camera')
         model_config_dict = self.config.get('detection', {}).get('model', {})
         input_size = camera_detection_config.get('input_size', [640, 640])
         input_size_tuple = tuple(input_size)
@@ -1078,7 +1137,10 @@ class TelescopeDetectionSystem:
             two_stage_pipeline=two_stage_pipeline,
             class_confidence_overrides=camera_detection_config.get('class_confidence_overrides', {}),
             class_size_constraints=camera_detection_config.get('class_size_constraints', {}),
-            wildlife_only=camera_detection_config.get('wildlife_only', True)
+            wildlife_only=camera_detection_config.get('wildlife_only', True),
+            shared_coordinator=self.shared_coordinator,
+            camera_id=camera_id,
+            camera_name=camera_name
         )
 
         logger.info(f"  [{camera_id}] YOLOX inference engine initialized")
@@ -1243,6 +1305,9 @@ class TelescopeDetectionSystem:
             self.face_masker = self._initialize_face_masker()
             self.face_masking_cache = self._initialize_face_masking_cache()
 
+            # Initialize shared batched inference coordinator (if enabled)
+            self.shared_coordinator = self._initialize_shared_coordinator()
+
             # Initialize shared snapshot saver
             snapshot_saver = self._initialize_snapshot_saver()
 
@@ -1360,6 +1425,12 @@ class TelescopeDetectionSystem:
 
             logger.info(f"{len(active_cameras)}/{len(self.stream_captures)} camera(s) started successfully")
 
+            # Start shared coordinator if enabled
+            if self.shared_coordinator:
+                logger.info("Starting shared batched inference coordinator...")
+                self.shared_coordinator.start()
+                logger.info("Batched inference coordinator started")
+
             # Start inference engines only for active cameras
             failed_inference = []
             for i in active_cameras:
@@ -1465,6 +1536,11 @@ class TelescopeDetectionSystem:
         # Stop health monitor first
         if self.health_monitor:
             self.health_monitor.stop()
+
+        # Stop shared coordinator if enabled
+        if self.shared_coordinator:
+            logger.info("Stopping shared batched inference coordinator...")
+            self.shared_coordinator.stop()
 
         # Stop all detection processors
         for detection_processor in self.detection_processors:

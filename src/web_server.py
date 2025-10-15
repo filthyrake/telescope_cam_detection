@@ -536,10 +536,15 @@ class WebServer:
         async def websocket_detections(websocket: WebSocket):
             """
             WebSocket endpoint for streaming detection results.
+            Optimized to skip empty detection frames and reduce network traffic.
             """
             await websocket.accept()
             self.active_connections.append(websocket)
             logger.info(f"WebSocket connected. Total connections: {len(self.active_connections)}")
+
+            # Track last status update time per camera (for periodic updates when no detections)
+            last_status_update_time: Dict[str, float] = {}
+            status_update_interval = 5.0  # Send status update every 5 seconds
 
             try:
                 # Send initial connection message
@@ -563,11 +568,31 @@ class WebServer:
                         camera_id = detection_result.get('camera_id', 'default')
                         self.latest_detections[camera_id] = detection_result
 
-                        # Prepare WebSocket message
+                        # Prepare detection message
                         message = self._prepare_detection_message(detection_result)
 
-                        # Send to client
-                        await websocket.send_json(message)
+                        # Only send if detections are present
+                        if message.get('total_detections', 0) > 0:
+                            # Send WebSocket message
+                            await websocket.send_json(message)
+
+                            # Update last status time
+                            last_status_update_time[camera_id] = time.time()
+                        else:
+                            # No detections - send periodic status update
+                            current_time = time.time()
+                            last_update = last_status_update_time.get(camera_id, 0)
+
+                            if current_time - last_update >= status_update_interval:
+                                # Send lightweight status update
+                                await websocket.send_json({
+                                    "type": "status",
+                                    "camera_id": camera_id,
+                                    "camera_name": detection_result.get("camera_name", "Default Camera"),
+                                    "timestamp": current_time,
+                                    "no_detections": True
+                                })
+                                last_status_update_time[camera_id] = current_time
 
                     except Empty:
                         # No detection available, send heartbeat to keep connection alive

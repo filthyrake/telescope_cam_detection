@@ -13,6 +13,7 @@ from threading import Thread, Event
 import numpy as np
 
 from src.yolox_detector import YOLOXDetector
+from src.shared_inference_coordinator import SharedInferenceCoordinator
 from src.constants import (
     QUEUE_GET_TIMEOUT_SECONDS,
     LOG_DROPPED_EVERY_N,
@@ -48,6 +49,9 @@ class InferenceEngine:
         class_confidence_overrides: Optional[Dict[str, float]] = None,
         class_size_constraints: Optional[Dict[str, Dict[str, int]]] = None,
         wildlife_only: bool = True,
+        shared_coordinator: Optional[SharedInferenceCoordinator] = None,
+        camera_id: Optional[str] = None,
+        camera_name: Optional[str] = None,
         **kwargs  # Ignore extra params from old config
     ):
         """
@@ -69,6 +73,9 @@ class InferenceEngine:
             class_confidence_overrides: Per-class confidence thresholds
             class_size_constraints: Per-class min/max box area constraints (e.g., {'bird': {'max': 15000}})
             wildlife_only: Filter to wildlife-relevant classes only
+            shared_coordinator: Optional SharedInferenceCoordinator for batched inference
+            camera_id: Camera identifier for this engine instance
+            camera_name: Camera name for logging
         """
         self.model_name = model_name
         self.model_path = model_path
@@ -85,6 +92,9 @@ class InferenceEngine:
         self.class_confidence_overrides = class_confidence_overrides or {}
         self.class_size_constraints = class_size_constraints or {}
         self.wildlife_only = wildlife_only
+        self.shared_coordinator = shared_coordinator
+        self.camera_id = camera_id or "default"
+        self.camera_name = camera_name or "Default Camera"
 
         self.detector: Optional[YOLOXDetector] = None
         self.is_loaded = False
@@ -106,6 +116,17 @@ class InferenceEngine:
         """Load YOLOX model"""
         try:
             logger.info(f"Loading YOLOX inference engine...")
+
+            # Skip detector creation if using shared coordinator (VRAM optimization)
+            if self.shared_coordinator:
+                logger.info(f"Using shared batched inference coordinator (skipping per-engine detector)")
+                logger.info(f"Camera: {self.camera_name} (ID: {self.camera_id})")
+                logger.info(f"Two-stage detection: {'enabled' if self.use_two_stage else 'disabled'}")
+                self.is_loaded = True
+                logger.info("YOLOX inference engine loaded (coordinator mode)")
+                return True
+
+            # Standalone mode: Create and load detector
             logger.info(f"Model: {self.model_name}")
             logger.info(f"Weights: {self.model_path}")
             logger.info(f"Device: {self.device}")
@@ -180,7 +201,7 @@ class InferenceEngine:
 
     def _inference_loop(self):
         """Main inference loop running in separate thread"""
-        logger.info("Inference loop started")
+        logger.info(f"Inference loop started (coordinator mode: {self.shared_coordinator is not None})")
 
         while not self.stop_event.is_set():
             try:
@@ -193,61 +214,53 @@ class InferenceEngine:
                 frame = frame_data['frame']
                 frame_timestamp = frame_data['timestamp']
                 frame_id = frame_data['frame_id']
-                camera_id = frame_data.get('camera_id', 'default')
-                camera_name = frame_data.get('camera_name', 'Default Camera')
+                camera_id = frame_data.get('camera_id', self.camera_id)
+                camera_name = frame_data.get('camera_name', self.camera_name)
 
-                # Run inference
+                # Record inference start time
                 inference_start = time.time()
-                detections = self._run_inference(frame)
-                inference_time = time.time() - inference_start
 
-                # Update metrics
-                self.inference_count += 1
-                self.total_inference_count += 1  # Cumulative total (never reset)
-                self.total_inference_time += inference_time
-                self.avg_inference_time = self.total_inference_time / self.total_inference_count
+                if self.shared_coordinator:
+                    # Coordinator mode: Queue for batched inference
+                    # Bind loop variables at lambda creation time (avoid capture-by-reference bug)
+                    self.shared_coordinator.infer_async(
+                        frame=frame,
+                        callback=lambda raw_detections, f=frame, fid=frame_id, ft=frame_timestamp,
+                                       cid=camera_id, cn=camera_name, t0=inference_start:
+                            self._handle_inference_callback(raw_detections, f, fid, ft, cid, cn, t0),
+                        camera_id=camera_id
+                    )
+                else:
+                    # Non-coordinator mode: Synchronous inference (backward compatibility)
+                    detections = self._run_inference(frame)
+                    inference_time = time.time() - inference_start
 
-                # Calculate FPS
-                if time.time() - self.last_fps_check >= FPS_CALCULATION_INTERVAL_SECONDS:
-                    self.fps = self.inference_count / (time.time() - self.last_fps_check)
-                    self.last_fps_check = time.time()
-                    self.inference_count = 0
-                    logger.debug(f"Inference FPS: {self.fps:.1f}, Avg time: {self.avg_inference_time*1000:.1f}ms")
+                    # Update metrics
+                    self.inference_count += 1
+                    self.total_inference_count += 1  # Cumulative total (never reset)
+                    self.total_inference_time += inference_time
+                    self.avg_inference_time = self.total_inference_time / self.total_inference_count
 
-                # Prepare result
-                result = {
-                    'frame_id': frame_id,
-                    'timestamp': frame_timestamp,
-                    'inference_time': inference_time,
-                    'detections': detections,
-                    'frame_shape': frame.shape,
-                    'camera_id': camera_id,
-                    'camera_name': camera_name
-                }
+                    # Calculate FPS
+                    if time.time() - self.last_fps_check >= FPS_CALCULATION_INTERVAL_SECONDS:
+                        self.fps = self.inference_count / (time.time() - self.last_fps_check)
+                        self.last_fps_check = time.time()
+                        self.inference_count = 0
+                        logger.debug(f"Inference FPS: {self.fps:.1f}, Avg time: {self.avg_inference_time*1000:.1f}ms")
 
-                # Send to output queue
-                try:
-                    self.output_queue.put_nowait(result)
-                except Exception as e:
-                    self.dropped_results += 1
-                    self.drop_count_since_warning += 1
+                    # Prepare result
+                    result = {
+                        'frame_id': frame_id,
+                        'timestamp': frame_timestamp,
+                        'inference_time': inference_time,
+                        'detections': detections,
+                        'frame_shape': frame.shape,
+                        'camera_id': camera_id,
+                        'camera_name': camera_name
+                    }
 
-                    # Log with drop rate when drops are frequent (improved observability)
-                    current_time = time.time()
-                    time_since_last_warning = current_time - self.last_drop_warning_time
-
-                    # Log every Nth drop OR every 10 seconds (whichever comes first)
-                    should_log = (self.dropped_results % LOG_DROPPED_EVERY_N == 0) or (time_since_last_warning >= 10.0)
-
-                    if should_log:
-                        drop_rate = self.drop_count_since_warning / max(time_since_last_warning, MIN_TIME_DELTA)
-                        total_drop_rate = self.dropped_results / max(self.total_inference_count, 1)
-                        logger.warning(
-                            f"Output queue full: dropped {self.dropped_results} total results "
-                            f"(drop rate: {drop_rate:.2f}/s, {total_drop_rate*100:.1f}% overall) - system overloaded"
-                        )
-                        self.last_drop_warning_time = current_time
-                        self.drop_count_since_warning = 0
+                    # Send to output queue
+                    self._queue_result(result)
 
             except Exception as e:
                 logger.error(f"Error in inference loop: {e}")
@@ -255,19 +268,110 @@ class InferenceEngine:
                 logger.error(traceback.format_exc())
                 time.sleep(ERROR_SLEEP_SECONDS)
 
-    def _run_inference(self, frame: np.ndarray) -> List[Dict[str, Any]]:
+    def _handle_inference_callback(
+        self,
+        raw_detections: List[Dict[str, Any]],
+        frame: np.ndarray,
+        frame_id: int,
+        frame_timestamp: float,
+        camera_id: str,
+        camera_name: str,
+        inference_start: float
+    ):
         """
-        Run inference on a single frame.
+        Handle async inference callback from coordinator.
 
         Args:
-            frame: Input frame (BGR format)
+            raw_detections: Raw detections from detector (before post-processing)
+            frame: Original frame
+            frame_id: Frame ID
+            frame_timestamp: Frame timestamp
+            camera_id: Camera ID
+            camera_name: Camera name
+            inference_start: Inference start time
+        """
+        try:
+            # Apply post-processing (filtering, two-stage, etc.)
+            detections = self._post_process_detections(raw_detections, frame)
+            inference_time = time.time() - inference_start
+
+            # Update metrics
+            self.inference_count += 1
+            self.total_inference_count += 1
+            self.total_inference_time += inference_time
+            self.avg_inference_time = self.total_inference_time / self.total_inference_count
+
+            # Calculate FPS
+            if time.time() - self.last_fps_check >= FPS_CALCULATION_INTERVAL_SECONDS:
+                self.fps = self.inference_count / (time.time() - self.last_fps_check)
+                self.last_fps_check = time.time()
+                self.inference_count = 0
+                logger.debug(f"Inference FPS: {self.fps:.1f}, Avg time: {self.avg_inference_time*1000:.1f}ms")
+
+            # Prepare result
+            result = {
+                'frame_id': frame_id,
+                'timestamp': frame_timestamp,
+                'inference_time': inference_time,
+                'detections': detections,
+                'frame_shape': frame.shape,
+                'camera_id': camera_id,
+                'camera_name': camera_name
+            }
+
+            # Send to output queue
+            self._queue_result(result)
+
+        except Exception as e:
+            logger.error(f"Error in inference callback for camera {camera_id}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+    def _queue_result(self, result: Dict[str, Any]):
+        """
+        Queue detection result to output queue with drop tracking.
+
+        Args:
+            result: Detection result dictionary
+        """
+        try:
+            self.output_queue.put_nowait(result)
+        except Exception as e:
+            self.dropped_results += 1
+            self.drop_count_since_warning += 1
+
+            # Log with drop rate when drops are frequent (improved observability)
+            current_time = time.time()
+            time_since_last_warning = current_time - self.last_drop_warning_time
+
+            # Log every Nth drop OR every 10 seconds (whichever comes first)
+            should_log = (self.dropped_results % LOG_DROPPED_EVERY_N == 0) or (time_since_last_warning >= 10.0)
+
+            if should_log:
+                drop_rate = self.drop_count_since_warning / max(time_since_last_warning, MIN_TIME_DELTA)
+                total_drop_rate = self.dropped_results / max(self.total_inference_count, 1)
+                logger.warning(
+                    f"Output queue full: dropped {self.dropped_results} total results "
+                    f"(drop rate: {drop_rate:.2f}/s, {total_drop_rate*100:.1f}% overall) - system overloaded"
+                )
+                self.last_drop_warning_time = current_time
+                self.drop_count_since_warning = 0
+
+    def _post_process_detections(
+        self,
+        detections: List[Dict[str, Any]],
+        frame: np.ndarray
+    ) -> List[Dict[str, Any]]:
+        """
+        Apply post-processing to detections (filtering, two-stage classification).
+
+        Args:
+            detections: Raw detections from detector
+            frame: Original frame
 
         Returns:
-            List of detection dictionaries
+            Filtered and processed detections
         """
-        # Stage 1: Run YOLOX detection
-        detections = self.detector.detect(frame)
-
         # Filter by confidence overrides and size constraints
         filtered_detections = []
         for det in detections:
@@ -304,6 +408,27 @@ class InferenceEngine:
 
         return filtered_detections
 
+    def _run_inference(self, frame: np.ndarray) -> List[Dict[str, Any]]:
+        """
+        Run inference on a single frame.
+
+        Args:
+            frame: Input frame (BGR format)
+
+        Returns:
+            List of detection dictionaries
+        """
+        # Safety check: detector should not be called in coordinator mode
+        if self.detector is None:
+            logger.error("Detector not loaded (coordinator mode should not call _run_inference)")
+            return []
+
+        # Stage 1: Run YOLOX detection
+        detections = self.detector.detect(frame)
+
+        # Apply post-processing
+        return self._post_process_detections(detections, frame)
+
     def infer_single(self, frame: np.ndarray) -> List[Dict[str, Any]]:
         """
         Run inference on a single frame (synchronous).
@@ -313,9 +438,15 @@ class InferenceEngine:
 
         Returns:
             List of detection dictionaries
+
+        Note: This method is not available in coordinator mode.
         """
         if not self.is_loaded:
             logger.error("Model not loaded")
+            return []
+
+        if self.shared_coordinator:
+            logger.error("infer_single() not supported in coordinator mode - use async inference")
             return []
 
         return self._run_inference(frame)
@@ -382,6 +513,7 @@ class InferenceEngine:
             'avg_inference_time_ms': self.avg_inference_time * 1000,
             'total_inferences': self.total_inference_count,  # Use cumulative count
             'dropped_results': self.dropped_results,
+            'coordinator_mode': self.shared_coordinator is not None,
         }
 
         # Add drop rate
@@ -389,6 +521,10 @@ class InferenceEngine:
             stats['drop_rate'] = self.dropped_results / self.total_inference_count
         else:
             stats['drop_rate'] = 0.0
+
+        # Add coordinator stats if available
+        if self.shared_coordinator:
+            stats['coordinator'] = self.shared_coordinator.get_stats()
 
         # Add GPU memory usage if CUDA is available
         if torch.cuda.is_available():
