@@ -117,8 +117,11 @@ class SnapshotSaver:
             return
 
         # Convert GPU tensor to NumPy if needed (cv2.imencode needs NumPy)
+        # Free GPU memory explicitly to avoid leak (Issue #98)
         if isinstance(frame, torch.Tensor):
-            frame = frame.cpu().numpy()
+            frame_cpu = frame.cpu().numpy()
+            del frame  # Explicitly delete GPU tensor to free VRAM
+            frame = frame_cpu
 
         with self.buffer_lock:
             if self.use_compressed_buffer:
@@ -249,10 +252,15 @@ class SnapshotSaver:
             Path to masked file (for web serving), or None if save failed
         """
         # Convert GPU tensors to NumPy (cv2.imwrite needs NumPy)
+        # Free GPU memory explicitly to avoid leak (Issue #98)
         if isinstance(frame, torch.Tensor):
-            frame = frame.cpu().numpy()
+            frame_cpu = frame.cpu().numpy()
+            del frame  # Explicitly delete GPU tensor to free VRAM
+            frame = frame_cpu
         if isinstance(annotated_frame, torch.Tensor):
-            annotated_frame = annotated_frame.cpu().numpy()
+            annotated_cpu = annotated_frame.cpu().numpy()
+            del annotated_frame  # Explicitly delete GPU tensor to free VRAM
+            annotated_frame = annotated_cpu
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
@@ -412,10 +420,15 @@ class SnapshotSaver:
             Path to saved file, or None if save failed
         """
         # Convert GPU tensors to NumPy (cv2.VideoWriter needs NumPy)
+        # Free GPU memory explicitly to avoid leak (Issue #98)
         if isinstance(current_frame, torch.Tensor):
-            current_frame = current_frame.cpu().numpy()
+            current_cpu = current_frame.cpu().numpy()
+            del current_frame  # Explicitly delete GPU tensor to free VRAM
+            current_frame = current_cpu
         if isinstance(annotated_frame, torch.Tensor):
-            annotated_frame = annotated_frame.cpu().numpy()
+            annotated_cpu = annotated_frame.cpu().numpy()
+            del annotated_frame  # Explicitly delete GPU tensor to free VRAM
+            annotated_frame = annotated_cpu
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 

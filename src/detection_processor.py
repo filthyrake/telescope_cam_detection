@@ -114,7 +114,9 @@ class DetectionProcessor:
 
             # Check if thread actually stopped
             if self.processor_thread.is_alive():
-                logger.error(f"Detection processor thread did not stop after {THREAD_JOIN_TIMEOUT_SECONDS}s timeout (thread may be blocked)")
+                logger.error(f"CRITICAL: Detection processor thread did not stop after {THREAD_JOIN_TIMEOUT_SECONDS}s timeout (thread may be blocked)")
+                logger.error(f"Thread is orphaned and will continue running - potential resource leak (Issue #96)")
+                logger.error("This may indicate a deadlock or blocking queue operation")
             else:
                 logger.info("Detection processor thread stopped successfully")
 
