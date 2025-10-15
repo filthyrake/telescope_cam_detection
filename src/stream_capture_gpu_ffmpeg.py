@@ -179,8 +179,10 @@ class RTSPStreamCaptureGPU:
         if self.capture_thread:
             self.capture_thread.join(timeout=5.0)
             if self.capture_thread.is_alive():
-                logger.error(f"[{self.camera_id}] CRITICAL: Capture thread did not stop after 5s timeout (thread may be blocked)")
-                logger.error(f"[{self.camera_id}] Thread is orphaned and will continue running - potential resource leak (Issue #96)")
+                logger.error(
+                    f"[{self.camera_id}] CRITICAL: Capture thread did not stop after 5s timeout (thread may be blocked). "
+                    f"Thread is orphaned and will continue running - potential resource leak (Issue #96)"
+                )
 
         if self.ffmpeg_process:
             try:
@@ -266,14 +268,14 @@ class RTSPStreamCaptureGPU:
                 # Clone GPU tensor before putting in queue to avoid race conditions (Issue #95)
                 # Multiple threads may access the same tensor, causing CUDA errors
                 if self.keep_frames_on_gpu:
-                    frame_for_queue = img.clone()
+                    cloned_frame = img.clone()
                 else:
-                    frame_for_queue = img.copy()
+                    cloned_frame = img.copy()
 
                 # Put frame in queue (non-blocking)
                 try:
                     self.frame_queue.put_nowait({
-                        'frame': frame_for_queue,
+                        'frame': cloned_frame,
                         'timestamp': timestamp,
                         'frame_id': self.frame_id_counter,  # Use separate counter for frame IDs
                         'camera_id': self.camera_id,

@@ -104,6 +104,23 @@ class SnapshotSaver:
 
         logger.info(f"SnapshotSaver initialized: mode={save_mode}, output={output_dir}")
 
+    def _convert_tensor_to_numpy(self, frame: Any) -> Any:
+        """
+        Convert GPU tensor to NumPy array, freeing GPU memory explicitly.
+        Helper method to reduce code duplication (Copilot suggestion).
+
+        Args:
+            frame: Frame (NumPy array or GPU tensor)
+
+        Returns:
+            NumPy array (converts if tensor, returns as-is if already NumPy)
+        """
+        if isinstance(frame, torch.Tensor):
+            frame_cpu = frame.cpu().numpy()
+            del frame  # Explicitly delete GPU tensor to free VRAM (Issue #98)
+            return frame_cpu
+        return frame
+
     def add_frame_to_buffer(self, frame: Any, timestamp: float):
         """
         Add frame to ring buffer for pre-detection recording.
@@ -117,11 +134,7 @@ class SnapshotSaver:
             return
 
         # Convert GPU tensor to NumPy if needed (cv2.imencode needs NumPy)
-        # Free GPU memory explicitly to avoid leak (Issue #98)
-        if isinstance(frame, torch.Tensor):
-            frame_cpu = frame.cpu().numpy()
-            del frame  # Explicitly delete GPU tensor to free VRAM
-            frame = frame_cpu
+        frame = self._convert_tensor_to_numpy(frame)
 
         with self.buffer_lock:
             if self.use_compressed_buffer:
@@ -252,15 +265,9 @@ class SnapshotSaver:
             Path to masked file (for web serving), or None if save failed
         """
         # Convert GPU tensors to NumPy (cv2.imwrite needs NumPy)
-        # Free GPU memory explicitly to avoid leak (Issue #98)
-        if isinstance(frame, torch.Tensor):
-            frame_cpu = frame.cpu().numpy()
-            del frame  # Explicitly delete GPU tensor to free VRAM
-            frame = frame_cpu
-        if isinstance(annotated_frame, torch.Tensor):
-            annotated_cpu = annotated_frame.cpu().numpy()
-            del annotated_frame  # Explicitly delete GPU tensor to free VRAM
-            annotated_frame = annotated_cpu
+        frame = self._convert_tensor_to_numpy(frame)
+        if annotated_frame is not None:
+            annotated_frame = self._convert_tensor_to_numpy(annotated_frame)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
@@ -420,15 +427,9 @@ class SnapshotSaver:
             Path to saved file, or None if save failed
         """
         # Convert GPU tensors to NumPy (cv2.VideoWriter needs NumPy)
-        # Free GPU memory explicitly to avoid leak (Issue #98)
-        if isinstance(current_frame, torch.Tensor):
-            current_cpu = current_frame.cpu().numpy()
-            del current_frame  # Explicitly delete GPU tensor to free VRAM
-            current_frame = current_cpu
-        if isinstance(annotated_frame, torch.Tensor):
-            annotated_cpu = annotated_frame.cpu().numpy()
-            del annotated_frame  # Explicitly delete GPU tensor to free VRAM
-            annotated_frame = annotated_cpu
+        current_frame = self._convert_tensor_to_numpy(current_frame)
+        if annotated_frame is not None:
+            annotated_frame = self._convert_tensor_to_numpy(annotated_frame)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
