@@ -7,7 +7,7 @@ import torch
 import cv2
 import numpy as np
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 from pathlib import Path
 
 # Add YOLOX directory to sys.path dynamically (relative to this file)
@@ -105,21 +105,28 @@ class YOLOXDetector:
             logger.error(traceback.format_exc())
             return False
 
-    def preprocess(self, img: np.ndarray) -> torch.Tensor:
+    def preprocess(self, img: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
         """
         Preprocess image for YOLOX with GPU-accelerated resize
 
         Args:
-            img: Input image (BGR, HxWxC)
+            img: Input image (BGR, HxWxC) - can be NumPy array or GPU tensor
 
         Returns:
             Preprocessed tensor (1xCxHxW)
         """
-        # Convert to tensor first (HxWxC -> 1xCxHxW)
-        img_tensor = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).float()
-
-        # Move to device BEFORE resize (so resize happens on GPU!)
-        img_tensor = img_tensor.to(self.device)
+        # Convert to tensor if needed (HxWxC -> 1xCxHxW)
+        if isinstance(img, torch.Tensor):
+            # Already a tensor - just add batch dimension and ensure float
+            img_tensor = img.permute(2, 0, 1).unsqueeze(0).float()
+            # Ensure it's on the correct device
+            if img_tensor.device != torch.device(self.device):
+                img_tensor = img_tensor.to(self.device)
+        else:
+            # NumPy array - convert to tensor
+            img_tensor = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).float()
+            # Move to device BEFORE resize (so resize happens on GPU!)
+            img_tensor = img_tensor.to(self.device)
 
         # GPU-accelerated resize using torch.nn.functional
         # Note: Both img_tensor.shape[2:] and self.input_size are (H, W) format for PyTorch
@@ -133,12 +140,12 @@ class YOLOXDetector:
 
         return img_tensor
 
-    def detect(self, frame: np.ndarray) -> List[Dict[str, Any]]:
+    def detect(self, frame: Union[np.ndarray, torch.Tensor]) -> List[Dict[str, Any]]:
         """
         Run detection on frame
 
         Args:
-            frame: Input frame (BGR format)
+            frame: Input frame (BGR format) - can be NumPy array or GPU tensor
 
         Returns:
             List of detection dictionaries
@@ -147,8 +154,11 @@ class YOLOXDetector:
             logger.error("Model not loaded")
             return []
 
-        # Get original image size
-        orig_h, orig_w = frame.shape[:2]
+        # Get original image size (handle both NumPy and torch)
+        if isinstance(frame, torch.Tensor):
+            orig_h, orig_w = frame.shape[0], frame.shape[1]
+        else:
+            orig_h, orig_w = frame.shape[:2]
 
         # Preprocess
         img_tensor = self.preprocess(frame)

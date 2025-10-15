@@ -5,6 +5,7 @@ Processes raw detections and prepares them for web display.
 
 import time
 import logging
+import torch
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from queue import Queue, Empty
@@ -125,6 +126,7 @@ class DetectionProcessor:
     def _get_frame_copy(self) -> Optional[Any]:
         """
         Get a thread-safe copy of the latest frame from frame source.
+        Handles both NumPy arrays and GPU tensors.
 
         Returns:
             Copy of latest frame, or None if unavailable
@@ -133,7 +135,14 @@ class DetectionProcessor:
             return None
 
         with self.frame_source.frame_lock:
-            return self.frame_source.latest_frame.copy() if self.frame_source.latest_frame is not None else None
+            if self.frame_source.latest_frame is None:
+                return None
+
+            # Handle GPU tensors vs NumPy arrays
+            if isinstance(self.frame_source.latest_frame, torch.Tensor):
+                return self.frame_source.latest_frame.clone()
+            else:
+                return self.frame_source.latest_frame.copy()
 
     def _processing_loop(self):
         """Main processing loop running in separate thread."""

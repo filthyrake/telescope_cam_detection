@@ -4,8 +4,9 @@ Functions for drawing bounding boxes and annotations on frames.
 """
 
 import cv2
+import torch
 import numpy as np
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Union
 
 # Color palette for different classes (BGR format for OpenCV)
 CLASS_COLORS = {
@@ -130,7 +131,7 @@ def draw_bounding_box(
 
 
 def draw_detections(
-    frame: np.ndarray,
+    frame: Union[np.ndarray, torch.Tensor],
     detections: List[Dict[str, Any]],
     thickness: int = 3,
     font_scale: float = 0.7,
@@ -140,17 +141,20 @@ def draw_detections(
     Draw all detections on a frame.
 
     Args:
-        frame: Image frame (numpy array)
+        frame: Image frame (numpy array or GPU tensor)
         detections: List of detection dictionaries
         thickness: Line thickness
         font_scale: Font size scale
         draw_labels: Whether to draw label text
 
     Returns:
-        Frame with all bounding boxes drawn (creates a copy)
+        Frame with all bounding boxes drawn (creates a copy, always returns NumPy array)
     """
-    # Create a copy to avoid modifying original
-    annotated_frame = frame.copy()
+    # Create a copy and convert to NumPy if needed (cv2 functions expect NumPy)
+    if isinstance(frame, torch.Tensor):
+        annotated_frame = frame.cpu().numpy().copy()
+    else:
+        annotated_frame = frame.copy()
 
     # Draw each detection
     for detection in detections:
@@ -180,7 +184,7 @@ def draw_detections(
 
 
 def add_info_overlay(
-    frame: np.ndarray,
+    frame: Union[np.ndarray, torch.Tensor],
     info_text: List[str],
     position: str = "top-left",
     font_scale: float = 0.6,
@@ -192,7 +196,7 @@ def add_info_overlay(
     Add text overlay to frame.
 
     Args:
-        frame: Image frame
+        frame: Image frame (numpy array or GPU tensor)
         info_text: List of text lines to display
         position: "top-left", "top-right", "bottom-left", "bottom-right"
         font_scale: Font size scale
@@ -201,8 +205,12 @@ def add_info_overlay(
         text_color: Text color (BGR)
 
     Returns:
-        Frame with overlay added
+        Frame with overlay added (always returns NumPy array)
     """
+    # Convert to NumPy if needed (cv2 functions expect NumPy)
+    if isinstance(frame, torch.Tensor):
+        frame = frame.cpu().numpy()
+
     if not info_text:
         return frame
 

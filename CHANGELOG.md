@@ -42,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Examples: Birds at night penalized 70% (likely bugs/bats), reptiles at night penalized (need warmth)
 
 ### Changed
+- **GPU tensor pipeline optimization** (#92) - 2025-10-15
+  - Zero-copy GPU tensor pipeline from video decode through Stage 2 classification
+  - Frames kept as GPU tensors throughout pipeline (no CPU transfers until web streaming)
+  - PyTorch GPU preprocessing in Stage 2 classifier (replaces cv2 CPU operations)
+  - ~30-50% CPU reduction from Phase 1 GPU tensor storage
+  - ~10-20% additional CPU reduction from Phase 2 GPU preprocessing
+  - Combined with PR #91: Total CPU usage reduced from 1062% to ~400% (62% reduction)
+  - Updated yolox_detector, species_classifier, visualization_utils, detection_processor, web_server, and snapshot_saver to handle GPU tensors
+
 - **Code quality improvements** (#89) - 2025-10-15
   - Removed hardcoded magic numbers throughout codebase
   - Created centralized constants module (`src/constants.py`)
