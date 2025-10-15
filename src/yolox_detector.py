@@ -107,7 +107,7 @@ class YOLOXDetector:
 
     def preprocess(self, img: np.ndarray) -> torch.Tensor:
         """
-        Preprocess image for YOLOX
+        Preprocess image for YOLOX with GPU-accelerated resize
 
         Args:
             img: Input image (BGR, HxWxC)
@@ -115,14 +115,20 @@ class YOLOXDetector:
         Returns:
             Preprocessed tensor (1xCxHxW)
         """
-        # Resize
-        img_resized = cv2.resize(img, self.input_size)
+        # Convert to tensor first (HxWxC -> 1xCxHxW)
+        img_tensor = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).float()
 
-        # Convert to tensor (HxWxC -> 1xCxHxW)
-        img_tensor = torch.from_numpy(img_resized).permute(2, 0, 1).unsqueeze(0).float()
-
-        # Move to device
+        # Move to device BEFORE resize (so resize happens on GPU!)
         img_tensor = img_tensor.to(self.device)
+
+        # GPU-accelerated resize using torch.nn.functional
+        if img_tensor.shape[2:] != self.input_size:
+            img_tensor = torch.nn.functional.interpolate(
+                img_tensor,
+                size=self.input_size,
+                mode='bilinear',
+                align_corners=False
+            )
 
         return img_tensor
 
