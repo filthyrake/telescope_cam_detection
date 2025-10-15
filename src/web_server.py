@@ -568,11 +568,12 @@ class WebServer:
                         camera_id = detection_result.get('camera_id', 'default')
                         self.latest_detections[camera_id] = detection_result
 
+                        # Prepare detection message
+                        message = self._prepare_detection_message(detection_result)
+
                         # Only send if detections are present
-                        total_detections = detection_result.get('total_detections', 0)
-                        if total_detections > 0:
-                            # Prepare and send WebSocket message
-                            message = self._prepare_detection_message(detection_result)
+                        if message.get('total_detections', 0) > 0:
+                            # Send WebSocket message
                             await websocket.send_json(message)
 
                             # Update last status time

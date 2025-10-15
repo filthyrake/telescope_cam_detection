@@ -144,7 +144,8 @@ class TwoStageDetectionPipeline:
         Uses exact hash of 8x8 downsampled grayscale thumbnail for cache lookups.
 
         Note: This is an exact hash (MD5) of a downsampled image, not a true
-        perceptual hash. Similar crops will have identical hashes after downsampling.
+        perceptual hash. Only crops that downsample to identical 8x8 grayscale
+        values will share the same hash; this is not a true perceptual hash.
 
         Args:
             crop: Crop image (BGR format) - can be NumPy array or GPU tensor
@@ -288,36 +289,45 @@ class TwoStageDetectionPipeline:
         # Apply image enhancement if configured (with LRU caching)
         if self.enhancer is not None:
             try:
-                # Compute perceptual hash for cache lookup
-                crop_hash = self._compute_crop_hash(crop)
-
-                # Check cache for existing enhanced version
-                if crop_hash in self.enhancement_cache:
-                    # Cache hit! Use cached enhanced crop
-                    crop = self.enhancement_cache[crop_hash]
-                    self.cache_hits += 1
-
-                    # Move to end (mark as recently used)
-                    self.enhancement_cache.move_to_end(crop_hash)
-
-                    logger.debug(f"Enhancement cache hit (total hits: {self.cache_hits}, misses: {self.cache_misses})")
-                else:
-                    # Cache miss - enhance and store
+                # Skip caching if cache size is 0
+                if self.enhancement_cache_size <= 0:
+                    # No caching - always enhance
                     enhancement_start = time.time()
-                    enhanced_crop = self.enhancer.enhance(crop)
+                    crop = self.enhancer.enhance(crop)
                     enhancement_time = (time.time() - enhancement_start) * 1000
                     self.enhancement_times.append(enhancement_time)
-                    self.cache_misses += 1
+                    logger.debug(f"Enhancement (no cache): {enhancement_time:.1f}ms")
+                else:
+                    # Compute perceptual hash for cache lookup
+                    crop_hash = self._compute_crop_hash(crop)
 
-                    # Store in cache with LRU eviction
-                    if len(self.enhancement_cache) >= self.enhancement_cache_size:
-                        # Remove oldest entry (FIFO for OrderedDict)
-                        self.enhancement_cache.popitem(last=False)
+                    # Check cache for existing enhanced version
+                    if crop_hash in self.enhancement_cache:
+                        # Cache hit! Use cached enhanced crop
+                        crop = self.enhancement_cache[crop_hash]
+                        self.cache_hits += 1
 
-                    self.enhancement_cache[crop_hash] = enhanced_crop
-                    crop = enhanced_crop
+                        # Move to end (mark as recently used)
+                        self.enhancement_cache.move_to_end(crop_hash)
 
-                    logger.debug(f"Enhancement cache miss: {enhancement_time:.1f}ms (cache: {len(self.enhancement_cache)}/{self.enhancement_cache_size})")
+                        logger.debug(f"Enhancement cache hit (total hits: {self.cache_hits}, misses: {self.cache_misses})")
+                    else:
+                        # Cache miss - enhance and store
+                        enhancement_start = time.time()
+                        enhanced_crop = self.enhancer.enhance(crop)
+                        enhancement_time = (time.time() - enhancement_start) * 1000
+                        self.enhancement_times.append(enhancement_time)
+                        self.cache_misses += 1
+
+                        # Store in cache with LRU eviction
+                        if len(self.enhancement_cache) >= self.enhancement_cache_size:
+                            # Remove least-recently-used entry (LRU eviction)
+                            self.enhancement_cache.popitem(last=False)
+
+                        self.enhancement_cache[crop_hash] = enhanced_crop
+                        crop = enhanced_crop
+
+                        logger.debug(f"Enhancement cache miss: {enhancement_time:.1f}ms (cache: {len(self.enhancement_cache)}/{self.enhancement_cache_size})")
 
                 # Log enhancement performance periodically (time-based)
                 current_time = time.time()
