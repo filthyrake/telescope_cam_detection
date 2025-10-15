@@ -339,7 +339,7 @@ class TwoStageDetectionPipeline:
                         if self.enhancement_times:
                             recent_count = min(len(self.enhancement_times), 10)
                             avg_enhancement = np.mean(self.enhancement_times[-recent_count:])
-                            logger.info(f"Enhancement performance (last {recent_count} misses): {avg_enhancement:.1f}ms avg")
+                            logger.info(f"Enhancement performance (last {recent_count} enhancements): {avg_enhancement:.1f}ms avg")
                     self.last_perf_log_time = current_time
             except Exception as e:
                 logger.error(f"Enhancement failed, using original crop: {e}")

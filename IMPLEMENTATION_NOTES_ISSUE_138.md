@@ -44,8 +44,8 @@ detection:
 
   # Batched inference coordination (improves GPU utilization for multi-camera setups)
   batching:
-    enabled: false  # Set to true to enable batched inference
-    max_batch_size: 4  # Maximum frames to batch together
+    enabled: true  # Enable batched inference (recommended for 2+ cameras)
+    max_batch_size: 2  # Maximum frames to batch together (match to camera count)
     max_batch_wait_ms: 10.0  # Maximum time to wait for full batch
     enable_metrics: true  # Track and log batch performance metrics
 ```
@@ -77,6 +77,7 @@ Before enabling in production:
 ### Backward Compatibility
 
 The implementation is fully backward compatible:
-- Default: batching disabled (standalone mode)
-- Existing systems continue to work without changes
-- Can be enabled per-deployment via configuration
+- Batching can be disabled by setting `enabled: false` (falls back to standalone mode)
+- Systems without multiple cameras can safely disable batching
+- Can be toggled per-deployment via configuration
+- Note: The repo config currently has batching enabled for testing (2-camera setup)

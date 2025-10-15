@@ -145,10 +145,8 @@ class SharedInferenceCoordinator:
         # Add to queue and notify coordinator
         with self.queue_condition:
             self.pending_queue.append(request)
-
-            # Wake up coordinator if batch is full
-            if len(self.pending_queue) >= self.max_batch_size:
-                self.queue_condition.notify()
+            # Always notify coordinator on new frame (reduces latency for first frame)
+            self.queue_condition.notify()
 
     def _coordinator_loop(self):
         """Main coordinator loop - collects and processes batches"""

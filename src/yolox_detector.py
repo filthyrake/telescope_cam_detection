@@ -267,16 +267,16 @@ class YOLOXDetector:
         if not frames:
             return []
 
-        # Get original image sizes (robust to NumPy HWC and torch CHW)
-        # For NumPy (HWC): shape is (H, W, C), so [-2:] gives (W, C) but we want (H, W)
-        # For torch (CHW): shape is (C, H, W), so [-2:] gives (H, W) ✓
+        # Get original image sizes (extract H and W for both formats)
+        # NumPy array (HWC): shape[0]=H, shape[1]=W
+        # Torch tensor (CHW): shape[-2]=H, shape[-1]=W
         orig_sizes = []
         for frame in frames:
             if isinstance(frame, torch.Tensor):
-                # Torch tensor (CHW or NCHW) - use last two dimensions
+                # Torch tensor (CHW or NCHW) - H and W are last two dimensions
                 h, w = frame.shape[-2], frame.shape[-1]
             else:
-                # NumPy array (HWC) - use first two dimensions
+                # NumPy array (HWC) - H and W are first two dimensions
                 h, w = frame.shape[0], frame.shape[1]
             orig_sizes.append((h, w))
 
