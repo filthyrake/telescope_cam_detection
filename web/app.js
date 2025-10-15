@@ -16,6 +16,10 @@ class DetectionApp {
         this.currentCameraId = null;
         this.viewMode = 'single'; // 'single' or 'grid'
         this.gridImages = {}; // Store image elements for grid view
+        this.gridLayout = 'auto'; // 'auto', '1x1', '2x1', '2x2', '3x2', '3x3'
+        this.visibleCameras = new Set(); // Track which cameras are visible in grid
+        this.cameraDetectionCounts = {}; // Track detection counts per camera
+        this.cameraFps = {}; // Track FPS per camera
 
         // State
         this.latestDetections = null;
@@ -47,6 +51,8 @@ class DetectionApp {
         await this.fetchCameras();
         this.setupCameraSelector();
         this.setupViewModeToggle();
+        this.setupLayoutSelector();
+        this.setupCameraTogglePanel();
         this.connectWebSocket();
         this.startVideoStream();
     }
@@ -115,16 +121,21 @@ class DetectionApp {
     setupViewModeToggle() {
         const viewModeBtn = document.getElementById('viewModeBtn');
         const cameraSelect = document.getElementById('cameraSelect');
+        const gridControls = document.getElementById('gridControls');
 
         viewModeBtn.addEventListener('click', () => {
             if (this.viewMode === 'single') {
                 this.switchViewMode('grid');
                 viewModeBtn.textContent = '📹 Single View';
                 cameraSelect.disabled = true;
+                gridControls.style.display = 'flex';
             } else {
                 this.switchViewMode('single');
                 viewModeBtn.textContent = '📊 Grid View';
                 cameraSelect.disabled = false;
+                gridControls.style.display = 'none';
+                // Hide camera toggle panel when switching to single view
+                document.getElementById('cameraTogglePanel').style.display = 'none';
             }
         });
 
@@ -137,6 +148,63 @@ class DetectionApp {
             viewModeBtn.style.cursor = 'not-allowed';
             viewModeBtn.title = 'Grid view requires multiple cameras';
         }
+    }
+
+    setupLayoutSelector() {
+        const layoutSelect = document.getElementById('layoutSelect');
+
+        layoutSelect.addEventListener('change', (e) => {
+            this.gridLayout = e.target.value;
+            console.log('Grid layout changed to:', this.gridLayout);
+            this.updateGridLayout();
+        });
+    }
+
+    setupCameraTogglePanel() {
+        const toggleBtn = document.getElementById('cameraToggleBtn');
+        const panel = document.getElementById('cameraTogglePanel');
+        const togglesContainer = document.getElementById('cameraToggles');
+
+        // Initialize all cameras as visible
+        this.cameras.forEach(camera => {
+            this.visibleCameras.add(camera.id);
+        });
+
+        // Toggle panel visibility
+        toggleBtn.addEventListener('click', () => {
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        });
+
+        // Create checkbox for each camera
+        togglesContainer.innerHTML = '';
+        this.cameras.forEach(camera => {
+            const checkboxWrapper = document.createElement('div');
+            checkboxWrapper.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 8px; background-color: #1a1a1a; border-radius: 5px;';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `toggle-${camera.id}`;
+            checkbox.checked = true;
+            checkbox.style.cssText = 'cursor: pointer; width: 18px; height: 18px;';
+
+            const label = document.createElement('label');
+            label.htmlFor = `toggle-${camera.id}`;
+            label.textContent = camera.name;
+            label.style.cssText = 'cursor: pointer; color: #00ff88; user-select: none;';
+
+            checkbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    this.visibleCameras.add(camera.id);
+                } else {
+                    this.visibleCameras.delete(camera.id);
+                }
+                this.updateGridVisibility();
+            });
+
+            checkboxWrapper.appendChild(checkbox);
+            checkboxWrapper.appendChild(label);
+            togglesContainer.appendChild(checkboxWrapper);
+        });
     }
 
     switchViewMode(mode) {
@@ -164,14 +232,20 @@ class DetectionApp {
         // Clear existing grid
         gridContainer.innerHTML = '';
 
-        // Apply grid class based on number of cameras
-        gridContainer.className = `camera-grid grid-${this.cameras.length}`;
+        // Apply grid class based on layout mode
+        this.updateGridLayout();
 
         // Create grid items for each camera
         this.cameras.forEach(camera => {
             const gridItem = document.createElement('div');
             gridItem.className = 'grid-camera-item';
             gridItem.id = `grid-${camera.id}`;
+            gridItem.dataset.cameraId = camera.id;
+
+            // Click to fullscreen
+            gridItem.addEventListener('click', () => {
+                this.fullscreenGridCamera(camera.id);
+            });
 
             // Create image element for video stream
             const img = document.createElement('img');
@@ -181,6 +255,19 @@ class DetectionApp {
             // Create status indicator
             const status = document.createElement('div');
             status.className = `grid-camera-status ${camera.is_connected ? '' : 'disconnected'}`;
+            status.id = `status-${camera.id}`;
+
+            // Create FPS counter
+            const fpsCounter = document.createElement('div');
+            fpsCounter.className = 'grid-camera-fps';
+            fpsCounter.id = `fps-${camera.id}`;
+            fpsCounter.textContent = 'FPS: --';
+
+            // Create detection count badge
+            const detectionBadge = document.createElement('div');
+            detectionBadge.className = 'grid-camera-detection-badge';
+            detectionBadge.id = `badge-${camera.id}`;
+            detectionBadge.textContent = '0 detections';
 
             // Create label
             const label = document.createElement('div');
@@ -190,14 +277,64 @@ class DetectionApp {
             // Assemble grid item
             gridItem.appendChild(img);
             gridItem.appendChild(status);
+            gridItem.appendChild(fpsCounter);
+            gridItem.appendChild(detectionBadge);
             gridItem.appendChild(label);
             gridContainer.appendChild(gridItem);
 
             // Store image reference
             this.gridImages[camera.id] = img;
+
+            // Initialize detection count
+            this.cameraDetectionCounts[camera.id] = 0;
         });
 
         console.log(`Grid view created with ${this.cameras.length} cameras`);
+    }
+
+    updateGridLayout() {
+        const gridContainer = document.getElementById('cameraGrid');
+
+        if (this.gridLayout === 'auto') {
+            // Auto layout based on number of visible cameras
+            const visibleCount = this.visibleCameras.size || this.cameras.length;
+            gridContainer.className = `camera-grid grid-${visibleCount}`;
+        } else {
+            // Manual layout
+            gridContainer.className = `camera-grid layout-${this.gridLayout}`;
+        }
+    }
+
+    updateGridVisibility() {
+        this.cameras.forEach(camera => {
+            const gridItem = document.getElementById(`grid-${camera.id}`);
+            if (gridItem) {
+                if (this.visibleCameras.has(camera.id)) {
+                    gridItem.classList.remove('hidden');
+                } else {
+                    gridItem.classList.add('hidden');
+                }
+            }
+        });
+
+        // Update grid layout for new visible count
+        this.updateGridLayout();
+    }
+
+    fullscreenGridCamera(cameraId) {
+        // Switch to single view and select this camera
+        this.currentCameraId = cameraId;
+        document.getElementById('cameraSelect').value = cameraId;
+
+        // Switch view mode
+        const viewModeBtn = document.getElementById('viewModeBtn');
+        viewModeBtn.textContent = '📊 Grid View';
+        document.getElementById('cameraSelect').disabled = false;
+        document.getElementById('gridControls').style.display = 'none';
+        document.getElementById('cameraTogglePanel').style.display = 'none';
+
+        this.switchViewMode('single');
+        this.switchCamera(cameraId);
     }
 
     setupCanvas() {
@@ -328,8 +465,60 @@ class DetectionApp {
 
             this.updateUI(data);
             this.updateFPS();
+
+            // Update grid view elements if in grid mode
+            if (this.viewMode === 'grid') {
+                this.updateGridCameraStats(data);
+            }
         } else if (data.type === 'heartbeat') {
             // Handle heartbeat if needed
+        }
+    }
+
+    updateGridCameraStats(data) {
+        const cameraId = data.camera_id || 'default';
+
+        // Update FPS counter
+        const fpsElement = document.getElementById(`fps-${cameraId}`);
+        if (fpsElement && this.cameraFps[cameraId] !== undefined) {
+            fpsElement.textContent = `FPS: ${Math.round(this.cameraFps[cameraId])}`;
+        }
+
+        // Update detection count and badge
+        const detections = data.detections || [];
+        if (detections.length > 0) {
+            // Increment detection count
+            this.cameraDetectionCounts[cameraId] = (this.cameraDetectionCounts[cameraId] || 0) + detections.length;
+
+            // Update badge
+            const badgeElement = document.getElementById(`badge-${cameraId}`);
+            if (badgeElement) {
+                badgeElement.textContent = `${this.cameraDetectionCounts[cameraId]} detection${this.cameraDetectionCounts[cameraId] !== 1 ? 's' : ''}`;
+                badgeElement.classList.add('visible');
+
+                // Hide badge after 3 seconds
+                setTimeout(() => {
+                    badgeElement.classList.remove('visible');
+                }, 3000);
+            }
+
+            // Trigger flash animation
+            const gridItem = document.getElementById(`grid-${cameraId}`);
+            if (gridItem) {
+                gridItem.classList.add('flash');
+                setTimeout(() => {
+                    gridItem.classList.remove('flash');
+                }, 500);
+            }
+        }
+
+        // Update connection status
+        const statusElement = document.getElementById(`status-${cameraId}`);
+        if (statusElement) {
+            const camera = this.cameras.find(c => c.id === cameraId);
+            if (camera) {
+                statusElement.className = `grid-camera-status ${camera.is_connected ? '' : 'disconnected'}`;
+            }
         }
     }
 
@@ -561,6 +750,12 @@ class DetectionApp {
         if (elapsed >= 1000) {
             this.fps = Math.round((this.frameCount / elapsed) * 1000);
             document.getElementById('fps').textContent = this.fps;
+
+            // Update per-camera FPS if we have detection data
+            if (this.latestDetections && this.latestDetections.camera_id) {
+                const cameraId = this.latestDetections.camera_id;
+                this.cameraFps[cameraId] = this.fps;
+            }
 
             this.frameCount = 0;
             this.lastFpsUpdate = now;

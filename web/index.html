@@ -251,12 +251,57 @@
             grid-template-columns: repeat(3, 1fr);
         }
 
+        /* Manual grid layouts */
+        .camera-grid.layout-1x1 {
+            grid-template-columns: 1fr;
+        }
+
+        .camera-grid.layout-2x1 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .camera-grid.layout-2x2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .camera-grid.layout-3x2 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .camera-grid.layout-3x3 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
         .grid-camera-item {
             position: relative;
             background-color: #000;
             border-radius: 10px;
             overflow: hidden;
             box-shadow: 0 4px 20px rgba(0, 255, 136, 0.2);
+            cursor: pointer;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .grid-camera-item:hover {
+            transform: scale(1.02);
+            box-shadow: 0 6px 30px rgba(0, 255, 136, 0.4);
+        }
+
+        .grid-camera-item.flash {
+            animation: flash-border 0.5s ease-out;
+        }
+
+        @keyframes flash-border {
+            0%, 100% {
+                box-shadow: 0 4px 20px rgba(0, 255, 136, 0.2);
+            }
+            50% {
+                box-shadow: 0 0 40px rgba(255, 170, 0, 1), 0 0 20px rgba(255, 170, 0, 0.8);
+            }
+        }
+
+        .grid-camera-item.hidden {
+            display: none;
         }
 
         .grid-camera-item img {
@@ -293,6 +338,37 @@
             box-shadow: 0 0 10px rgba(255, 102, 102, 0.5);
         }
 
+        .grid-camera-fps {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: #00ff88;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.85em;
+            font-weight: bold;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .grid-camera-detection-badge {
+            position: absolute;
+            top: 35px;
+            left: 10px;
+            background-color: rgba(255, 170, 0, 0.9);
+            color: #000;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.85em;
+            font-weight: bold;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            display: none;
+        }
+
+        .grid-camera-detection-badge.visible {
+            display: block;
+        }
+
         #viewModeBtn:hover {
             background-color: rgba(0, 255, 136, 0.2);
             transform: scale(1.05);
@@ -325,7 +401,7 @@
             <h1>🔭 Backyard Computer Vision System</h1>
             <div id="connectionStatus" class="status disconnected">Disconnected</div>
             <div id="latencyStatus" class="latency-indicator latency-good">Latency: --ms</div>
-            <div style="margin-top: 15px; display: flex; gap: 20px; align-items: center; justify-content: center;">
+            <div style="margin-top: 15px; display: flex; gap: 20px; align-items: center; justify-content: center; flex-wrap: wrap;">
                 <div>
                     <label for="cameraSelect" style="color: #aaa; margin-right: 10px;">Camera:</label>
                     <select id="cameraSelect" style="padding: 8px 15px; border-radius: 5px; background-color: #2a2a2a; color: #00ff88; border: 2px solid #00ff8844; font-size: 1em; cursor: pointer;">
@@ -336,6 +412,32 @@
                     <button id="viewModeBtn" style="padding: 8px 20px; border-radius: 5px; background-color: #2a2a2a; color: #00ff88; border: 2px solid #00ff8844; font-size: 1em; cursor: pointer; transition: all 0.3s ease;">
                         📊 Grid View
                     </button>
+                </div>
+                <div id="gridControls" style="display: none; gap: 15px; align-items: center;">
+                    <div>
+                        <label for="layoutSelect" style="color: #aaa; margin-right: 10px;">Layout:</label>
+                        <select id="layoutSelect" style="padding: 8px 15px; border-radius: 5px; background-color: #2a2a2a; color: #00ff88; border: 2px solid #00ff8844; font-size: 1em; cursor: pointer;">
+                            <option value="auto">Auto</option>
+                            <option value="1x1">1×1</option>
+                            <option value="2x1">2×1</option>
+                            <option value="2x2">2×2</option>
+                            <option value="3x2">3×2</option>
+                            <option value="3x3">3×3</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button id="cameraToggleBtn" style="padding: 8px 20px; border-radius: 5px; background-color: #2a2a2a; color: #00ff88; border: 2px solid #00ff8844; font-size: 1em; cursor: pointer; transition: all 0.3s ease;">
+                            👁️ Show/Hide Cameras
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Camera visibility toggle panel -->
+            <div id="cameraTogglePanel" style="display: none; margin-top: 15px; padding: 15px; background-color: #2a2a2a; border-radius: 10px; max-width: 600px; margin-left: auto; margin-right: auto;">
+                <h3 style="margin-top: 0; margin-bottom: 15px; color: #00ff88;">Camera Visibility</h3>
+                <div id="cameraToggles" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                    <!-- Camera checkboxes will be dynamically added here -->
                 </div>
             </div>
         </header>
