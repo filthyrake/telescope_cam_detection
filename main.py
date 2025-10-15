@@ -18,6 +18,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from src.stream_capture import RTSPStreamCapture, create_rtsp_url
+from src.stream_capture_gpu_ffmpeg import RTSPStreamCaptureGPU  # GPU-accelerated via FFmpeg NVDEC
 from src.inference_engine_yolox import InferenceEngine  # YOLOX version (47x faster!)
 from src.detection_processor import DetectionProcessor
 from src.web_server import WebServer
@@ -797,16 +798,18 @@ class TelescopeDetectionSystem:
         performance_config = self.config.get('performance', {})
         max_failures = performance_config.get('rtsp_max_failures', 30)
         retry_delay = performance_config.get('rtsp_retry_delay', 5.0)
+        buffer_size = camera_config.get('buffer_size', performance_config.get('buffer_size', None))
 
-        stream_capture = RTSPStreamCapture(
+        # Use GPU-accelerated capture (NVDEC h264_cuvid)
+        stream_capture = RTSPStreamCaptureGPU(
             rtsp_url=rtsp_url,
             frame_queue=frame_queue,
             target_width=camera_config.get('target_width', 1280),
             target_height=camera_config.get('target_height', 720),
-            buffer_size=camera_config.get('buffer_size', 1),
             camera_id=camera_id,
             camera_name=camera_name,
             use_tcp=use_tcp,
+            buffer_size=buffer_size,
             max_failures=max_failures,
             retry_delay=retry_delay
         )
