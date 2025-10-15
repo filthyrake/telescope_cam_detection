@@ -179,18 +179,35 @@ class RTSPStreamCaptureGPU:
         if self.capture_thread:
             self.capture_thread.join(timeout=5.0)
             if self.capture_thread.is_alive():
-                logger.error(f"[{self.camera_id}] Capture thread did not stop")
+                logger.error(
+                    f"[{self.camera_id}] CRITICAL: Capture thread did not stop after 5s timeout (thread may be blocked). "
+                    f"Thread is orphaned and will continue running - potential resource leak (Issue #96)"
+                )
 
         if self.ffmpeg_process:
             try:
                 self.ffmpeg_process.terminate()
                 self.ffmpeg_process.wait(timeout=5.0)
-            except Exception as e:
-                logger.warning(f"[{self.camera_id}] Error stopping FFmpeg: {e}")
+                logger.info(f"[{self.camera_id}] FFmpeg process terminated successfully")
+            except subprocess.TimeoutExpired:
+                logger.warning(f"[{self.camera_id}] FFmpeg did not terminate gracefully, forcing kill...")
                 try:
                     self.ffmpeg_process.kill()
-                except Exception:
-                    pass
+                    self.ffmpeg_process.wait(timeout=2.0)  # Ensure it's really dead (Issue #97)
+                    logger.info(f"[{self.camera_id}] FFmpeg process killed successfully")
+                except subprocess.TimeoutExpired:
+                    logger.error(f"[{self.camera_id}] CRITICAL: FFmpeg process did not die after kill() - zombie process (Issue #97)")
+                    # Don't set to None - keep reference so we know there's a zombie
+                    return
+                except Exception as e:
+                    logger.error(f"[{self.camera_id}] Error killing FFmpeg: {e}")
+                    return
+            except Exception as e:
+                logger.error(f"[{self.camera_id}] Error terminating FFmpeg: {e}")
+                return
+
+            # Only set to None if we successfully terminated the process
+            self.ffmpeg_process = None
 
         self.is_connected = False
         logger.info(f"[{self.camera_id}] GPU capture stopped")
@@ -248,10 +265,17 @@ class RTSPStreamCaptureGPU:
                 # Add timestamp
                 timestamp = time.time()
 
+                # Clone GPU tensor before putting in queue to avoid race conditions (Issue #95)
+                # Multiple threads may access the same tensor, causing CUDA errors
+                if self.keep_frames_on_gpu:
+                    cloned_frame = img.clone()
+                else:
+                    cloned_frame = img.copy()
+
                 # Put frame in queue (non-blocking)
                 try:
                     self.frame_queue.put_nowait({
-                        'frame': img,
+                        'frame': cloned_frame,
                         'timestamp': timestamp,
                         'frame_id': self.frame_id_counter,  # Use separate counter for frame IDs
                         'camera_id': self.camera_id,
@@ -300,13 +324,29 @@ class RTSPStreamCaptureGPU:
             try:
                 self.ffmpeg_process.terminate()
                 self.ffmpeg_process.wait(timeout=2.0)
-            except Exception:
+                logger.debug(f"[{self.camera_id}] FFmpeg terminated for reconnect")
+            except subprocess.TimeoutExpired:
+                logger.warning(f"[{self.camera_id}] FFmpeg did not terminate, forcing kill for reconnect...")
                 try:
                     self.ffmpeg_process.kill()
-                except Exception:
-                    pass
-            finally:
-                self.ffmpeg_process = None
+                    self.ffmpeg_process.wait(timeout=2.0)  # Ensure it's dead (Issue #97)
+                    logger.debug(f"[{self.camera_id}] FFmpeg killed for reconnect")
+                except subprocess.TimeoutExpired:
+                    logger.error(f"[{self.camera_id}] CRITICAL: FFmpeg zombie process after kill() (Issue #97)")
+                    # Don't clear reference - we have a zombie
+                    self.is_connected = False
+                    return False
+                except Exception as e:
+                    logger.error(f"[{self.camera_id}] Error killing FFmpeg for reconnect: {e}")
+                    self.is_connected = False
+                    return False
+            except Exception as e:
+                logger.error(f"[{self.camera_id}] Error terminating FFmpeg for reconnect: {e}")
+                self.is_connected = False
+                return False
+
+            # Only clear reference if process successfully terminated
+            self.ffmpeg_process = None
 
         self.is_connected = False
         time.sleep(2.0)  # Wait before reconnecting
