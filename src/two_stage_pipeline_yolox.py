@@ -140,8 +140,11 @@ class TwoStageDetectionPipeline:
 
     def _compute_crop_hash(self, crop: Union[np.ndarray, torch.Tensor]) -> str:
         """
-        Compute perceptual hash of crop for enhancement cache key.
-        Uses downsampling to 8x8 for perceptual similarity matching.
+        Compute hash of crop for enhancement cache key.
+        Uses exact hash of 8x8 downsampled grayscale thumbnail for cache lookups.
+
+        Note: This is an exact hash (MD5) of a downsampled image, not a true
+        perceptual hash. Similar crops will have identical hashes after downsampling.
 
         Args:
             crop: Crop image (BGR format) - can be NumPy array or GPU tensor
@@ -151,11 +154,16 @@ class TwoStageDetectionPipeline:
         """
         # Convert to NumPy if GPU tensor
         if isinstance(crop, torch.Tensor):
-            crop_np = crop.cpu().numpy()
+            # Detach from computation graph and move to CPU
+            crop_np = crop.detach().cpu().numpy()
+
+            # Convert CHW to HWC for OpenCV (if needed)
+            if crop_np.ndim == 3 and crop_np.shape[0] in [1, 3]:  # CHW format
+                crop_np = crop_np.transpose(1, 2, 0)  # CHW → HWC
         else:
             crop_np = crop
 
-        # Downsample to 8x8 for perceptual similarity
+        # Downsample to 8x8 for similarity matching
         small = cv2.resize(crop_np, (8, 8), interpolation=cv2.INTER_AREA)
 
         # Convert to grayscale for hashing
@@ -164,7 +172,7 @@ class TwoStageDetectionPipeline:
         else:
             gray = small
 
-        # Compute MD5 hash
+        # Compute MD5 hash of downsampled thumbnail
         return hashlib.md5(gray.tobytes()).hexdigest()
 
     def _set_detection_species_fields(
