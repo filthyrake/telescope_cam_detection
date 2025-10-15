@@ -732,12 +732,15 @@ class WebServer:
                         else:
                             logger.error(f"Failed to encode frame for camera {camera_id} - frame may be corrupted or empty")
                             # Yield placeholder error frame to prevent client hang
-                            error_frame = self._create_error_frame("Encoding failed")
+                            error_frame = self._create_error_frame("Encoding failed", width=frame.shape[1], height=frame.shape[0])
                             ret_error, buffer_error = cv2.imencode('.jpg', error_frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
                             if ret_error:
                                 frame_bytes = buffer_error.tobytes()
                                 yield (b'--frame\r\n'
                                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                            else:
+                                logger.error(f"Failed to encode error frame for camera {camera_id} - closing connection to prevent client hang")
+                                break
                     except Exception as e:
                         logger.error(f"Exception encoding frame for camera {camera_id}: {e}", exc_info=True)
                         # Break to close connection with proper error - don't let client hang
