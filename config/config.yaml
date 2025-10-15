@@ -81,8 +81,8 @@ detection:
   # Performance: Single frame ~11-21ms → Batch of 4 frames ~15-30ms (3-4x throughput!)
   # GPU utilization: 30-40% → 80-90%
   batching:
-    enabled: false  # Enable batched inference (recommended for 2+ cameras)
-    max_batch_size: 4  # Maximum frames to batch together (increase for more cameras)
+    enabled: true  # Enable batched inference (recommended for 2+ cameras)
+    max_batch_size: 2  # Maximum frames to batch together (set to 2 for 2 cameras)
     max_batch_wait_ms: 10.0  # Maximum time to wait for full batch (ms)
     enable_metrics: true  # Track and log batch performance metrics
 
