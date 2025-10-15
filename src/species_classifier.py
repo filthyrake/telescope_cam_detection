@@ -7,7 +7,7 @@ import cv2
 import torch
 import logging
 import numpy as np
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Union
 from pathlib import Path
 import timm
 
@@ -214,42 +214,66 @@ class SpeciesClassifier:
             logger.error(f"Failed to load model: {e}")
             return False
 
-    def preprocess(self, image: np.ndarray) -> torch.Tensor:
+    def preprocess(self, image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
         """
-        Preprocess image for classification.
+        Preprocess image for classification (GPU-accelerated).
 
         Args:
-            image: Input image (BGR format from OpenCV)
+            image: Input image (BGR format) - can be NumPy array or GPU tensor
 
         Returns:
-            Preprocessed tensor
+            Preprocessed tensor on GPU
         """
-        # Convert BGR to RGB
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # Convert to tensor if needed
+        if isinstance(image, np.ndarray):
+            # NumPy array: convert to tensor (HxWxC)
+            image = torch.from_numpy(image).to(self.device, non_blocking=True)
+        elif not isinstance(image, torch.Tensor):
+            raise TypeError(f"Expected np.ndarray or torch.Tensor, got {type(image)}")
 
-        # Resize
-        image = cv2.resize(image, (self.input_size, self.input_size))
+        # Ensure tensor is on correct device
+        if image.device != self.device:
+            image = image.to(self.device, non_blocking=True)
 
-        # Normalize
-        image = image.astype(np.float32) / 255.0
-        image = (image - self.mean) / self.std
+        # Convert BGR to RGB (just swap channels: [H, W, 3] with channels 2,1,0 → 0,1,2)
+        image = image[:, :, [2, 1, 0]]
 
-        # Convert to tensor and add batch dimension
-        image = torch.from_numpy(image.transpose(2, 0, 1)).float()
-        image = image.unsqueeze(0)
+        # Resize using GPU (HxWxC → CxHxW for interpolate, then back)
+        if image.shape[0] != self.input_size or image.shape[1] != self.input_size:
+            # torch.nn.functional.interpolate expects (N, C, H, W)
+            image = image.permute(2, 0, 1).unsqueeze(0).float()  # HxWxC → 1xCxHxW
+            image = torch.nn.functional.interpolate(
+                image,
+                size=(self.input_size, self.input_size),
+                mode='bilinear',
+                align_corners=False
+            )
+            image = image.squeeze(0)  # 1xCxHxW → CxHxW
+        else:
+            # Already correct size, just permute
+            image = image.permute(2, 0, 1).float()  # HxWxC → CxHxW
 
-        return image.to(self.device)
+        # Normalize (GPU operation)
+        image = image / 255.0
+        mean = torch.tensor(self.mean, device=self.device).view(3, 1, 1)
+        std = torch.tensor(self.std, device=self.device).view(3, 1, 1)
+        image = (image - mean) / std
+
+        # Add batch dimension
+        image = image.unsqueeze(0)  # CxHxW → 1xCxHxW
+
+        return image
 
     def classify(
         self,
-        image: np.ndarray,
+        image: Union[np.ndarray, torch.Tensor],
         top_k: int = 5
     ) -> List[Dict[str, Any]]:
         """
-        Classify species from image crop.
+        Classify species from image crop (GPU-accelerated).
 
         Args:
-            image: Cropped image containing the animal
+            image: Cropped image containing the animal (NumPy array or GPU tensor)
             top_k: Return top K predictions
 
         Returns:
