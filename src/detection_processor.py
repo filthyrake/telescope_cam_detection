@@ -175,25 +175,41 @@ class DetectionProcessor:
 
                 # Save snapshot if enabled and triggered (reuse same frame_copy)
                 if self.snapshot_saver and self.frame_source and frame_copy is not None:
-                        # Add current frame to buffer for clip mode
-                        self.snapshot_saver.add_frame_to_buffer(
-                            frame_copy,
-                            processed_result['timestamp']
-                        )
+                        # Cache save_mode to avoid duplicate property access (Copilot suggestion)
+                        save_mode = self.snapshot_saver.save_mode
+
+                        # Only buffer frames if save_mode is "clip" (pre-roll video recording)
+                        # For "image" mode, skip buffering to avoid CPU-intensive JPEG encoding on every frame
+                        # Fix for Issue #147: JPEG encoding bottleneck
+                        if save_mode == "clip":
+                            self.snapshot_saver.add_frame_to_buffer(
+                                frame_copy,
+                                processed_result['timestamp']
+                            )
 
                         # Check if snapshot should be saved
-                        if processed_result['detections']:
-                            # Create annotated frame with bounding boxes
+                        # Fix for Issue #148: Only draw annotations when actually saving
+                        if processed_result['detections'] and self.snapshot_saver.should_save(processed_result):
+                            # Create annotated frame with bounding boxes (only when saving)
                             annotated_frame = draw_detections(
                                 frame_copy,
                                 processed_result['detections']
                             )
 
-                            saved_path = self.snapshot_saver.process_detection(
-                                frame_copy,
-                                processed_result,
-                                annotated_frame=annotated_frame
-                            )
+                            # Save using appropriate method based on mode (skip should_save check since we already checked)
+                            if save_mode == "image":
+                                saved_path = self.snapshot_saver.save_snapshot(
+                                    frame_copy,
+                                    processed_result,
+                                    annotated_frame=annotated_frame
+                                )
+                            else:  # clip mode
+                                saved_path = self.snapshot_saver.save_clip(
+                                    frame_copy,
+                                    processed_result,
+                                    annotated_frame=annotated_frame
+                                )
+
                             if saved_path:
                                 processed_result['snapshot_saved'] = saved_path
 
