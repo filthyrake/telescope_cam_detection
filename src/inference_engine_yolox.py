@@ -98,6 +98,8 @@ class InferenceEngine:
         self.fps = 0.0
         self.last_fps_check = time.time()
         self.dropped_results = 0  # Track dropped results when queue is full
+        self.last_drop_warning_time = 0  # Track last drop warning for rate limiting
+        self.drop_count_since_warning = 0  # Track drops since last warning
 
     def load_model(self) -> bool:
         """Load YOLOX model"""
@@ -227,9 +229,24 @@ class InferenceEngine:
                     self.output_queue.put_nowait(result)
                 except Exception as e:
                     self.dropped_results += 1
-                    # Log every Nth drop to avoid spam
-                    if self.dropped_results % LOG_DROPPED_EVERY_N == 0:
-                        logger.warning(f"Output queue full, dropped {self.dropped_results} results total (system overloaded)")
+                    self.drop_count_since_warning += 1
+
+                    # Log with drop rate when drops are frequent (improved observability)
+                    current_time = time.time()
+                    time_since_last_warning = current_time - self.last_drop_warning_time
+
+                    # Log every Nth drop OR every 10 seconds (whichever comes first)
+                    should_log = (self.dropped_results % LOG_DROPPED_EVERY_N == 0) or (time_since_last_warning >= 10.0)
+
+                    if should_log:
+                        drop_rate = self.drop_count_since_warning / max(time_since_last_warning, 0.001)
+                        total_drop_rate = self.dropped_results / max(self.total_inference_count, 1)
+                        logger.warning(
+                            f"Output queue full: dropped {self.dropped_results} total results "
+                            f"(drop rate: {drop_rate:.2f}/s, {total_drop_rate*100:.1f}% overall) - system overloaded"
+                        )
+                        self.last_drop_warning_time = current_time
+                        self.drop_count_since_warning = 0
 
             except Exception as e:
                 logger.error(f"Error in inference loop: {e}")
