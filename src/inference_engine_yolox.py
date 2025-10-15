@@ -116,6 +116,17 @@ class InferenceEngine:
         """Load YOLOX model"""
         try:
             logger.info(f"Loading YOLOX inference engine...")
+
+            # Skip detector creation if using shared coordinator (VRAM optimization)
+            if self.shared_coordinator:
+                logger.info(f"Using shared batched inference coordinator (skipping per-engine detector)")
+                logger.info(f"Camera: {self.camera_name} (ID: {self.camera_id})")
+                logger.info(f"Two-stage detection: {'enabled' if self.use_two_stage else 'disabled'}")
+                self.is_loaded = True
+                logger.info("YOLOX inference engine loaded (coordinator mode)")
+                return True
+
+            # Standalone mode: Create and load detector
             logger.info(f"Model: {self.model_name}")
             logger.info(f"Weights: {self.model_path}")
             logger.info(f"Device: {self.device}")
@@ -407,6 +418,11 @@ class InferenceEngine:
         Returns:
             List of detection dictionaries
         """
+        # Safety check: detector should not be called in coordinator mode
+        if self.detector is None:
+            logger.error("Detector not loaded (coordinator mode should not call _run_inference)")
+            return []
+
         # Stage 1: Run YOLOX detection
         detections = self.detector.detect(frame)
 
@@ -422,9 +438,15 @@ class InferenceEngine:
 
         Returns:
             List of detection dictionaries
+
+        Note: This method is not available in coordinator mode.
         """
         if not self.is_loaded:
             logger.error("Model not loaded")
+            return []
+
+        if self.shared_coordinator:
+            logger.error("infer_single() not supported in coordinator mode - use async inference")
             return []
 
         return self._run_inference(frame)

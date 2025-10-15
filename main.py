@@ -765,8 +765,7 @@ class TelescopeDetectionSystem:
             SharedInferenceCoordinator instance if enabled, None otherwise
 
         Note: The coordinator loads its own YOLOX detector for batched inference.
-        InferenceEngine instances in coordinator mode don't use their detectors.
-        Future optimization: Skip detector creation in InferenceEngine when using coordinator.
+        InferenceEngine instances in coordinator mode skip detector creation (VRAM optimization).
         """
         detection_config = self.config.get('detection', {})
         batching_config = detection_config.get('batching', {})
