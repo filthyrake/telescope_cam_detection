@@ -8,7 +8,8 @@ import subprocess
 import time
 import logging
 import numpy as np
-from typing import Optional
+import torch
+from typing import Optional, Union
 from queue import Queue, Full
 from threading import Thread, Event, Lock
 
@@ -32,7 +33,9 @@ class RTSPStreamCaptureGPU:
         use_tcp: bool = False,
         buffer_size: Optional[int] = None,
         max_failures: int = 30,
-        retry_delay: float = 5.0
+        retry_delay: float = 5.0,
+        keep_frames_on_gpu: bool = True,
+        device: Union[str, torch.device] = "cuda:0"
     ):
         """
         Initialize GPU-accelerated RTSP stream capture.
@@ -48,6 +51,8 @@ class RTSPStreamCaptureGPU:
             buffer_size: Accepted for API compatibility, but not used (FFmpeg uses internal buffering)
             max_failures: Reconnect after N consecutive failures
             retry_delay: Seconds to wait before retrying connection
+            keep_frames_on_gpu: If True, store frames as GPU tensors (reduces CPU usage)
+            device: GPU device to use for frame storage
         """
         self.rtsp_url = rtsp_url
         self.frame_queue = frame_queue
@@ -59,6 +64,8 @@ class RTSPStreamCaptureGPU:
         self.buffer_size = buffer_size
         self.max_failures = max_failures
         self.retry_delay = retry_delay
+        self.keep_frames_on_gpu = keep_frames_on_gpu
+        self.device = torch.device(device) if isinstance(device, str) else device
 
         # Warn if buffer_size is set (not used by FFmpeg subprocess)
         if buffer_size is not None:
@@ -73,7 +80,8 @@ class RTSPStreamCaptureGPU:
         self.is_connected = False
 
         # Latest frame for video streaming (thread-safe access)
-        self.latest_frame: Optional[np.ndarray] = None
+        # Can be either np.ndarray or torch.Tensor depending on keep_frames_on_gpu
+        self.latest_frame: Optional[Union[np.ndarray, torch.Tensor]] = None
         self.frame_lock = Lock()
 
         # Performance metrics
@@ -221,12 +229,21 @@ class RTSPStreamCaptureGPU:
                         consecutive_failures = 0
                     continue
 
-                # Convert raw bytes to numpy array
-                img = np.frombuffer(raw_frame, dtype=np.uint8).reshape((self.target_height, self.target_width, 3))
+                # Convert raw bytes to numpy array OR GPU tensor
+                if self.keep_frames_on_gpu:
+                    # Convert directly to GPU tensor (HxWxC BGR format)
+                    img_np = np.frombuffer(raw_frame, dtype=np.uint8).reshape((self.target_height, self.target_width, 3))
+                    img = torch.from_numpy(img_np).to(self.device, non_blocking=True)
+                else:
+                    # Keep as NumPy array (backward compatibility)
+                    img = np.frombuffer(raw_frame, dtype=np.uint8).reshape((self.target_height, self.target_width, 3))
 
                 # Store latest frame for video streaming
                 with self.frame_lock:
-                    self.latest_frame = img.copy()
+                    if self.keep_frames_on_gpu:
+                        self.latest_frame = img.clone()
+                    else:
+                        self.latest_frame = img.copy()
 
                 # Add timestamp
                 timestamp = time.time()
@@ -238,7 +255,8 @@ class RTSPStreamCaptureGPU:
                         'timestamp': timestamp,
                         'frame_id': self.frame_id_counter,  # Use separate counter for frame IDs
                         'camera_id': self.camera_id,
-                        'camera_name': self.camera_name
+                        'camera_name': self.camera_name,
+                        'is_gpu_tensor': self.keep_frames_on_gpu  # Indicate format for downstream
                     })
                     self.frame_count += 1  # For FPS calculation (reset every second)
                     self.frame_id_counter += 1  # Monotonically increasing (never reset)
@@ -308,3 +326,22 @@ class RTSPStreamCaptureGPU:
             'dropped_frames': self.dropped_frames,
             'queue_size': self.frame_queue.qsize()
         }
+
+    def get_latest_frame_as_numpy(self) -> Optional[np.ndarray]:
+        """
+        Get latest frame as NumPy array (for web streaming).
+        Converts from GPU tensor if needed.
+
+        Returns:
+            Latest frame as NumPy array (BGR format), or None if no frame available
+        """
+        with self.frame_lock:
+            if self.latest_frame is None:
+                return None
+
+            if isinstance(self.latest_frame, torch.Tensor):
+                # Convert GPU tensor to NumPy (on CPU)
+                return self.latest_frame.cpu().numpy()
+            else:
+                # Already NumPy array
+                return self.latest_frame

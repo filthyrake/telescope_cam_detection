@@ -800,6 +800,11 @@ class TelescopeDetectionSystem:
         retry_delay = performance_config.get('rtsp_retry_delay', 5.0)
         buffer_size = camera_config.get('buffer_size', performance_config.get('buffer_size', None))
 
+        # Get device from detection config for GPU tensor storage
+        detection_config = self.config.get('detection', {})
+        device = detection_config.get('device', 'cuda:0')
+        keep_frames_on_gpu = performance_config.get('keep_frames_on_gpu', True)
+
         # Use GPU-accelerated capture (NVDEC h264_cuvid)
         stream_capture = RTSPStreamCaptureGPU(
             rtsp_url=rtsp_url,
@@ -811,7 +816,9 @@ class TelescopeDetectionSystem:
             use_tcp=use_tcp,
             buffer_size=buffer_size,
             max_failures=max_failures,
-            retry_delay=retry_delay
+            retry_delay=retry_delay,
+            keep_frames_on_gpu=keep_frames_on_gpu,
+            device=device
         )
 
         logger.info(f"  [{camera_id}] Stream capture initialized")

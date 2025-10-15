@@ -11,7 +11,7 @@ import torch
 import logging
 import numpy as np
 import time
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Union
 
 from species_classifier import SpeciesClassifier
 from src.coco_constants import CLASS_ID_TO_CATEGORY
@@ -153,14 +153,14 @@ class TwoStageDetectionPipeline:
 
     def classify_detection(
         self,
-        frame: np.ndarray,
+        frame: Union[np.ndarray, torch.Tensor],
         detection: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Run Stage 2 classification on a detection.
+        Run Stage 2 classification on a detection (GPU-accelerated).
 
         Args:
-            frame: Full frame image (BGR)
+            frame: Full frame image (BGR) - can be NumPy array or GPU tensor
             detection: Detection dict with bbox and class info
 
         Returns:
@@ -210,7 +210,11 @@ class TwoStageDetectionPipeline:
         y2_padded = y2 + padding_y
 
         # Ensure valid crop within frame bounds
-        h, w = frame.shape[:2]
+        if isinstance(frame, torch.Tensor):
+            h, w = frame.shape[0], frame.shape[1]
+        else:
+            h, w = frame.shape[:2]
+
         x1_padded = max(0, min(x1_padded, w - 1))
         y1_padded = max(0, min(y1_padded, h - 1))
         x2_padded = max(0, min(x2_padded, w))
@@ -221,11 +225,18 @@ class TwoStageDetectionPipeline:
             self._set_detection_species_fields(detection, None, 0.0, category, None)
             return detection
 
+        # Crop frame (GPU tensor slicing or NumPy slicing)
         crop = frame[y1_padded:y2_padded, x1_padded:x2_padded]
 
-        if crop.size == 0:
-            self._set_detection_species_fields(detection, None, 0.0, category, None)
-            return detection
+        # Check crop validity
+        if isinstance(crop, torch.Tensor):
+            if crop.numel() == 0:
+                self._set_detection_species_fields(detection, None, 0.0, category, None)
+                return detection
+        else:
+            if crop.size == 0:
+                self._set_detection_species_fields(detection, None, 0.0, category, None)
+                return detection
 
         # Apply image enhancement if configured
         if self.enhancer is not None:
@@ -329,14 +340,14 @@ class TwoStageDetectionPipeline:
 
     def process_detections(
         self,
-        frame: np.ndarray,
+        frame: Union[np.ndarray, torch.Tensor],
         detections: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
-        Process all detections through Stage 2.
+        Process all detections through Stage 2 (GPU-accelerated).
 
         Args:
-            frame: Full frame image (BGR)
+            frame: Full frame image (BGR) - can be NumPy array or GPU tensor
             detections: List of detection dicts from Stage 1
 
         Returns:
