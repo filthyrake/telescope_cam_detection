@@ -12,9 +12,6 @@ from typing import List, Callable, Optional, Any, Dict
 from collections import deque
 from dataclasses import dataclass
 
-import numpy as np
-import torch
-
 logger = logging.getLogger(__name__)
 
 

@@ -211,12 +211,12 @@ class InferenceEngine:
 
                 if self.shared_coordinator:
                     # Coordinator mode: Queue for batched inference
+                    # Bind loop variables at lambda creation time (avoid capture-by-reference bug)
                     self.shared_coordinator.infer_async(
                         frame=frame,
-                        callback=lambda raw_detections: self._handle_inference_callback(
-                            raw_detections, frame, frame_id, frame_timestamp,
-                            camera_id, camera_name, inference_start
-                        ),
+                        callback=lambda raw_detections, f=frame, fid=frame_id, ft=frame_timestamp,
+                                       cid=camera_id, cn=camera_name, t0=inference_start:
+                            self._handle_inference_callback(raw_detections, f, fid, ft, cid, cn, t0),
                         camera_id=camera_id
                     )
                 else:

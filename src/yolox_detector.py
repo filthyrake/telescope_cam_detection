@@ -267,16 +267,27 @@ class YOLOXDetector:
         if not frames:
             return []
 
-        # Get original image sizes (extract H and W for both formats)
-        # NumPy array (HWC): shape[0]=H, shape[1]=W
-        # Torch tensor (CHW): shape[-2]=H, shape[-1]=W
+        # Get original image sizes (detect layout for both NumPy and torch)
         orig_sizes = []
         for frame in frames:
             if isinstance(frame, torch.Tensor):
-                # Torch tensor (CHW or NCHW) - H and W are last two dimensions
-                h, w = frame.shape[-2], frame.shape[-1]
+                # Detect tensor layout: CHW vs HWC
+                # For 3D tensors: if first dim is 1 or 3, assume CHW; otherwise HWC
+                # For 4D tensors: if second dim is 1 or 3, assume NCHW; otherwise NHWC
+                if frame.ndim == 3:
+                    if frame.shape[0] in (1, 3):  # CHW format
+                        h, w = frame.shape[1], frame.shape[2]
+                    else:  # HWC format
+                        h, w = frame.shape[0], frame.shape[1]
+                elif frame.ndim == 4:
+                    if frame.shape[1] in (1, 3):  # NCHW format
+                        h, w = frame.shape[2], frame.shape[3]
+                    else:  # NHWC format
+                        h, w = frame.shape[1], frame.shape[2]
+                else:
+                    raise ValueError(f"Unexpected tensor dimensions: {frame.shape}")
             else:
-                # NumPy array (HWC) - H and W are first two dimensions
+                # NumPy array - assume HWC (standard OpenCV/NumPy convention)
                 h, w = frame.shape[0], frame.shape[1]
             orig_sizes.append((h, w))
 
