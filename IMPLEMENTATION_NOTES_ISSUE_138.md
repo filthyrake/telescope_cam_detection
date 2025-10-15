@@ -3,9 +3,10 @@
 ## Status: Partial Implementation (Foundation Complete)
 
 ### Completed
-- ✅ Added `detect_batch()` method to `YOLOXDetector` (src/yolox_detector.py:225-322)
+- ✅ Added `detect_batch()` method to `YOLOXDetector` (src/yolox_detector.py)
 - ✅ Method accepts multiple frames and processes them in a single GPU forward pass
 - ✅ Documented expected performance improvements (2-3x GPU throughput)
+- ✅ Refactored detection formatting into shared `_format_model_output_to_detections()` helper
 
 ### Not Yet Implemented
 The following components from Issue #138 require significant architectural changes:

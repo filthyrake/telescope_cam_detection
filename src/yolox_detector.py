@@ -141,6 +141,68 @@ class YOLOXDetector:
 
         return img_tensor
 
+    def _format_model_output_to_detections(
+        self,
+        output: np.ndarray,
+        orig_h: int,
+        orig_w: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Convert model output to detection format with scaling and filtering.
+
+        Args:
+            output: Model output array (N x 7: x1, y1, x2, y2, obj_conf, class_conf, class_id)
+            orig_h: Original image height
+            orig_w: Original image width
+
+        Returns:
+            List of detection dictionaries
+        """
+        detections = []
+
+        # Scale boxes to original image size
+        ratio_h = orig_h / self.input_size[0]
+        ratio_w = orig_w / self.input_size[1]
+
+        for detection in output:
+            x1, y1, x2, y2, obj_conf, class_conf, class_id = detection
+
+            # Scale coordinates
+            x1 = float(x1 * ratio_w)
+            y1 = float(y1 * ratio_h)
+            x2 = float(x2 * ratio_w)
+            y2 = float(y2 * ratio_h)
+
+            class_id = int(class_id)
+            confidence = float(obj_conf * class_conf)
+
+            # Filter out non-wildlife classes if wildlife_only is enabled
+            if self.wildlife_only and not self.is_wildlife_relevant(class_id):
+                continue
+
+            # Get class name
+            class_name = COCO_CLASSES[class_id] if class_id < len(COCO_CLASSES) else f"class_{class_id}"
+
+            # Calculate box area
+            box_area = int((x2 - x1) * (y2 - y1))
+
+            detection_dict = {
+                'class_id': class_id,
+                'class_name': class_name,
+                'confidence': confidence,
+                'bbox': {
+                    'x1': x1,
+                    'y1': y1,
+                    'x2': x2,
+                    'y2': y2,
+                    'area': box_area
+                }
+            }
+
+            detections.append(detection_dict)
+
+        return detections
+
     def detect(self, frame: Union[np.ndarray, torch.Tensor]) -> List[Dict[str, Any]]:
         """
         Run detection on frame
@@ -173,54 +235,12 @@ class YOLOXDetector:
                 self.nms_threshold,
             )
 
-        # Convert to detection format
-        detections = []
-
+        # Convert to detection format using shared helper
         if outputs[0] is not None:
             output = outputs[0].cpu().numpy()
+            return self._format_model_output_to_detections(output, orig_h, orig_w)
 
-            # Scale boxes to original image size
-            ratio_h = orig_h / self.input_size[0]
-            ratio_w = orig_w / self.input_size[1]
-
-            for detection in output:
-                x1, y1, x2, y2, obj_conf, class_conf, class_id = detection
-
-                # Scale coordinates
-                x1 = float(x1 * ratio_w)
-                y1 = float(y1 * ratio_h)
-                x2 = float(x2 * ratio_w)
-                y2 = float(y2 * ratio_h)
-
-                class_id = int(class_id)
-                confidence = float(obj_conf * class_conf)
-
-                # Filter out non-wildlife classes if wildlife_only is enabled
-                if self.wildlife_only and not self.is_wildlife_relevant(class_id):
-                    continue
-
-                # Get class name
-                class_name = COCO_CLASSES[class_id] if class_id < len(COCO_CLASSES) else f"class_{class_id}"
-
-                # Calculate box area
-                box_area = int((x2 - x1) * (y2 - y1))
-
-                detection_dict = {
-                    'class_id': class_id,
-                    'class_name': class_name,
-                    'confidence': confidence,
-                    'bbox': {
-                        'x1': x1,
-                        'y1': y1,
-                        'x2': x2,
-                        'y2': y2,
-                        'area': box_area
-                    }
-                }
-
-                detections.append(detection_dict)
-
-        return detections
+        return []
 
     def detect_batch(self, frames: List[Union[np.ndarray, torch.Tensor]]) -> List[List[Dict[str, Any]]]:
         """
@@ -276,56 +296,16 @@ class YOLOXDetector:
                 self.nms_threshold,
             )
 
-        # Convert to detection format for each frame
+        # Convert to detection format for each frame using shared helper
         all_detections = []
 
         for frame_idx, output in enumerate(outputs):
-            detections = []
-
             if output is not None:
                 output_np = output.cpu().numpy()
                 orig_h, orig_w = orig_sizes[frame_idx]
-
-                # Scale boxes to original image size
-                ratio_h = orig_h / self.input_size[0]
-                ratio_w = orig_w / self.input_size[1]
-
-                for detection in output_np:
-                    x1, y1, x2, y2, obj_conf, class_conf, class_id = detection
-
-                    # Scale coordinates
-                    x1 = float(x1 * ratio_w)
-                    y1 = float(y1 * ratio_h)
-                    x2 = float(x2 * ratio_w)
-                    y2 = float(y2 * ratio_h)
-
-                    class_id = int(class_id)
-                    confidence = float(obj_conf * class_conf)
-
-                    # Filter out non-wildlife classes if wildlife_only is enabled
-                    if self.wildlife_only and not self.is_wildlife_relevant(class_id):
-                        continue
-
-                    # Get class name
-                    class_name = COCO_CLASSES[class_id] if class_id < len(COCO_CLASSES) else f"class_{class_id}"
-
-                    # Calculate box area
-                    box_area = int((x2 - x1) * (y2 - y1))
-
-                    detection_dict = {
-                        'class_id': class_id,
-                        'class_name': class_name,
-                        'confidence': confidence,
-                        'bbox': {
-                            'x1': x1,
-                            'y1': y1,
-                            'x2': x2,
-                            'y2': y2,
-                            'area': box_area
-                        }
-                    }
-
-                    detections.append(detection_dict)
+                detections = self._format_model_output_to_detections(output_np, orig_h, orig_w)
+            else:
+                detections = []
 
             all_detections.append(detections)
 
