@@ -262,10 +262,11 @@ class InferenceEngine:
                     # Send to output queue
                     self._queue_result(result)
 
-            except Exception as e:
-                logger.error(f"Error in inference loop: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
+            except (RuntimeError, ValueError, TypeError, AttributeError) as e:
+                logger.error(f"Error in inference loop for camera {self.camera_id}: {e}", exc_info=True)
+                # Check if shutdown was requested before sleeping
+                if self.stop_event.is_set():
+                    break
                 time.sleep(ERROR_SLEEP_SECONDS)
 
     def _handle_inference_callback(

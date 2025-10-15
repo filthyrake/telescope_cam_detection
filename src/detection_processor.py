@@ -226,8 +226,11 @@ class DetectionProcessor:
                 if processed_result['detections']:
                     self.last_detection_time = time.time()
 
-            except Exception as e:
-                logger.error(f"Error in processing loop: {e}")
+            except (RuntimeError, ValueError, TypeError, AttributeError, KeyError) as e:
+                logger.error(f"Error in processing loop: {e}", exc_info=True)
+                # Check if shutdown was requested before sleeping
+                if self.stop_event.is_set():
+                    break
                 time.sleep(ERROR_SLEEP_SECONDS)
 
     def _process_detections(
