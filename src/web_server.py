@@ -1079,18 +1079,18 @@ class WebServer:
                 # Check if this camera has an override
                 if camera_id in camera_overrides:
                     camera_override = camera_overrides[camera_id]
-                    return camera_override.get('enable_face_masking', True)
+                    return camera_override.get('enable_face_masking', self.enable_face_masking)
 
                 # No override, use global setting
-                return True
+                return self.enable_face_masking
 
             except Exception as e:
                 logger.error(f"Error checking face masking config for camera {camera_id}: {e}")
                 # Default to global setting on error
-                return True
+                return self.enable_face_masking
 
         # No config getter, use global setting
-        return True
+        return self.enable_face_masking
 
     def _apply_face_masking_to_frame(self, frame: np.ndarray, camera_id: str) -> np.ndarray:
         """
