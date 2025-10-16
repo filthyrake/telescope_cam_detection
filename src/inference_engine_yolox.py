@@ -499,6 +499,28 @@ class InferenceEngine:
 
         return filtered_detections
 
+    def _process_and_store_detections(self, frame: np.ndarray) -> List[Dict[str, Any]]:
+        """
+        Helper method to run inference and post-process detections (DRY helper for _run_inference).
+        Reduces code duplication between normal and OOM-retry paths.
+
+        Args:
+            frame: Input frame (BGR format)
+
+        Returns:
+            List of processed detection dictionaries
+        """
+        # Stage 1: Run YOLOX detection
+        detections = self.detector.detect(frame)
+
+        # Apply post-processing
+        processed_detections = self._post_process_detections(detections, frame)
+
+        # Store for sparse detection reuse
+        self.last_detections = processed_detections
+
+        return processed_detections
+
     def _run_inference(self, frame: np.ndarray) -> List[Dict[str, Any]]:
         """
         Run inference on a single frame with OOM recovery (Issue #125),
@@ -540,16 +562,7 @@ class InferenceEngine:
             self._apply_degradation(recommendations)
 
         try:
-            # Stage 1: Run YOLOX detection
-            detections = self.detector.detect(frame)
-
-            # Apply post-processing
-            processed_detections = self._post_process_detections(detections, frame)
-
-            # Store for sparse detection reuse
-            self.last_detections = processed_detections
-
-            return processed_detections
+            return self._process_and_store_detections(frame)
 
         except torch.cuda.OutOfMemoryError as e:
             # GPU OOM - attempt recovery
@@ -563,11 +576,8 @@ class InferenceEngine:
 
             # Retry inference with degraded settings
             try:
-                detections = self.detector.detect(frame)
                 self.memory_manager.record_recovery()
-                processed_detections = self._post_process_detections(detections, frame)
-                self.last_detections = processed_detections
-                return processed_detections
+                return self._process_and_store_detections(frame)
             except Exception as retry_e:
                 logger.error(f"Inference failed after OOM recovery: {retry_e}")
                 return []

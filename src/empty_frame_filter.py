@@ -45,7 +45,7 @@ class EmptyFrameFilter:
 
         logger.info(
             f"EmptyFrameFilter initialized: min_motion_area={min_motion_area}px², "
-            f"threshold={threshold}, blur_size={blur_size}"
+            f"threshold={threshold}, blur_size={self.blur_size}"
         )
 
     def has_motion(self, frame: np.ndarray) -> bool:

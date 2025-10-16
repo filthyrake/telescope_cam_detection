@@ -545,7 +545,7 @@ api:
 # Clips Access Authentication
 # Set TELESCOPE_CLIPS_TOKEN environment variable to enable authentication for clips endpoint
 # Example: export TELESCOPE_CLIPS_TOKEN="your-secret-token-here"
-# If not set, clips endpoint will be public (logs warning on startup)
+# If not set, clips endpoint will be public (logs warning on first access)
 # Access clips with: curl -H "Authorization: Bearer your-secret-token-here" http://localhost:8000/api/clips/filename.jpg
 
 # Snapshot/Clip Saving

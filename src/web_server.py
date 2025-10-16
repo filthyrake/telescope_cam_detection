@@ -496,8 +496,8 @@ class WebServer:
 
             return result
 
-        @self.app.get("/clips_list")
-        async def clips_list(credentials: Optional[HTTPAuthorizationCredentials] = Depends(self.security)):
+        @self.app.get("/api/clips")
+        async def clips_list(credentials: Optional[HTTPAuthorizationCredentials] = Security(self.security)):
             """Get list of saved clips (requires authentication if token configured)."""
             # Verify authentication
             self._verify_clips_token(credentials)
@@ -538,7 +538,7 @@ class WebServer:
             return {"clips": clips}
 
         @self.app.get("/api/clips/{filename}")
-        async def get_clip(filename: str, credentials: Optional[HTTPAuthorizationCredentials] = Depends(self.security)):
+        async def get_clip(filename: str, credentials: Optional[HTTPAuthorizationCredentials] = Security(self.security)):
             """
             Serve clip file with authentication.
 
