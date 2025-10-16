@@ -27,6 +27,7 @@ Complete documentation for the real-time wildlife monitoring and telescope colli
 | **[features/SNAPSHOT_FEATURE.md](features/SNAPSHOT_FEATURE.md)** | Automatic clip saving | Users |
 | **[features/STAGE2_SETUP.md](features/STAGE2_SETUP.md)** | Species classification (10,000 species) | Advanced users |
 | **[features/STAGE2_ENHANCEMENT_OPTIONS.md](features/STAGE2_ENHANCEMENT_OPTIONS.md)** | Image preprocessing options | ML engineers |
+| **[features/OOM_GRACEFUL_DEGRADATION.md](features/OOM_GRACEFUL_DEGRADATION.md)** | GPU memory management & crash prevention | Advanced users |
 
 ### Training & Development
 

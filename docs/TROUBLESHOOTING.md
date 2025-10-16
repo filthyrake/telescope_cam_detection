@@ -111,9 +111,13 @@ Try these in order:
 - Close other applications
 
 **VRAM issues**
-- Use smaller model (yolox-tiny instead of yolox-s)
-- Reduce input_size
-- Reduce number of cameras
+- System has **automatic GPU OOM graceful degradation** (see [GPU OOM Graceful Degradation](features/OOM_GRACEFUL_DEGRADATION.md))
+- Progressive degradation: cache clearing → batch reduction → input size reduction → CPU fallback
+- Monitor GPU memory in web UI or via `/api/system/stats` endpoint
+- Manual tuning:
+  - Use smaller model (yolox-tiny instead of yolox-s)
+  - Reduce input_size
+  - Reduce number of cameras
 
 ## Web Interface Issues
 
@@ -268,7 +272,7 @@ journalctl -u telescope-detection --since "10 minutes ago"
 
 **Problems:**
 - "Failed to connect to camera" - Check camera connection
-- "CUDA out of memory" - Reduce model size or input size
+- "CUDA out of memory" - System auto-recovers (see [OOM Graceful Degradation](features/OOM_GRACEFUL_DEGRADATION.md))
 - "No frames in queue" - Camera connection lost
 
 ## Getting Help
