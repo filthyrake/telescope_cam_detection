@@ -94,9 +94,15 @@ class YOLOXDetector:
         for attempt in range(max_retries):
             try:
                 if self.use_tensorrt:
-                    return self._load_tensorrt_model()
+                    result = self._load_tensorrt_model()
                 else:
-                    return self._load_pytorch_model()
+                    result = self._load_pytorch_model()
+
+                if result:
+                    return True
+                else:
+                    # Raise to trigger retry logic
+                    raise RuntimeError("Model load returned False")
 
             except (RuntimeError, OSError, IOError) as e:
                 # Retryable errors: CUDA OOM, file I/O, network issues

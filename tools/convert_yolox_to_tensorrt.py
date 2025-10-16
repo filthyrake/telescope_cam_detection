@@ -175,11 +175,20 @@ def convert_to_tensorrt(
 
     # Create example input
     example_input = torch.randn(1, 3, input_size[0], input_size[1]).to(detector.device)
+    input_shape = list(example_input.shape)
 
     # Configure TensorRT compilation
     enabled_precisions = {torch.float32}
     if fp16:
         enabled_precisions.add(torch.half)
+
+    # Parse device string (e.g., "cuda:0" -> torch_tensorrt.Device)
+    device_str = str(detector.device)
+    if device_str.startswith("cuda"):
+        gpu_id = int(device_str.split(":")[-1]) if ":" in device_str else 0
+        trt_device = torch_tensorrt.Device(f"cuda:{gpu_id}")
+    else:
+        trt_device = torch_tensorrt.Device("cuda:0")  # Default to cuda:0
 
     # Compile model with TensorRT
     logger.info("Compiling model with TensorRT (this may take several minutes)...")
@@ -190,16 +199,16 @@ def convert_to_tensorrt(
             model,
             inputs=[
                 torch_tensorrt.Input(
-                    min_shape=[1, 3, input_size[0], input_size[1]],
-                    opt_shape=[1, 3, input_size[0], input_size[1]],
-                    max_shape=[1, 3, input_size[0], input_size[1]],
+                    min_shape=input_shape,
+                    opt_shape=input_shape,
+                    max_shape=input_shape,
                     dtype=torch.half if fp16 else torch.float32,
                 )
             ],
             enabled_precisions=enabled_precisions,
             workspace_size=workspace_size_gb * (1 << 30),  # Convert GB to bytes
             truncate_long_and_double=True,
-            device=detector.device,
+            device=trt_device,
         )
     except Exception as e:
         logger.error(f"TensorRT compilation failed: {e}")
@@ -236,6 +245,9 @@ def benchmark_models(
     # Create test input
     test_input = torch.randn(1, 3, input_size[0], input_size[1]).to(device)
 
+    # Check if CUDA is available
+    is_cuda = torch.cuda.is_available() and str(device).startswith('cuda')
+
     # Benchmark PyTorch model
     logger.info("Benchmarking PyTorch model...")
     pytorch_model.eval()
@@ -245,15 +257,17 @@ def benchmark_models(
         for _ in range(warmup):
             _ = pytorch_model(test_input)
 
-        # Synchronize GPU
-        torch.cuda.synchronize()
+        # Synchronize GPU (only if CUDA)
+        if is_cuda:
+            torch.cuda.synchronize()
 
         # Benchmark
         pytorch_times = []
         for _ in range(iterations):
             start = time.time()
             _ = pytorch_model(test_input)
-            torch.cuda.synchronize()
+            if is_cuda:
+                torch.cuda.synchronize()
             pytorch_times.append((time.time() - start) * 1000)  # Convert to ms
 
     pytorch_avg = sum(pytorch_times) / len(pytorch_times)
@@ -268,15 +282,17 @@ def benchmark_models(
         for _ in range(warmup):
             _ = trt_model(test_input)
 
-        # Synchronize GPU
-        torch.cuda.synchronize()
+        # Synchronize GPU (only if CUDA)
+        if is_cuda:
+            torch.cuda.synchronize()
 
         # Benchmark
         trt_times = []
         for _ in range(iterations):
             start = time.time()
             _ = trt_model(test_input)
-            torch.cuda.synchronize()
+            if is_cuda:
+                torch.cuda.synchronize()
             trt_times.append((time.time() - start) * 1000)  # Convert to ms
 
     trt_avg = sum(trt_times) / len(trt_times)
