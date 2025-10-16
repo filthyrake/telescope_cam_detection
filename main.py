@@ -18,7 +18,6 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from src.stream_capture import RTSPStreamCapture, create_rtsp_url
-from src.stream_capture_gpu_ffmpeg import RTSPStreamCaptureGPU  # GPU-accelerated via FFmpeg NVDEC
 from src.inference_engine_yolox import InferenceEngine  # YOLOX version (47x faster!)
 from src.shared_inference_coordinator import SharedInferenceCoordinator  # Batched inference
 from src.detection_processor import DetectionProcessor
@@ -896,13 +895,9 @@ class TelescopeDetectionSystem:
         retry_delay = performance_config.get('rtsp_retry_delay', 5.0)
         buffer_size = camera_config.get('buffer_size', performance_config.get('buffer_size', None))
 
-        # Get device from detection config for GPU tensor storage
-        detection_config = self.config.get('detection', {})
-        device = detection_config.get('device', 'cuda:0')
-        keep_frames_on_gpu = performance_config.get('keep_frames_on_gpu', True)
-
-        # Use GPU-accelerated capture (NVDEC h264_cuvid)
-        stream_capture = RTSPStreamCaptureGPU(
+        # Use CPU video decode (OpenCV) - more efficient on A30 than h264_cuvid
+        # GPU resize still happens in YOLOX detector for optimal performance
+        stream_capture = RTSPStreamCapture(
             rtsp_url=rtsp_url,
             frame_queue=frame_queue,
             target_width=camera_config.get('target_width', 1280),
@@ -912,9 +907,7 @@ class TelescopeDetectionSystem:
             use_tcp=use_tcp,
             buffer_size=buffer_size,
             max_failures=max_failures,
-            retry_delay=retry_delay,
-            keep_frames_on_gpu=keep_frames_on_gpu,
-            device=device
+            retry_delay=retry_delay
         )
 
         logger.info(f"  [{camera_id}] Stream capture initialized")

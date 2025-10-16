@@ -83,7 +83,7 @@ detection:
   batching:
     enabled: true  # Enable batched inference (recommended for 2+ cameras)
     max_batch_size: 2  # Maximum frames to batch together (set to 2 for 2 cameras)
-    max_batch_wait_ms: 10.0  # Maximum time to wait for full batch (ms)
+    max_batch_wait_ms: 35.0  # Wait one frame period at 30fps (33ms) + margin for proper batching
     enable_metrics: true  # Track and log batch performance metrics
 
   # YOLOX input size (larger = better for small objects, but slower)

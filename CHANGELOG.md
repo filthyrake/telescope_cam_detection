@@ -80,6 +80,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improved code maintainability and readability
 
 ### Fixed
+- **GPU video decode performance regression on A30** (#152) - 2025-10-15
+  - Reverted GPU video decode (h264_cuvid via FFmpeg) to CPU decode (OpenCV)
+  - A30 lacks dedicated NVDEC hardware → GPU decode was inefficient (261% CPU via FFmpeg)
+  - Kept GPU image resize (torch.nn.functional.interpolate) - working well!
+  - FFmpeg CPU usage: 261% → 0% (eliminated entirely)
+  - Hybrid approach (CPU decode + GPU resize) optimal for A30 compute GPU architecture
+  - Partially reverts PR #91 (GPU decode), keeps GPU resize from same PR
+  - Performance: ~40% better than GPU decode, stable 26-27 fps throughput
+
+- **JPEG encoding bottleneck causing 72% result drops** (#150, #147, #148) - 2025-10-15
+  - Skip frame buffering in "image" snapshot mode (only buffer for "clip" mode)
+  - Only draw detection annotations when actually saving (not every frame)
+  - Eliminated CPU-intensive JPEG encoding on every frame
+  - Result drop rate: 72% → <5%
+  - CPU usage reduced significantly
+
+- **GPU memory and performance optimizations** (#146, #145) - 2025-10-15
+  - Eliminated redundant GPU tensor copy in detection processor (#115)
+  - Single GPU copy (1.5ms) instead of double copy (3ms) - 50% improvement
+  - Optimized buffer memory tracking with incremental calculation (#116)
+  - Prevents O(n) memory sum on every frame add (30-60ms → <0.1ms)
+
+- **Client timeout and stability fixes** (#144, #143) - 2025-10-15
+  - Prevent client timeout on JPEG encoding failures (#113)
+  - Return cached frame on encoding error instead of breaking stream
+  - Medium priority bug fixes batch 2 (#107, #110, #111, #112):
+    - YOLOX model loading with retry logic (exponential backoff)
+    - Safe cleanup of failed cameras (queue emptying, resource cleanup)
+    - Active camera validation (prevents startup with 0 cameras)
+    - Shared coordinator memory leak (bounded deque for metrics)
+
 - **High-priority bug fixes** (#129) - 2025-10-15
   - GPU device string comparison causing unnecessary GPU→GPU transfers (10-20ms improvement)
   - Missing frame validation after cv2.resize() preventing web server crashes

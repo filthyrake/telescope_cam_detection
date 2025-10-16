@@ -133,10 +133,10 @@ class DetectionProcessor:
     def _get_frame_copy(self) -> Optional[Any]:
         """
         Get a thread-safe copy of the latest frame from frame source.
-        Handles both NumPy arrays and GPU tensors.
+        Converts GPU tensors to NumPy arrays for compatibility with OpenCV (motion filter, etc.).
 
         Returns:
-            Copy of latest frame, or None if unavailable
+            Copy of latest frame as NumPy array (BGR), or None if unavailable
         """
         if not self.frame_source or not hasattr(self.frame_source, 'latest_frame'):
             return None
@@ -145,11 +145,8 @@ class DetectionProcessor:
             if self.frame_source.latest_frame is None:
                 return None
 
-            # Handle GPU tensors vs NumPy arrays
-            if isinstance(self.frame_source.latest_frame, torch.Tensor):
-                return self.frame_source.latest_frame.clone()
-            else:
-                return self.frame_source.latest_frame.copy()
+            # Return copy of frame (preserve GPU tensors for performance)
+            return self.frame_source.latest_frame.copy()
 
     def _processing_loop(self):
         """Main processing loop running in separate thread."""

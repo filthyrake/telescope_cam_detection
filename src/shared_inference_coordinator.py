@@ -41,7 +41,8 @@ class SharedInferenceCoordinator:
         detector: Any,  # YOLOXDetector instance
         max_batch_size: int = 4,
         max_batch_wait_ms: float = 10.0,
-        enable_metrics: bool = True
+        enable_metrics: bool = True,
+        max_queue_depth: int = 60
     ):
         """
         Initialize batched inference coordinator.
@@ -51,11 +52,13 @@ class SharedInferenceCoordinator:
             max_batch_size: Maximum frames to batch together (default: 4)
             max_batch_wait_ms: Maximum time to wait for full batch in milliseconds (default: 10ms)
             enable_metrics: Track and log performance metrics
+            max_queue_depth: Maximum pending frames in queue before dropping (default: 60 = ~2 seconds at 30fps)
         """
         self.detector = detector
         self.max_batch_size = max_batch_size
         self.max_batch_wait_ms = max_batch_wait_ms / 1000.0  # Convert to seconds
         self.enable_metrics = enable_metrics
+        self.max_queue_depth = max_queue_depth
 
         # Thread-safe queue for pending inference requests
         self.pending_queue: deque[PendingInference] = deque()
@@ -71,11 +74,14 @@ class SharedInferenceCoordinator:
         self.total_batches = 0
         self.total_frames = 0
         self.total_batch_time_ms = 0.0
-        self.batch_sizes: List[int] = []
-        self.wait_times_ms: List[float] = []
+        self.dropped_frames = 0  # Track frames dropped due to queue overflow
+        # Use deque with maxlen to prevent unbounded growth (Issue #151)
+        # Keep last 1000 samples for rolling average (prevents memory leak)
+        self.batch_sizes: deque = deque(maxlen=1000)
+        self.wait_times_ms: deque = deque(maxlen=1000)
 
         logger.info(f"SharedInferenceCoordinator initialized (max_batch_size={max_batch_size}, "
-                   f"max_wait={max_batch_wait_ms:.1f}ms)")
+                   f"max_wait={max_batch_wait_ms:.1f}ms, max_queue_depth={max_queue_depth})")
 
     def start(self):
         """Start the coordinator thread"""
@@ -139,8 +145,24 @@ class SharedInferenceCoordinator:
             camera_id=camera_id
         )
 
-        # Add to queue and notify coordinator
+        # Add to queue and notify coordinator (with queue depth limit to prevent GPU OOM)
         with self.queue_condition:
+            # Check queue depth before adding (Issue #151: prevent unbounded GPU memory usage)
+            if len(self.pending_queue) >= self.max_queue_depth:
+                # Queue full - drop oldest frame to prevent memory leak
+                dropped = self.pending_queue.popleft()
+                self.dropped_frames += 1
+                if self.dropped_frames % 10 == 0:
+                    logger.warning(
+                        f"Inference queue full ({len(self.pending_queue)}/{self.max_queue_depth}) - "
+                        f"dropped {self.dropped_frames} frames total. System overloaded!"
+                    )
+                # Call dropped frame's callback with empty results
+                try:
+                    dropped.callback([])
+                except Exception:
+                    pass  # Ignore callback errors for dropped frames
+
             self.pending_queue.append(request)
             # Always notify coordinator on new frame (reduces latency for first frame)
             self.queue_condition.notify()
@@ -245,6 +267,13 @@ class SharedInferenceCoordinator:
                 # Log metrics periodically
                 if self.total_batches % 100 == 0:
                     self._log_metrics()
+
+            # Periodically free GPU memory cache to prevent fragmentation (Issue #151)
+            # Clear every 50 batches (~100-200 frames) to balance performance vs memory
+            if self.total_batches % 50 == 0:
+                import torch
+                torch.cuda.empty_cache()
+                logger.debug("GPU memory cache cleared")
 
             logger.debug(f"Processed batch of {len(batch)} frames in {inference_time_ms:.1f}ms")
 

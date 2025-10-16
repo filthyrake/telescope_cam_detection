@@ -342,6 +342,11 @@ class YOLOXDetector:
 
             all_detections.append(detections)
 
+        # Explicitly delete GPU tensors to free VRAM faster (Issue #151)
+        del batch_tensor
+        del preprocessed_frames
+        del outputs
+
         return all_detections
 
     def is_wildlife_relevant(self, class_id: int) -> bool:
