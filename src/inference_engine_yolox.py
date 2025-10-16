@@ -81,6 +81,15 @@ class InferenceEngine:
             shared_coordinator: Optional SharedInferenceCoordinator for batched inference
             camera_id: Camera identifier for this engine instance
             camera_name: Camera name for logging
+            empty_frame_filter_config: Optional config dict for empty frame filter (Issue #160)
+                - enabled: bool - Enable motion detection to skip empty frames
+                - min_motion_area: int - Minimum motion area in pixels² (default 200)
+                - threshold: int - Frame difference threshold 0-255 (default 25)
+                - blur_size: int - Gaussian blur kernel size (default 21, must be odd)
+            sparse_detection_config: Optional config dict for sparse detection (Issue #158)
+                - enabled: bool - Enable sparse detection with temporal coherence
+                - keyframe_interval: int - Run full inference every N frames (default 3, must be >= 1)
+                - mode: str - Sparse detection mode (default 'simple')
         """
         self.model_name = model_name
         self.model_path = model_path
@@ -140,7 +149,12 @@ class InferenceEngine:
         self.sparse_mode = "simple"
         if sparse_detection_config and sparse_detection_config.get('enabled', False):
             self.sparse_detection_enabled = True
-            self.keyframe_interval = sparse_detection_config.get('keyframe_interval', 3)
+            keyframe_interval = sparse_detection_config.get('keyframe_interval', 3)
+            # Validate keyframe_interval to prevent ZeroDivisionError
+            if keyframe_interval < 1:
+                logger.warning(f"Invalid keyframe_interval={keyframe_interval}, must be >= 1. Using default of 3.")
+                keyframe_interval = 3
+            self.keyframe_interval = keyframe_interval
             self.sparse_mode = sparse_detection_config.get('mode', 'simple')
             logger.info(f"Sparse detection enabled: keyframe_interval={self.keyframe_interval}, mode={self.sparse_mode}")
 

@@ -98,6 +98,7 @@ class WebServer:
 
         # Security for clips endpoint
         self.security = HTTPBearer(auto_error=False)
+        self._clips_auth_warned = False  # One-time warning flag
 
         # Latest detections per camera
         self.latest_detections: Dict[str, Dict[str, Any]] = {}  # camera_id -> detection_result
@@ -116,7 +117,7 @@ class WebServer:
 
         # Clips directory is now served via authenticated endpoints (see _setup_routes)
 
-    def _verify_clips_token(self, credentials: Optional[HTTPAuthorizationCredentials] = Security(HTTPBearer(auto_error=False))) -> bool:
+    def _verify_clips_token(self, credentials: Optional[HTTPAuthorizationCredentials]) -> bool:
         """
         Verify token for clips access.
 
@@ -132,7 +133,10 @@ class WebServer:
 
         # If no token configured, allow access (backward compatibility)
         if not expected_token:
-            logger.warning("No TELESCOPE_CLIPS_TOKEN configured - clips endpoint is public!")
+            # Log warning once at first access
+            if not self._clips_auth_warned:
+                logger.warning("No TELESCOPE_CLIPS_TOKEN configured - clips endpoint is public!")
+                self._clips_auth_warned = True
             return True
 
         # Check if credentials provided
@@ -493,8 +497,11 @@ class WebServer:
             return result
 
         @self.app.get("/clips_list")
-        async def clips_list():
-            """Get list of saved clips."""
+        async def clips_list(credentials: Optional[HTTPAuthorizationCredentials] = Depends(self.security)):
+            """Get list of saved clips (requires authentication if token configured)."""
+            # Verify authentication
+            self._verify_clips_token(credentials)
+
             clips_dir = Path(__file__).parent.parent / "clips"
             if not clips_dir.exists():
                 return {"clips": []}
@@ -557,10 +564,15 @@ class WebServer:
             except ValueError:
                 raise HTTPException(status_code=403, detail="Access denied")
 
-            # Serve file
+            # Serve file with appropriate media type
+            import mimetypes
+            media_type, _ = mimetypes.guess_type(str(file_path))
+            if not media_type:
+                media_type = "application/octet-stream"
+
             return FileResponse(
                 path=str(file_path),
-                media_type="image/jpeg" if filename.endswith('.jpg') else "application/octet-stream",
+                media_type=media_type,
                 filename=filename
             )
 
