@@ -13,6 +13,7 @@ from threading import Thread, Event, Lock
 import numpy as np
 
 from src.yolox_detector import YOLOXDetector
+from src.rtdetr_detector import RTDETRDetector
 from src.shared_inference_coordinator import SharedInferenceCoordinator
 from src.bbox_utils import ensure_valid_bbox
 from src.memory_manager import MemoryManager, MemoryPressure
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 class InferenceEngine:
     """
-    GPU-accelerated inference engine using YOLOX.
+    GPU-accelerated inference engine using YOLOX or RT-DETR.
     Drop-in replacement for GroundingDINO-based inference engine.
     """
 
@@ -57,23 +58,25 @@ class InferenceEngine:
         camera_name: Optional[str] = None,
         empty_frame_filter_config: Optional[Dict[str, Any]] = None,
         sparse_detection_config: Optional[Dict[str, Any]] = None,
+        detector_type: str = "yolox",  # "yolox" or "rtdetr"
+        rtdetr_config_path: Optional[str] = None,  # Required for RT-DETR
         **kwargs  # Ignore extra params from old config
     ):
         """
-        Initialize YOLOX inference engine.
+        Initialize inference engine (YOLOX or RT-DETR).
 
         Args:
-            model_name: YOLOX model variant (yolox-s, yolox-m, etc.)
-            model_path: Path to YOLOX weights
+            model_name: Model variant (yolox-s, rtdetr-r18vd, etc.)
+            model_path: Path to model weights
             device: Device to run inference on
             conf_threshold: Confidence threshold
-            nms_threshold: NMS IoU threshold
+            nms_threshold: NMS IoU threshold (YOLOX only)
             input_size: Input image size (height, width) - larger = better for small objects
             input_queue: Queue to receive frames from
             output_queue: Queue to send detections to
             min_box_area: Minimum bounding box area (pixels²)
             max_det: Maximum detections per image
-            use_two_stage: Enable two-stage detection (YOLOX → iNaturalist)
+            use_two_stage: Enable two-stage detection (Stage 1 → iNaturalist)
             two_stage_pipeline: TwoStageDetectionPipeline instance
             class_confidence_overrides: Per-class confidence thresholds
             class_size_constraints: Per-class min/max box area constraints (e.g., {'bird': {'max': 15000}})
@@ -90,6 +93,8 @@ class InferenceEngine:
                 - enabled: bool - Enable sparse detection with temporal coherence
                 - keyframe_interval: int - Run full inference every N frames (default 3, must be >= 1)
                 - mode: str - Sparse detection mode (default 'simple')
+            detector_type: Detector type ("yolox" or "rtdetr")
+            rtdetr_config_path: Path to RT-DETR config file (required if detector_type="rtdetr")
         """
         self.model_name = model_name
         self.model_path = model_path
@@ -109,8 +114,10 @@ class InferenceEngine:
         self.shared_coordinator = shared_coordinator
         self.camera_id = camera_id or "default"
         self.camera_name = camera_name or "Default Camera"
+        self.detector_type = detector_type.lower()
+        self.rtdetr_config_path = rtdetr_config_path
 
-        self.detector: Optional[YOLOXDetector] = None
+        self.detector: Optional[Any] = None  # Can be YOLOXDetector or RTDETRDetector
         self.is_loaded = False
         self.stop_event = Event()
         self.inference_thread: Optional[Thread] = None
@@ -163,9 +170,9 @@ class InferenceEngine:
         self.last_detections: List[Dict[str, Any]] = []
 
     def load_model(self) -> bool:
-        """Load YOLOX model with CPU fallback (Issue #125)"""
+        """Load YOLOX or RT-DETR model with CPU fallback (Issue #125)"""
         try:
-            logger.info(f"Loading YOLOX inference engine...")
+            logger.info(f"Loading {self.detector_type.upper()} inference engine...")
 
             # Skip detector creation if using shared coordinator (VRAM optimization)
             if self.shared_coordinator:
@@ -173,30 +180,50 @@ class InferenceEngine:
                 logger.info(f"Camera: {self.camera_name} (ID: {self.camera_id})")
                 logger.info(f"Two-stage detection: {'enabled' if self.use_two_stage else 'disabled'}")
                 self.is_loaded = True
-                logger.info("YOLOX inference engine loaded (coordinator mode)")
+                logger.info(f"{self.detector_type.upper()} inference engine loaded (coordinator mode)")
                 return True
 
             # Standalone mode: Create and load detector
+            logger.info(f"Detector type: {self.detector_type}")
             logger.info(f"Model: {self.model_name}")
             logger.info(f"Weights: {self.model_path}")
             logger.info(f"Device: {self.device}")
 
             # Try loading on GPU first
             try:
-                # Create detector
-                self.detector = YOLOXDetector(
-                    model_name=self.model_name,
-                    model_path=self.model_path,
-                    device=self.device,
-                    conf_threshold=self.conf_threshold,
-                    nms_threshold=self.nms_threshold,
-                    input_size=self.input_size,
-                    wildlife_only=self.wildlife_only,
-                )
+                if self.detector_type == "rtdetr":
+                    # Create RT-DETR detector
+                    if not self.rtdetr_config_path:
+                        raise ValueError("rtdetr_config_path is required for RT-DETR detector")
 
-                # Load model
-                if not self.detector.load_model():
-                    raise RuntimeError("Failed to load YOLOX model")
+                    self.detector = RTDETRDetector(
+                        config_path=self.rtdetr_config_path,
+                        model_path=self.model_path,
+                        device=self.device,
+                        conf_threshold=self.conf_threshold,
+                        input_size=self.input_size,
+                        wildlife_only=self.wildlife_only,
+                    )
+
+                    # Load model
+                    if not self.detector.load_model():
+                        raise RuntimeError("Failed to load RT-DETR model")
+
+                else:
+                    # Create YOLOX detector (default)
+                    self.detector = YOLOXDetector(
+                        model_name=self.model_name,
+                        model_path=self.model_path,
+                        device=self.device,
+                        conf_threshold=self.conf_threshold,
+                        nms_threshold=self.nms_threshold,
+                        input_size=self.input_size,
+                        wildlife_only=self.wildlife_only,
+                    )
+
+                    # Load model
+                    if not self.detector.load_model():
+                        raise RuntimeError("Failed to load YOLOX model")
 
                 # Log GPU info
                 if torch.cuda.is_available():
@@ -215,18 +242,29 @@ class InferenceEngine:
 
                 # Retry with CPU
                 self.device = "cpu"
-                self.detector = YOLOXDetector(
-                    model_name=self.model_name,
-                    model_path=self.model_path,
-                    device="cpu",
-                    conf_threshold=self.conf_threshold,
-                    nms_threshold=self.nms_threshold,
-                    input_size=self.input_size,
-                    wildlife_only=self.wildlife_only,
-                )
+
+                if self.detector_type == "rtdetr":
+                    self.detector = RTDETRDetector(
+                        config_path=self.rtdetr_config_path,
+                        model_path=self.model_path,
+                        device="cpu",
+                        conf_threshold=self.conf_threshold,
+                        input_size=self.input_size,
+                        wildlife_only=self.wildlife_only,
+                    )
+                else:
+                    self.detector = YOLOXDetector(
+                        model_name=self.model_name,
+                        model_path=self.model_path,
+                        device="cpu",
+                        conf_threshold=self.conf_threshold,
+                        nms_threshold=self.nms_threshold,
+                        input_size=self.input_size,
+                        wildlife_only=self.wildlife_only,
+                    )
 
                 if not self.detector.load_model():
-                    logger.error("Failed to load YOLOX model on CPU")
+                    logger.error(f"Failed to load {self.detector_type.upper()} model on CPU")
                     return False
 
                 logger.warning("Model loaded on CPU (reduced performance expected)")
@@ -234,7 +272,7 @@ class InferenceEngine:
             logger.info(f"Two-stage detection: {'enabled' if self.use_two_stage else 'disabled'}")
 
             self.is_loaded = True
-            logger.info("YOLOX inference engine loaded successfully")
+            logger.info(f"{self.detector_type.upper()} inference engine loaded successfully")
             return True
 
         except Exception as e:

@@ -4,7 +4,8 @@ torchvision>=0.16.0
 timm>=1.0.0  # PyTorch Image Models for iNaturalist classifier
 
 # Object detection (Apache 2.0 license)
-# YOLOX is used for Stage 1 detection (built-in via ultralytics, no external dependency)
+# RT-DETR official implementation for Stage 1 detection (replaces YOLOX)
+# Repository: https://github.com/lyuwenyu/RT-DETR (Apache 2.0)
 transformers>=4.30.0  # For HuggingFace model integration (Stage 2 iNaturalist classifier)
 
 # Computer vision
