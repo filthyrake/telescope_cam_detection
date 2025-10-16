@@ -69,16 +69,33 @@ cameras:
       min_crop_size: 100        # Skip Stage 2 if crop smaller than 100x100 pixels
 
 detection:
-  # YOLOX Model configuration (Apache 2.0 license)
+  # Model Selection (Apache 2.0 license)
+  # Options: "yolox" (fast, 47x faster than GroundingDINO) or "rtdetr" (transformer-based, better for small objects)
+  detector_type: "rtdetr"  # Options: "yolox" or "rtdetr"
+
+  # YOLOX Model configuration (use when detector_type="yolox")
   # 47x faster than GroundingDINO (11-21ms vs 560ms)
-  model:
-    name: "yolox-s"  # YOLOX-S variant (good speed/accuracy balance)
+  yolox:
+    model_name: "yolox-s"  # YOLOX-S variant (good speed/accuracy balance)
     weights: "models/yolox/yolox_s.pth"
     use_tensorrt: false  # Enable TensorRT optimization for 1.5-2.4x speedup (Issue #157)
     # To use TensorRT:
     #   1. Convert model: python tools/convert_yolox_to_tensorrt.py --model yolox-s --weights models/yolox/yolox_s.pth --benchmark
     #   2. Set weights: "models/yolox/yolox_s_trt.pth"
     #   3. Set use_tensorrt: true
+
+  # RT-DETR Model configuration (use when detector_type="rtdetr")
+  # Transformer-based detector, better small object detection and robustness to occlusion
+  # RT-DETRv2-S: 48.1% mAP @ 217 FPS (T4 GPU)
+  rtdetr:
+    model_name: "rtdetrv2-r18vd"  # RT-DETRv2-S variant (ResNet-18 backbone)
+    weights: "models/rtdetr/rtdetrv2_r18vd.pth"
+    config_path: "RT-DETR/rtdetrv2_pytorch/configs/rtdetrv2/rtdetrv2_r18vd_120e_coco.yml"
+    # Available models:
+    #   - rtdetrv2-r18vd: 48.1 mAP @ 217 FPS (fast, recommended)
+    #   - rtdetrv2-r50vd: 53.4 mAP @ 108 FPS (better accuracy, slower)
+    #   - rtdetrv2-r101vd: 54.3 mAP @ 74 FPS (best accuracy, slowest)
+
   device: "cuda:0"
 
   # Batched inference coordination (improves GPU utilization for multi-camera setups)
@@ -91,11 +108,26 @@ detection:
     max_batch_wait_ms: 35.0  # Wait one frame period at 30fps (33ms) + margin for proper batching
     enable_metrics: true  # Track and log batch performance metrics
 
-  # YOLOX input size (larger = better for small objects, but slower)
-  # 640x640: ~11-21ms (fast, standard)
-  # 1280x1280: ~50-100ms (slower, better for small/distant wildlife)
-  # 1920x1920: ~150-250ms (slow, maximum detail for tiny IR wildlife)
-  input_size: [1920, 1920]  # [height, width]
+  # Input size configuration (affects both YOLOX and RT-DETR)
+  # Larger sizes = better for small objects, but slower inference
+  #
+  # YOLOX performance (flexible input sizes):
+  #   640x640: ~11-21ms (fast, standard)
+  #   1280x1280: ~50-100ms (slower, better for small/distant wildlife)
+  #   1920x1920: ~150-250ms (slow, maximum detail for tiny IR wildlife)
+  #
+  # RT-DETR performance (modified for dynamic resolution):
+  #   640x640: Native resolution, fastest (~20ms/frame), recommended for most use cases
+  #   1280x1280: Slower (~70-120ms/frame), better for small/distant objects
+  #   1920x1920: Much slower (~150-250ms/frame), only for very small/distant wildlife
+  #
+  # IMPORTANT: RT-DETR Resolution Trade-offs
+  # - We modified RT-DETR to use dynamic positional embeddings (works at any resolution)
+  # - 640x640: Best for real-time detection and general wildlife monitoring
+  # - 1920x1920: High GPU usage and latency, only use if small objects are missed at lower res
+  # - Higher resolution mostly increases feature map processing time, not model accuracy
+  # - Consider testing at 640x640 first, then increase only if needed
+  input_size: [1920, 1920]  # [height, width] - High resolution for small/distant wildlife
 
   # YOLOX detection thresholds
   conf_threshold: 0.40  # Confidence threshold (raised to reduce false positives from shadows/rocks)
@@ -543,12 +575,9 @@ privacy:
   min_neighbors: 5  # Haar cascade min neighbors (higher = fewer false positives)
 
   # Per-camera overrides (optional)
-  camera_overrides: {}
-    # Example:
-    # cam1:
-    #   enable_face_masking: false  # Disable for specific camera (e.g., remote area)
-    # cam2:
-    #   mask_style: "black_box"     # Use different masking style
+  camera_overrides:
+    cam1:
+      enable_face_masking: false  # Disabled - telescope cover triggering false person detections
 
 # API Access Control
 api:

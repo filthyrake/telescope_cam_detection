@@ -356,21 +356,38 @@ class TelescopeDetectionSystem:
             logger.info("Validating model files...")
 
             detection_config = self.config.get('detection', {})
-            model_config = detection_config.get('model', {})
+            detector_type = detection_config.get('detector_type', 'yolox').lower()
 
-            # Check YOLOX model weights
-            model_path = model_config.get('weights', 'models/yolox/yolox_s.pth')
-            model_file = Path(model_path)
+            # Check model weights based on detector type
+            if detector_type == 'rtdetr':
+                model_config = detection_config.get('rtdetr', {})
+                model_path = model_config.get('weights', 'models/rtdetr/rtdetrv2_r18vd.pth')
+                model_file = Path(model_path)
 
-            if not model_file.exists():
-                logger.error(f"❌ Model weights file not found: {model_path}")
-                logger.error(f"   Absolute path: {model_file.absolute()}")
-                logger.error(f"   Please download YOLOX weights:")
-                logger.error(f"   wget https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_s.pth")
-                logger.error(f"   mv yolox_s.pth {model_path}")
-                return False
+                if not model_file.exists():
+                    logger.error(f"❌ RT-DETR model weights file not found: {model_path}")
+                    logger.error(f"   Absolute path: {model_file.absolute()}")
+                    logger.error(f"   Please download RT-DETRv2 weights:")
+                    logger.error(f"   mkdir -p models/rtdetr")
+                    logger.error(f"   wget https://github.com/lyuwenyu/storage/releases/download/v0.2/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth -O {model_path}")
+                    return False
 
-            logger.info(f"✓ YOLOX model weights found: {model_path}")
+                logger.info(f"✓ RT-DETR model weights found: {model_path}")
+            else:
+                # YOLOX
+                model_config = detection_config.get('yolox', {})
+                model_path = model_config.get('weights', 'models/yolox/yolox_s.pth')
+                model_file = Path(model_path)
+
+                if not model_file.exists():
+                    logger.error(f"❌ YOLOX model weights file not found: {model_path}")
+                    logger.error(f"   Absolute path: {model_file.absolute()}")
+                    logger.error(f"   Please download YOLOX weights:")
+                    logger.error(f"   wget https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_s.pth")
+                    logger.error(f"   mv yolox_s.pth {model_path}")
+                    return False
+
+                logger.info(f"✓ YOLOX model weights found: {model_path}")
 
             # Check taxonomy file if Stage 2 is enabled
             if detection_config.get('use_two_stage', False):
@@ -765,6 +782,7 @@ class TelescopeDetectionSystem:
 
         Note: The coordinator loads its own YOLOX detector for batched inference.
         InferenceEngine instances in coordinator mode skip detector creation (VRAM optimization).
+        Currently only supports YOLOX - RT-DETR batching not yet implemented.
         """
         detection_config = self.config.get('detection', {})
         batching_config = detection_config.get('batching', {})
@@ -772,17 +790,24 @@ class TelescopeDetectionSystem:
         if not batching_config.get('enabled', False):
             return None
 
+        # Check detector type - batching only supported for YOLOX
+        detector_type = detection_config.get('detector_type', 'yolox').lower()
+        if detector_type != 'yolox':
+            logger.warning(f"Batched inference not supported for {detector_type} detector - disabling batching")
+            return None
+
         try:
             # Load first detector for coordinator (will be loaded again per-camera)
             from src.yolox_detector import YOLOXDetector
 
-            model_config = detection_config.get('model', {})
+            # Read YOLOX-specific config
+            model_config = detection_config.get('yolox', {})
             input_size = detection_config.get('input_size', [640, 640])
             input_size_tuple = tuple(input_size)
 
             # Create temporary detector for coordinator
             detector = YOLOXDetector(
-                model_name=model_config.get('name', 'yolox-s'),
+                model_name=model_config.get('model_name', 'yolox-s'),
                 model_path=model_config.get('weights', 'models/yolox/yolox_s.pth'),
                 device=detection_config.get('device', 'cuda:0'),
                 conf_threshold=detection_config.get('conf_threshold', 0.25),
@@ -1097,7 +1122,7 @@ class TelescopeDetectionSystem:
                                   frame_queue: Queue, inference_queue: Queue,
                                   two_stage_pipeline: Optional[TwoStageDetectionPipeline]) -> InferenceEngine:
         """
-        Create YOLOX inference engine for a camera.
+        Create inference engine for a camera (YOLOX or RT-DETR).
 
         Args:
             camera_config: Camera configuration dictionary
@@ -1111,7 +1136,24 @@ class TelescopeDetectionSystem:
         """
         camera_id = camera_config.get('id', 'default')
         camera_name = camera_config.get('name', 'Default Camera')
-        model_config_dict = self.config.get('detection', {}).get('model', {})
+
+        # Get detector type from config
+        detection_config = self.config.get('detection', {})
+        detector_type = detection_config.get('detector_type', 'yolox').lower()
+
+        # Read model config based on detector type
+        if detector_type == 'rtdetr':
+            model_config_dict = detection_config.get('rtdetr', {})
+            model_name = model_config_dict.get('model_name', 'rtdetrv2-r18vd')
+            model_path = model_config_dict.get('weights', 'models/rtdetr/rtdetrv2_r18vd.pth')
+            rtdetr_config_path = model_config_dict.get('config_path', 'RT-DETR/rtdetrv2_pytorch/configs/rtdetrv2/rtdetrv2_r18vd_120e_coco.yml')
+        else:
+            # YOLOX (default)
+            model_config_dict = detection_config.get('yolox', {})
+            model_name = model_config_dict.get('model_name', 'yolox-s')
+            model_path = model_config_dict.get('weights', 'models/yolox/yolox_s.pth')
+            rtdetr_config_path = None
+
         input_size = camera_detection_config.get('input_size', [640, 640])
         input_size_tuple = tuple(input_size)
 
@@ -1121,8 +1163,8 @@ class TelescopeDetectionSystem:
         sparse_detection_config = performance_config.get('sparse_detection')
 
         inference_engine = InferenceEngine(
-            model_name=model_config_dict.get('name', 'yolox-s'),
-            model_path=model_config_dict.get('weights', 'models/yolox/yolox_s.pth'),
+            model_name=model_name,
+            model_path=model_path,
             device=camera_detection_config['device'],
             conf_threshold=camera_detection_config.get('conf_threshold', 0.25),
             nms_threshold=camera_detection_config.get('nms_threshold', 0.45),
@@ -1140,10 +1182,12 @@ class TelescopeDetectionSystem:
             camera_id=camera_id,
             camera_name=camera_name,
             empty_frame_filter_config=empty_frame_filter_config,
-            sparse_detection_config=sparse_detection_config
+            sparse_detection_config=sparse_detection_config,
+            detector_type=detector_type,
+            rtdetr_config_path=rtdetr_config_path
         )
 
-        logger.info(f"  [{camera_id}] YOLOX inference engine initialized")
+        logger.info(f"  [{camera_id}] {detector_type.upper()} inference engine initialized")
         return inference_engine
 
     def _create_detection_processor(self, camera_config: dict, inference_queue: Queue,
@@ -1287,19 +1331,28 @@ class TelescopeDetectionSystem:
                 logger.info("Per-camera two-stage detection pipeline enabled (YOLOX + iNaturalist)")
                 logger.info("Each camera will have its own Stage 2 pipeline for thread-safe parallel processing")
 
-            # Log YOLOX inference parameters
+            # Log detector inference parameters
+            detector_type = detection_config.get('detector_type', 'yolox').lower()
             input_size = detection_config.get('input_size', [640, 640])
             input_size_tuple = tuple(input_size)
 
-            logger.info(f"Using YOLOX (Apache 2.0) for Stage 1 detection")
-            if input_size_tuple == (640, 640):
-                logger.info(f"  Expected inference time: 11-21ms (47x faster than GroundingDINO)")
-            elif input_size_tuple == (1280, 1280):
-                logger.info(f"  Expected inference time: 50-100ms (better for small/distant wildlife)")
-            elif input_size_tuple == (1920, 1920):
-                logger.info(f"  Expected inference time: 150-250ms (maximum detail for tiny IR wildlife)")
+            if detector_type == 'rtdetr':
+                logger.info(f"Using RT-DETRv2 (Apache 2.0) for Stage 1 detection")
+                logger.info(f"  Transformer-based detector: better small object detection and occlusion robustness")
+                if input_size_tuple == (640, 640):
+                    logger.info(f"  Expected inference time: ~20ms @ 640x640")
+                else:
+                    logger.info(f"  Input size: {input_size_tuple}")
             else:
-                logger.info(f"  Input size: {input_size_tuple}")
+                logger.info(f"Using YOLOX (Apache 2.0) for Stage 1 detection")
+                if input_size_tuple == (640, 640):
+                    logger.info(f"  Expected inference time: 11-21ms (47x faster than GroundingDINO)")
+                elif input_size_tuple == (1280, 1280):
+                    logger.info(f"  Expected inference time: 50-100ms (better for small/distant wildlife)")
+                elif input_size_tuple == (1920, 1920):
+                    logger.info(f"  Expected inference time: 150-250ms (maximum detail for tiny IR wildlife)")
+                else:
+                    logger.info(f"  Input size: {input_size_tuple}")
 
             # Initialize face masker (for privacy-preserving face masking)
             self.face_masker = self._initialize_face_masker()
