@@ -164,7 +164,6 @@ class MemoryManager:
             'reduce_batch_size': False,
             'disable_frame_buffering': False,
             'reduce_input_size': False,
-            'disable_stage2': False,
             'suggested_input_size': None,
             'suggested_batch_size': None,
         }
@@ -182,17 +181,16 @@ class MemoryManager:
             logger.warning("Memory reduction: Clearing cache + reducing batch size to 1")
 
         elif level == MemoryPressure.EXTREME:
-            # Level 3: Full degradation - reduce everything
+            # Level 3: Full degradation - reduce input size and batch
             recommendations['clear_cache'] = True
             recommendations['reduce_batch_size'] = True
             recommendations['disable_frame_buffering'] = True
             recommendations['reduce_input_size'] = True
-            recommendations['disable_stage2'] = True
             recommendations['suggested_input_size'] = (640, 640)
             recommendations['suggested_batch_size'] = 1
             logger.error(
                 "Memory reduction: EXTREME pressure - reducing input size to 640x640, "
-                "disabling Stage 2, batch size = 1"
+                "batch size = 1 (Stage 2 classification preserved)"
             )
 
             # Increase degradation level
@@ -224,7 +222,6 @@ class MemoryManager:
             'clear_cache': True,
             'reduce_batch_size': True,
             'reduce_input_size': True,
-            'disable_stage2': True,
             'cpu_fallback': False,
             'suggested_input_size': (640, 640),
             'suggested_batch_size': 1,

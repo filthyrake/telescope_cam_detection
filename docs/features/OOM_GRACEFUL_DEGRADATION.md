@@ -36,9 +36,9 @@ When memory pressure is detected, the system applies progressive degradation:
 #### Level 3: Extreme Pressure (> 95%)
 - Clear GPU cache
 - Reduce input size to 640x640
-- Disable Stage 2 classification
 - Set batch size to 1
 - Increase degradation level counter
+- **Note**: Stage 2 classification is NEVER disabled, even under extreme pressure
 
 ### 3. OOM Detection and Recovery
 
@@ -146,18 +146,15 @@ mm = MemoryManager(
    - Degraded: 640x640
    - Impact: Faster inference, reduced GPU memory, but lower accuracy for small objects
 
-2. **Stage 2 Disabled**
-   - iNaturalist species classification skipped
-   - Only YOLOX Stage 1 detection runs
-   - Impact: Faster inference, no fine-grained species identification
-
-3. **Batch Size Reduction**
+2. **Batch Size Reduction**
    - Coordinator batch size reduced to 1
    - Impact: Lower GPU utilization, reduced throughput
 
-4. **CPU Fallback**
+3. **CPU Fallback** (last resort)
    - Model runs on CPU instead of GPU
    - Impact: Significantly slower inference (10-50x), but system remains operational
+
+**Important**: Stage 2 classification (iNaturalist species identification) is NEVER disabled, even under extreme memory pressure. This ensures consistent wildlife identification quality.
 
 ### Recovery from Degradation
 
@@ -281,8 +278,10 @@ Impact varies by degradation level:
 | 0 (Normal)       | 1920x1920  | ✓       | 150-250ms      | Baseline        |
 | 1 (Cache clear)  | 1920x1920  | ✓       | 150-250ms      | None            |
 | 2 (Reduce batch) | 1920x1920  | ✓       | 160-270ms      | Minimal         |
-| 3 (Reduce size)  | 640x640    | ✗       | 11-21ms        | Moderate        |
-| 4 (CPU fallback) | 640x640    | ✗       | 500-2000ms     | Moderate        |
+| 3 (Reduce size)  | 640x640    | ✓       | 30-50ms        | Moderate        |
+| 4 (CPU fallback) | 640x640    | ✓       | 500-2000ms     | Moderate        |
+
+**Note**: Stage 2 classification is always enabled to maintain wildlife identification quality.
 
 ## Troubleshooting
 
@@ -370,11 +369,11 @@ for i in range(100):
 - Start with 640x640, increase only if accuracy insufficient
 - Per-camera input size overrides for distant cameras
 
-### 3. Enable Stage 2 Selectively
+### 3. Stage 2 Always Enabled
 
-- Stage 2 uses additional GPU memory
-- Only enable for cameras where species ID is needed
-- Consider disabling at night when fewer species active
+- Stage 2 classification is never disabled during degradation
+- System maintains wildlife identification quality even under memory pressure
+- Input size reduction (Level 3) provides sufficient memory savings without sacrificing species ID
 
 ### 4. Test Under Load
 

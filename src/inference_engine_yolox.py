@@ -606,18 +606,12 @@ class InferenceEngine:
         if recommendations.get('reduce_input_size', False):
             suggested_size = recommendations.get('suggested_input_size')
             if suggested_size and suggested_size != self.input_size:
-                logger.warning(f"Reducing input size: {self.input_size} → {suggested_size}")
+                logger.warning(f"Reducing input size: {self.input_size} → {suggested_size} (Stage 2 preserved)")
                 self.input_size = suggested_size
                 if self.detector:
                     self.detector.input_size = suggested_size
                     self.detector.exp.test_size = suggested_size
                 self.degradation_active = True
-
-        # Disable Stage 2 classification
-        if recommendations.get('disable_stage2', False) and self.use_two_stage:
-            logger.warning("Disabling Stage 2 classification due to memory pressure")
-            self.use_two_stage = False
-            self.degradation_active = True
 
         # CPU fallback (last resort)
         if recommendations.get('cpu_fallback', False) and self.device != "cpu":
