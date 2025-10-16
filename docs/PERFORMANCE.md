@@ -107,6 +107,14 @@ detection:
 
 ### For Lower Memory Usage
 
+**Automatic Management**:
+- System has **GPU OOM graceful degradation** (see [GPU OOM Graceful Degradation](features/OOM_GRACEFUL_DEGRADATION.md))
+- Automatically detects memory pressure and applies progressive degradation
+- Monitor real-time GPU memory in web UI
+- Never disables Stage 2 classification
+
+**Manual Tuning**:
+
 **1. Use smaller model**
 ```yaml
 detection:
@@ -352,7 +360,12 @@ tail -f logs/performance.log
 The system logs warnings when:
 - Latency >100ms (sustained)
 - FPS <15 (sustained)
-- GPU memory >90%
+- GPU memory pressure detected (see [OOM Graceful Degradation](features/OOM_GRACEFUL_DEGRADATION.md))
 - Frame drops detected
+
+GPU memory monitoring:
+- Real-time memory gauge in web UI
+- Alert banners for High/Critical/Extreme pressure levels
+- Automatic degradation and recovery
 
 Check logs: `./service.sh logs -f`

@@ -789,11 +789,18 @@ python tests/test_camera_connection.py
 
 ### GPU Memory Issues
 
-**Reduce VRAM usage:**
+**Automatic OOM Handling:**
+- System has **GPU OOM graceful degradation** enabled (see [GPU OOM Graceful Degradation](../features/OOM_GRACEFUL_DEGRADATION.md))
+- Automatically detects memory pressure and progressively reduces usage
+- Progressive strategies: cache clearing → batch reduction → input size reduction → CPU fallback
+- **Never disables Stage 2 classification** (species ID always preserved)
+- Monitor real-time GPU memory in web UI or via `/api/system/stats`
+
+**Manual VRAM reduction (if needed):**
 1. Disable cameras: `enabled: false`
 2. Smaller model: `yolox-nano`
 3. Lower input size: `[640, 640]`
-4. Disable Stage 2: `use_two_stage: false`
+4. Disable Stage 2 (manual option): `use_two_stage: false`
 
 ```yaml
 cameras:
@@ -804,7 +811,7 @@ detection:
   model:
     name: "yolox-nano"
   input_size: [640, 640]
-  use_two_stage: false
+  use_two_stage: false           # Manual option (auto-degradation never does this)
 ```
 
 ---

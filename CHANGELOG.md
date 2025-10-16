@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **GPU OOM graceful degradation** (#153, #125) - 2025-10-16
+  - Real-time GPU memory monitoring with 4 pressure levels (Normal/High/Critical/Extreme)
+  - Progressive degradation strategies: cache clearing → batch reduction → input size reduction → CPU fallback
+  - OOM detection and automatic recovery with retry logic
+  - CPU fallback for persistent OOM conditions
+  - Web UI memory monitoring dashboard with GPU memory gauge and alert banners
+  - Never disables Stage 2 classification (species ID always preserved)
+  - Comprehensive test suite and documentation
+  - Related fixes: #98 (GPU memory leak), #99 (Device handling), #110 (Model loading), #122 (Resource tracking)
+
 - **Performance optimizations** (#133, #134, #138) - 2025-10-15
   - WebSocket message optimization: Skip empty detection frames, reducing network traffic by 80-95%
   - Real-ESRGAN LRU cache: 95-99% reduction in enhancement time for repeated detections

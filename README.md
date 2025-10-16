@@ -11,13 +11,14 @@ Real-time object detection system for monitoring astronomical telescopes and des
 
 - **Ultra-fast detection**: 11-21ms inference with YOLOX
 - **Multi-camera support**: Monitor multiple angles simultaneously with fault-tolerant startup
+- **GPU OOM graceful degradation**: Automatic memory management prevents crashes with progressive quality reduction
 - **Motion filtering**: Background subtraction to eliminate false positives from static objects
 - **Time-of-day filtering**: Species activity patterns reduce false positives (e.g., birds at night → likely bugs/bats)
 - **Automatic reconnection**: Cameras reconnect automatically if connection is lost
 - **80 COCO classes**: Wildlife-relevant categories (person, bird, cat, dog, etc.)
 - **Per-class filtering**: Customizable confidence thresholds and size constraints per detection class
 - **Optional species classification**: iNaturalist Stage 2 (10,000 species) with geographic filtering + time-aware re-ranking
-- **Web interface**: Live video streams with real-time detection overlays
+- **Web interface**: Live video streams with real-time detection overlays and GPU memory monitoring
 - **Automatic snapshots**: Save interesting detections to disk with configurable cooldown
 - **MIT License**: Fully open source
 
@@ -71,6 +72,7 @@ See [SERVICE_SETUP.md](docs/setup/SERVICE_SETUP.md) for complete service documen
 ### Features & Usage
 - **[Snapshot Feature](docs/features/SNAPSHOT_FEATURE.md)** - Automatic image/video saving
 - **[Species Classification (Stage 2)](docs/features/STAGE2_SETUP.md)** - Fine-grained species ID
+- **[GPU OOM Graceful Degradation](docs/features/OOM_GRACEFUL_DEGRADATION.md)** - Memory management and crash prevention
 - **[API Reference](docs/api/API_REFERENCE.md)** - WebSocket and HTTP endpoints
 
 ### Performance & Troubleshooting
