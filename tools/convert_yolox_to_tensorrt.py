@@ -66,18 +66,20 @@ def make_parser():
     )
 
     # TensorRT configuration
-    parser.add_argument(
+    fp16_group = parser.add_mutually_exclusive_group()
+    fp16_group.add_argument(
         "--fp16",
-        action="store_true",
-        default=True,
-        help="Enable FP16 precision (default: True)",
-    )
-    parser.add_argument(
-        "--no-fp16",
-        action="store_false",
         dest="fp16",
+        action="store_true",
+        help="Enable FP16 precision (default)",
+    )
+    fp16_group.add_argument(
+        "--no-fp16",
+        dest="fp16",
+        action="store_false",
         help="Disable FP16 precision (use FP32)",
     )
+    parser.set_defaults(fp16=True)
     parser.add_argument(
         "--device",
         type=str,
@@ -188,7 +190,10 @@ def convert_to_tensorrt(
         gpu_id = int(device_str.split(":")[-1]) if ":" in device_str else 0
         trt_device = torch_tensorrt.Device(f"cuda:{gpu_id}")
     else:
-        trt_device = torch_tensorrt.Device("cuda:0")  # Default to cuda:0
+        raise ValueError(
+            f"TensorRT compilation requires a CUDA device, but got '{device_str}'. "
+            "Please specify a CUDA device (e.g., 'cuda:0')."
+        )
 
     # Compile model with TensorRT
     logger.info("Compiling model with TensorRT (this may take several minutes)...")
@@ -226,6 +231,7 @@ def benchmark_models(
     trt_model: torch.nn.Module,
     input_size: tuple,
     device: str,
+    use_fp16: bool = False,
     iterations: int = 100,
     warmup: int = 10,
 ):
@@ -237,13 +243,15 @@ def benchmark_models(
         trt_model: TensorRT compiled model
         input_size: Input size (height, width)
         device: Device to benchmark on
+        use_fp16: Whether TensorRT model was compiled with FP16
         iterations: Number of benchmark iterations
         warmup: Warmup iterations
     """
     logger.info(f"\nBenchmarking PyTorch vs TensorRT ({iterations} iterations)...")
 
-    # Create test input
-    test_input = torch.randn(1, 3, input_size[0], input_size[1]).to(device)
+    # Create test inputs (FP32 for PyTorch, match compiled precision for TensorRT)
+    test_input_fp32 = torch.randn(1, 3, input_size[0], input_size[1]).to(device).float()
+    test_input_trt = test_input_fp32.half() if use_fp16 else test_input_fp32.float()
 
     # Check if CUDA is available
     is_cuda = torch.cuda.is_available() and str(device).startswith('cuda')
@@ -255,7 +263,7 @@ def benchmark_models(
     with torch.no_grad():
         # Warmup
         for _ in range(warmup):
-            _ = pytorch_model(test_input)
+            _ = pytorch_model(test_input_fp32)
 
         # Synchronize GPU (only if CUDA)
         if is_cuda:
@@ -265,7 +273,7 @@ def benchmark_models(
         pytorch_times = []
         for _ in range(iterations):
             start = time.time()
-            _ = pytorch_model(test_input)
+            _ = pytorch_model(test_input_fp32)
             if is_cuda:
                 torch.cuda.synchronize()
             pytorch_times.append((time.time() - start) * 1000)  # Convert to ms
@@ -280,7 +288,7 @@ def benchmark_models(
     with torch.no_grad():
         # Warmup
         for _ in range(warmup):
-            _ = trt_model(test_input)
+            _ = trt_model(test_input_trt)
 
         # Synchronize GPU (only if CUDA)
         if is_cuda:
@@ -290,7 +298,7 @@ def benchmark_models(
         trt_times = []
         for _ in range(iterations):
             start = time.time()
-            _ = trt_model(test_input)
+            _ = trt_model(test_input_trt)
             if is_cuda:
                 torch.cuda.synchronize()
             trt_times.append((time.time() - start) * 1000)  # Convert to ms
@@ -379,6 +387,7 @@ def main():
             trt_model=trt_model,
             input_size=tuple(args.input_size),
             device=args.device,
+            use_fp16=args.fp16,
             iterations=args.benchmark_iterations,
             warmup=args.warmup,
         )
