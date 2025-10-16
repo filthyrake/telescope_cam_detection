@@ -76,6 +76,10 @@ class RTDETRDetector:
             return False
 
         # Import RT-DETR YAMLConfig by temporarily manipulating sys.modules and sys.path
+        # NOTE: We use sys.modules manipulation instead of importlib.util.spec_from_file_location
+        # because RT-DETR's YAMLConfig has dependencies on other RT-DETR modules (src.core.yaml_utils, etc.)
+        # that also need to be imported from RT-DETR's src. Using importlib for individual files would
+        # break these inter-module dependencies. This approach swaps the entire 'src' namespace temporarily.
         _rtdetr_str = str(_RTDETR_PATH)
 
         # Save original state
@@ -91,6 +95,8 @@ class RTDETRDetector:
             sys.path.insert(0, _rtdetr_str)
 
             # Import YAMLConfig from RT-DETR's src.core
+            # NOTE: This import is intentionally from RT-DETR's src directory, not the project's src.
+            # The sys.path and sys.modules manipulation above ensures we import from RT-DETR's src.
             from src.core import YAMLConfig as RTDETRYAMLConfig
 
             # Clean up RT-DETR's src from sys.modules (we only needed YAMLConfig)
@@ -357,7 +363,9 @@ class RTDETRDetector:
 
             all_detections.append(detections)
 
-        # Cleanup GPU memory
+        # Explicit GPU memory cleanup: While Python's garbage collector will eventually free these,
+        # explicitly deleting large GPU tensors helps prevent OOM errors in high-throughput scenarios.
+        # This is particularly important for batched inference where tensors can accumulate quickly.
         del batch_tensor
         del orig_sizes_tensor
         del img_tensors

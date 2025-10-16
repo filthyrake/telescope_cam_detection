@@ -115,6 +115,8 @@ class InferenceEngine:
         self.camera_id = camera_id or "default"
         self.camera_name = camera_name or "Default Camera"
         self.detector_type = detector_type.lower()
+        if self.detector_type not in ('yolox', 'rtdetr'):
+            raise ValueError(f"Invalid detector_type '{detector_type}'. Must be 'yolox' or 'rtdetr'.")
         self.rtdetr_config_path = rtdetr_config_path
 
         self.detector: Optional[Any] = None  # Can be YOLOXDetector or RTDETRDetector
