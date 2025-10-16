@@ -12,7 +12,7 @@ import logging
 import numpy as np
 import time
 import hashlib
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from typing import Dict, Any, List, Optional, Tuple, Union
 
 from species_classifier import SpeciesClassifier
@@ -120,9 +120,9 @@ class TwoStageDetectionPipeline:
                 logger.error(f"Failed to load image enhancer (method={enhancement_config.get('method', 'none')}): {e}", exc_info=True)
                 logger.warning("Continuing without image enhancement")
 
-        # Performance tracking
-        self.enhancement_times = []
-        self.classification_times = []
+        # Performance tracking (bounded deque to prevent memory growth)
+        self.enhancement_times = deque(maxlen=1000)
+        self.classification_times = deque(maxlen=1000)
         self.last_perf_log_time = time.time()
         self.perf_log_interval = 30.0  # Log performance stats every 30 seconds
 
@@ -361,7 +361,7 @@ class TwoStageDetectionPipeline:
 
                         if self.enhancement_times:
                             recent_count = min(len(self.enhancement_times), 10)
-                            avg_enhancement = np.mean(self.enhancement_times[-recent_count:])
+                            avg_enhancement = np.mean(list(self.enhancement_times)[-recent_count:])
                             logger.info(f"Enhancement performance (last {recent_count} enhancements): {avg_enhancement:.1f}ms avg")
                     self.last_perf_log_time = current_time
             except Exception as e:
