@@ -108,11 +108,25 @@ detection:
     max_batch_wait_ms: 35.0  # Wait one frame period at 30fps (33ms) + margin for proper batching
     enable_metrics: true  # Track and log batch performance metrics
 
-  # YOLOX input size (larger = better for small objects, but slower)
-  # 640x640: ~11-21ms (fast, standard)
-  # 1280x1280: ~50-100ms (slower, better for small/distant wildlife)
-  # 1920x1920: ~150-250ms (slow, maximum detail for tiny IR wildlife)
-  input_size: [640, 640]  # [height, width] - RT-DETR expects 640x640
+  # Input size configuration (affects both YOLOX and RT-DETR)
+  # Larger sizes = better for small objects, but slower inference
+  #
+  # YOLOX performance (flexible input sizes):
+  #   640x640: ~11-21ms (fast, standard)
+  #   1280x1280: ~50-100ms (slower, better for small/distant wildlife)
+  #   1920x1920: ~150-250ms (slow, maximum detail for tiny IR wildlife)
+  #
+  # RT-DETR considerations:
+  #   640x640: Native resolution, fastest performance (~20ms)
+  #   Higher resolutions possible but may require model retraining
+  #
+  # IMPORTANT: Changing from 1920x1920 to 640x640 is a significant trade-off.
+  # While 640x640 is much faster, it may reduce detection quality for small/distant objects.
+  # If small/distant wildlife detection is critical, consider:
+  #   - Using YOLOX with input_size: [1920, 1920] for maximum detail
+  #   - Using RT-DETR with input_size: [640, 640] for speed with good accuracy
+  #   - Testing both to determine which works best for your use case
+  input_size: [640, 640]  # [height, width] - RT-DETR's native resolution
 
   # YOLOX detection thresholds
   conf_threshold: 0.40  # Confidence threshold (raised to reduce false positives from shadows/rocks)

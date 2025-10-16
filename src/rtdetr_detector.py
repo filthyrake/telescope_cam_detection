@@ -80,6 +80,8 @@ class RTDETRDetector:
         # because RT-DETR's YAMLConfig has dependencies on other RT-DETR modules (src.core.yaml_utils, etc.)
         # that also need to be imported from RT-DETR's src. Using importlib for individual files would
         # break these inter-module dependencies. This approach swaps the entire 'src' namespace temporarily.
+        # Future improvement: Consider creating a wrapper module or vendoring RT-DETR components to avoid
+        # namespace conflicts, but this works reliably for now and is only executed once during model loading.
         _rtdetr_str = str(_RTDETR_PATH)
 
         # Save original state
@@ -363,9 +365,12 @@ class RTDETRDetector:
 
             all_detections.append(detections)
 
-        # Explicit GPU memory cleanup: While Python's garbage collector will eventually free these,
-        # explicitly deleting large GPU tensors helps prevent OOM errors in high-throughput scenarios.
-        # This is particularly important for batched inference where tensors can accumulate quickly.
+        # Explicit GPU memory cleanup for batched inference
+        # While Python's GC will eventually free these, explicit deletion provides deterministic
+        # memory release which is critical for GPU tensors in high-throughput scenarios.
+        # PyTorch keeps GPU tensors alive until GC runs, which can be unpredictable.
+        # See: https://pytorch.org/docs/stable/notes/faq.html#my-gpu-memory-isn-t-freed-properly
+        # Alternative: Use torch.cuda.empty_cache() but that's more expensive than targeted deletion.
         del batch_tensor
         del orig_sizes_tensor
         del img_tensors
