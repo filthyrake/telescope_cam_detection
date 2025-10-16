@@ -606,11 +606,12 @@ class InferenceEngine:
         if recommendations.get('reduce_input_size', False):
             suggested_size = recommendations.get('suggested_input_size')
             if suggested_size and suggested_size != self.input_size:
-                logger.warning(f"Reducing input size: {self.input_size} → {suggested_size} (Stage 2 preserved)")
+                logger.warning(f"Reducing input size: {self.input_size} → {suggested_size}")
                 self.input_size = suggested_size
                 if self.detector:
                     self.detector.input_size = suggested_size
-                    self.detector.exp.test_size = suggested_size
+                    if hasattr(self.detector, "exp") and self.detector.exp is not None:
+                        self.detector.exp.test_size = suggested_size
                 self.degradation_active = True
 
         # CPU fallback (last resort)

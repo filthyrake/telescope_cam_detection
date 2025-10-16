@@ -18,6 +18,9 @@ from src.inference_engine_yolox import InferenceEngine
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Constants
+BYTES_PER_FLOAT32 = 4  # Each float32 tensor element is 4 bytes
+
 
 def test_memory_manager():
     """Test MemoryManager functionality"""
@@ -103,7 +106,7 @@ def test_artificial_memory_pressure():
 
             # Allocate new tensor
             try:
-                tensor = torch.zeros(chunk_size // 4, device="cuda:0", dtype=torch.float32)
+                tensor = torch.zeros(chunk_size // BYTES_PER_FLOAT32, device="cuda:0", dtype=torch.float32)
                 tensors.append(tensor)
             except torch.cuda.OutOfMemoryError:
                 logger.error("  OOM encountered during allocation")

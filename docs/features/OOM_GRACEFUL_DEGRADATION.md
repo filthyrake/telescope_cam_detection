@@ -175,7 +175,6 @@ INFO - GPU memory pressure changed: normal → high (usage: 78.3%, allocated: 15
 WARNING - Sustained GPU memory pressure: high (78.3% used, degradation level: 0)
 ERROR - GPU OOM during inference for camera cam1: CUDA out of memory. Tried to allocate 512.00 MiB
 WARNING - Reducing input size: (1280, 1280) → (640, 640)
-WARNING - Disabling Stage 2 classification due to memory pressure
 ERROR - Switching to CPU fallback due to persistent GPU OOM
 INFO - GPU memory recovery #1 successful
 ```

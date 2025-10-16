@@ -103,7 +103,9 @@ class MemoryManager:
             reserved = torch.cuda.memory_reserved(self.device)
             total = torch.cuda.get_device_properties(self.device).total_memory
 
-            # Calculate usage as percentage (use reserved memory as it's more accurate)
+            # Calculate usage as percentage.
+            # Use reserved memory because it includes both allocated memory and GPU cache,
+            # providing a more realistic view of actual memory pressure than allocated memory alone.
             usage_percent = reserved / total if total > 0 else 0.0
 
             # Determine pressure level with hysteresis
@@ -190,7 +192,7 @@ class MemoryManager:
             recommendations['suggested_batch_size'] = 1
             logger.error(
                 "Memory reduction: EXTREME pressure - reducing input size to 640x640, "
-                "batch size = 1 (Stage 2 classification preserved)"
+                "batch size = 1"
             )
 
             # Increase degradation level

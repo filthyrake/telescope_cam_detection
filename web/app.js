@@ -836,8 +836,11 @@ class DetectionApp {
             const usedGB = memory.allocated_gb || 0;
             const totalGB = memory.total_gb || 0;
 
-            document.getElementById('gpuMemory').textContent =
-                `${usedGB.toFixed(1)}GB / ${totalGB.toFixed(1)}GB (${usagePercent.toFixed(0)}%)`;
+            const gpuMemoryElement = document.getElementById('gpuMemory');
+            if (gpuMemoryElement) {
+                gpuMemoryElement.textContent =
+                    `${usedGB.toFixed(1)}GB / ${totalGB.toFixed(1)}GB (${usagePercent.toFixed(0)}%)`;
+            }
 
             // Update memory pressure indicator
             const pressure = memory.current_pressure || 'normal';
