@@ -74,6 +74,11 @@ detection:
   model:
     name: "yolox-s"  # YOLOX-S variant (good speed/accuracy balance)
     weights: "models/yolox/yolox_s.pth"
+    use_tensorrt: false  # Enable TensorRT optimization for 1.5-2.4x speedup (Issue #157)
+    # To use TensorRT:
+    #   1. Convert model: python tools/convert_yolox_to_tensorrt.py --model yolox-s --weights models/yolox/yolox_s.pth --benchmark
+    #   2. Set weights: "models/yolox/yolox_s_trt.pth"
+    #   3. Set use_tensorrt: true
   device: "cuda:0"
 
   # Batched inference coordination (improves GPU utilization for multi-camera setups)
@@ -454,6 +459,14 @@ performance:
 
   # Detection history
   history_size: 30
+
+  # Queue health monitoring - Issue #121
+  # Alert when queues are filling up (indicates backpressure/performance issues)
+  queue_health:
+    enabled: true  # Enable queue depth monitoring in /health endpoint
+    # Alert thresholds (percentage of max queue size)
+    warning_threshold: 0.70  # Warn at 70% full (e.g., 7/10 items in detection queue)
+    critical_threshold: 0.90  # Critical at 90% full (imminent queue overflow)
 
   # RTSP stream reliability
   rtsp_max_failures: 30  # Reconnect after N consecutive failures

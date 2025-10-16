@@ -199,11 +199,115 @@ class WebServer:
 
         @self.app.get("/health")
         async def health():
-            """Health check endpoint."""
+            """
+            Health check endpoint with queue depth monitoring.
+
+            Returns overall system health with queue metrics and alerts.
+            Status levels: "ok", "warning", "critical"
+            """
+            # Get queue health config
+            queue_health_config = {}
+            if self.config_getter:
+                config = self.config_getter()
+                queue_health_config = config.get('performance', {}).get('queue_health', {})
+
+            enabled = queue_health_config.get('enabled', True)
+            warning_threshold = queue_health_config.get('warning_threshold', 0.70)
+            critical_threshold = queue_health_config.get('critical_threshold', 0.90)
+
+            # Collect queue metrics
+            queue_metrics = {
+                "frame_queues": [],
+                "inference_queues": [],
+                "detection_queue": {}
+            }
+
+            alerts = []
+            overall_status = "ok"
+
+            if enabled:
+                # Check per-camera frame queues
+                for idx, fs in enumerate(self.frame_sources):
+                    if fs is None:
+                        continue
+
+                    stream_stats = fs.get_stats()
+                    queue_size = stream_stats.get('queue_size', 0)
+                    queue_max = stream_stats.get('queue_maxsize', 2)
+
+                    utilization = queue_size / queue_max if queue_max > 0 else 0.0
+                    status = "ok"
+
+                    if utilization >= critical_threshold:
+                        status = "critical"
+                        overall_status = "critical"
+                        alerts.append({
+                            "level": "critical",
+                            "queue": f"frame_queue_{fs.camera_id}",
+                            "message": f"Frame queue for camera '{fs.camera_id}' is {utilization*100:.0f}% full ({queue_size}/{queue_max})"
+                        })
+                    elif utilization >= warning_threshold:
+                        status = "warning"
+                        if overall_status == "ok":
+                            overall_status = "warning"
+                        alerts.append({
+                            "level": "warning",
+                            "queue": f"frame_queue_{fs.camera_id}",
+                            "message": f"Frame queue for camera '{fs.camera_id}' is {utilization*100:.0f}% full ({queue_size}/{queue_max})"
+                        })
+
+                    queue_metrics["frame_queues"].append({
+                        "camera_id": fs.camera_id,
+                        "camera_name": fs.camera_name,
+                        "size": queue_size,
+                        "maxsize": queue_max,
+                        "utilization": round(utilization, 2),
+                        "status": status
+                    })
+
+                # Check per-camera inference queues (if accessible)
+                # Note: inference_queues aren't directly accessible from frame_sources,
+                # so we'll skip this for now or add via inference_engines later
+
+                # Check shared detection queue
+                if self.detection_queue:
+                    detection_size = self.detection_queue.qsize()
+                    detection_max = self.detection_queue.maxsize
+                    detection_utilization = detection_size / detection_max if detection_max > 0 else 0.0
+                    detection_status = "ok"
+
+                    if detection_utilization >= critical_threshold:
+                        detection_status = "critical"
+                        overall_status = "critical"
+                        alerts.append({
+                            "level": "critical",
+                            "queue": "detection_queue",
+                            "message": f"Detection queue is {detection_utilization*100:.0f}% full ({detection_size}/{detection_max})"
+                        })
+                    elif detection_utilization >= warning_threshold:
+                        detection_status = "warning"
+                        if overall_status == "ok":
+                            overall_status = "warning"
+                        alerts.append({
+                            "level": "warning",
+                            "queue": "detection_queue",
+                            "message": f"Detection queue is {detection_utilization*100:.0f}% full ({detection_size}/{detection_max})"
+                        })
+
+                    queue_metrics["detection_queue"] = {
+                        "size": detection_size,
+                        "maxsize": detection_max,
+                        "utilization": round(detection_utilization, 2),
+                        "status": detection_status
+                    }
+
             return {
-                "status": "ok",
+                "status": overall_status,
                 "timestamp": time.time(),
-                "active_connections": len(self.active_connections)
+                "active_connections": len(self.active_connections),
+                "queue_monitoring_enabled": enabled,
+                "queues": queue_metrics,
+                "alerts": alerts
             }
 
         @self.app.get("/cameras")
