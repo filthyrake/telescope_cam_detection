@@ -147,11 +147,12 @@ class WebServer:
                 headers={"WWW-Authenticate": "Bearer"}
             )
 
-        # Verify token
+        # Verify token (RFC 6750: use 401 with WWW-Authenticate for invalid credentials)
         if credentials.credentials != expected_token:
             raise HTTPException(
-                status_code=403,
-                detail="Invalid authentication token"
+                status_code=401,
+                detail="Invalid authentication token",
+                headers={"WWW-Authenticate": "Bearer"}
             )
 
         return True
@@ -536,6 +537,15 @@ class WebServer:
                 })
 
             return {"clips": clips}
+
+        @self.app.get("/clips_list")
+        async def clips_list_legacy(credentials: Optional[HTTPAuthorizationCredentials] = Security(self.security)):
+            """
+            Legacy endpoint for clips list (redirects to /api/clips).
+            Maintained for backward compatibility with existing clients.
+            """
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url="/api/clips", status_code=307)
 
         @self.app.get("/api/clips/{filename}")
         async def get_clip(filename: str, credentials: Optional[HTTPAuthorizationCredentials] = Security(self.security)):
