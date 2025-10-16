@@ -45,6 +45,9 @@ class DetectionApp {
                               'elephant', 'bear', 'zebra', 'giraffe', 'coyote',
                               'rabbit', 'lizard', 'fox', 'deer'];
 
+        // Memory monitoring (Issue #125)
+        this.memoryStatsInterval = null;
+
         this.init();
     }
 
@@ -59,6 +62,7 @@ class DetectionApp {
         this.setupCameraTogglePanel();
         this.connectWebSocket();
         this.startVideoStream();
+        this.startMemoryStatsPolling();
     }
 
     async fetchCameras() {
@@ -796,6 +800,123 @@ class DetectionApp {
 
             this.frameCount = 0;
             this.lastFpsUpdate = now;
+        }
+    }
+
+    startMemoryStatsPolling() {
+        // Fetch memory stats every 5 seconds (Issue #125)
+        this.fetchMemoryStats();
+        this.memoryStatsInterval = setInterval(() => {
+            this.fetchMemoryStats();
+        }, 5000);
+    }
+
+    async fetchMemoryStats() {
+        try {
+            const response = await fetch('/stats');
+            const stats = await response.json();
+            this.updateMemoryStats(stats);
+        } catch (e) {
+            console.error('Failed to fetch memory stats:', e);
+        }
+    }
+
+    updateMemoryStats(stats) {
+        // Update GPU memory gauge (Issue #125)
+        const memory = stats.memory || {};
+        const gpuMemorySection = document.getElementById('gpuMemorySection');
+        const memoryPressureSection = document.getElementById('memoryPressureSection');
+        const degradationSection = document.getElementById('degradationSection');
+
+        if (memory.cuda_available) {
+            // Show GPU memory stats
+            gpuMemorySection.style.display = 'flex';
+
+            const usagePercent = memory.usage_percent || 0;
+            const allocatedGB = memory.allocated_gb || 0;
+            const reservedGB = memory.reserved_gb || 0;
+            const totalGB = memory.total_gb || 0;
+
+            const gpuMemoryElement = document.getElementById('gpuMemory');
+            if (gpuMemoryElement) {
+                // Show both allocated and reserved memory for transparency
+                // Reserved includes allocated + freeable cache
+                gpuMemoryElement.textContent =
+                    `${allocatedGB.toFixed(1)}GB alloc, ${reservedGB.toFixed(1)}GB rsv / ${totalGB.toFixed(1)}GB (${usagePercent.toFixed(0)}%)`;
+            }
+
+            // Update memory pressure indicator
+            const pressure = memory.current_pressure || 'normal';
+            memoryPressureSection.style.display = 'flex';
+            const pressureElement = document.getElementById('memoryPressure');
+
+            if (pressure === 'normal') {
+                pressureElement.textContent = 'Normal';
+                pressureElement.style.color = '#00ff88';
+            } else if (pressure === 'high') {
+                pressureElement.textContent = 'High';
+                pressureElement.style.color = '#ffaa00';
+            } else if (pressure === 'critical' || pressure === 'extreme') {
+                pressureElement.textContent = pressure.charAt(0).toUpperCase() + pressure.slice(1);
+                pressureElement.style.color = '#ff6666';
+            }
+
+            // Update degradation status
+            const degradationActive = stats.degradation_active || false;
+            const degradationLevel = memory.degradation_level || 0;
+            const oomEvents = memory.oom_events || 0;
+
+            if (degradationActive || degradationLevel > 0 || oomEvents > 0) {
+                degradationSection.style.display = 'flex';
+                const degradationText = [];
+
+                if (degradationActive) {
+                    degradationText.push('Active');
+                }
+                if (degradationLevel > 0) {
+                    degradationText.push(`Level ${degradationLevel}`);
+                }
+                if (oomEvents > 0) {
+                    degradationText.push(`${oomEvents} OOM`);
+                }
+
+                document.getElementById('degradationStatus').textContent = degradationText.join(', ');
+            } else {
+                degradationSection.style.display = 'none';
+            }
+
+            // Update memory alert banner
+            this.updateMemoryAlert(pressure, usagePercent, degradationActive, reservedGB, totalGB);
+
+        } else {
+            // GPU not available - hide sections
+            gpuMemorySection.style.display = 'none';
+            memoryPressureSection.style.display = 'none';
+            degradationSection.style.display = 'none';
+        }
+    }
+
+    updateMemoryAlert(pressure, usagePercent, degradationActive, reservedGB, totalGB) {
+        const alertElement = document.getElementById('memoryAlert');
+        const titleElement = document.getElementById('memoryAlertTitle');
+        const messageElement = document.getElementById('memoryAlertMessage');
+
+        if (pressure === 'critical' || pressure === 'extreme') {
+            // Show critical alert
+            alertElement.classList.add('visible', 'critical');
+            titleElement.textContent = '🚨 Critical GPU Memory Pressure';
+            messageElement.textContent =
+                `GPU reserved memory is at ${usagePercent.toFixed(0)}% (${reservedGB.toFixed(1)}GB / ${totalGB.toFixed(1)}GB). System is reducing quality to prevent crashes. ${degradationActive ? 'Degradation active.' : ''}`;
+        } else if (pressure === 'high' || usagePercent > 80) {
+            // Show warning alert
+            alertElement.classList.add('visible');
+            alertElement.classList.remove('critical');
+            titleElement.textContent = '⚠️ High GPU Memory Usage';
+            messageElement.textContent =
+                `GPU reserved memory is at ${usagePercent.toFixed(0)}% (${reservedGB.toFixed(1)}GB / ${totalGB.toFixed(1)}GB). System may reduce quality if memory pressure increases.`;
+        } else {
+            // Hide alert
+            alertElement.classList.remove('visible', 'critical');
         }
     }
 }
