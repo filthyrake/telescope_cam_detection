@@ -289,7 +289,8 @@ class RTSPStreamCapture:
             'fps': self.fps,
             'total_frames': self.frame_count,
             'dropped_frames': self.dropped_frames,
-            'queue_size': self.frame_queue.qsize()
+            'queue_size': self.frame_queue.qsize(),
+            'queue_maxsize': self.frame_queue.maxsize  # For queue health monitoring
         }
 
         # Add memory usage info if psutil is available

@@ -1,6 +1,8 @@
 """
 YOLOX Detector - Fast Stage 1 detection (Apache 2.0 License)
 Replaces GroundingDINO for 47x faster inference (11.8ms vs 560ms)
+
+Supports TensorRT optimization for 1.5-2.4x additional speedup (Issue #157)
 """
 import sys
 import torch
@@ -8,7 +10,7 @@ import cv2
 import numpy as np
 import logging
 import time
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, Optional
 from pathlib import Path
 
 # Add YOLOX directory to sys.path dynamically (relative to this file)
@@ -50,18 +52,20 @@ class YOLOXDetector:
         nms_threshold: float = 0.45,
         input_size: tuple = (640, 640),
         wildlife_only: bool = True,
+        use_tensorrt: bool = False,
     ):
         """
         Initialize YOLOX detector
 
         Args:
             model_name: YOLOX model variant (yolox-s, yolox-m, yolox-l, etc.)
-            model_path: Path to model weights
+            model_path: Path to model weights (PyTorch .pth or TensorRT .pth)
             device: Device to run on
             conf_threshold: Confidence threshold
             nms_threshold: NMS IoU threshold
             input_size: Input image size (height, width)
             wildlife_only: If True, only return wildlife-relevant classes (no umbrellas/backpacks/etc.)
+            use_tensorrt: If True, load TensorRT optimized model (1.5-2.4x faster, Issue #157)
         """
         self.model_name = model_name
         self.model_path = model_path
@@ -70,13 +74,16 @@ class YOLOXDetector:
         self.nms_threshold = nms_threshold
         self.input_size = input_size
         self.wildlife_only = wildlife_only
+        self.use_tensorrt = use_tensorrt
 
         self.model = None
         self.exp = None
+        self.is_tensorrt = False  # Track whether model is TensorRT optimized
 
     def load_model(self, max_retries: int = 3) -> bool:
         """
         Load YOLOX model with retry logic (Issue #110).
+        Supports both PyTorch and TensorRT models (Issue #157).
 
         Args:
             max_retries: Maximum number of retry attempts (default: 3)
@@ -86,28 +93,10 @@ class YOLOXDetector:
         """
         for attempt in range(max_retries):
             try:
-                logger.info(f"Loading YOLOX model: {self.model_name} (attempt {attempt + 1}/{max_retries})")
-                logger.info(f"Weights: {self.model_path}")
-
-                # Get experiment config
-                self.exp = get_exp(None, self.model_name)
-                self.exp.test_size = self.input_size
-
-                # Load model
-                self.model = self.exp.get_model()
-                ckpt = torch.load(self.model_path, map_location="cpu")
-                self.model.load_state_dict(ckpt["model"])
-
-                # Move to device and set to eval mode
-                self.model.to(self.device)
-                self.model.eval()
-
-                logger.info(f"✓ YOLOX loaded successfully")
-                logger.info(f"  Input size: {self.input_size}")
-                logger.info(f"  Num classes: {self.exp.num_classes} (COCO)")
-                logger.info(f"  Confidence threshold: {self.conf_threshold}")
-
-                return True
+                if self.use_tensorrt:
+                    return self._load_tensorrt_model()
+                else:
+                    return self._load_pytorch_model()
 
             except (RuntimeError, OSError, IOError) as e:
                 # Retryable errors: CUDA OOM, file I/O, network issues
@@ -126,6 +115,67 @@ class YOLOXDetector:
                 return False
 
         return False
+
+    def _load_pytorch_model(self) -> bool:
+        """Load standard PyTorch YOLOX model."""
+        logger.info(f"Loading YOLOX model: {self.model_name}")
+        logger.info(f"Weights: {self.model_path}")
+
+        # Get experiment config
+        self.exp = get_exp(None, self.model_name)
+        self.exp.test_size = self.input_size
+
+        # Load model
+        self.model = self.exp.get_model()
+        ckpt = torch.load(self.model_path, map_location="cpu")
+        self.model.load_state_dict(ckpt["model"])
+
+        # Move to device and set to eval mode
+        self.model.to(self.device)
+        self.model.eval()
+
+        self.is_tensorrt = False
+
+        logger.info(f"✓ YOLOX loaded successfully")
+        logger.info(f"  Input size: {self.input_size}")
+        logger.info(f"  Num classes: {self.exp.num_classes} (COCO)")
+        logger.info(f"  Confidence threshold: {self.conf_threshold}")
+
+        return True
+
+    def _load_tensorrt_model(self) -> bool:
+        """
+        Load TensorRT optimized YOLOX model (Issue #157).
+
+        Returns:
+            True if loaded successfully, False otherwise
+        """
+        logger.info(f"Loading TensorRT optimized YOLOX model: {self.model_name}")
+        logger.info(f"TensorRT weights: {self.model_path}")
+
+        # Get experiment config (needed for num_classes, postprocessing, etc.)
+        self.exp = get_exp(None, self.model_name)
+        self.exp.test_size = self.input_size
+
+        # Load TensorRT model
+        try:
+            self.model = torch.jit.load(self.model_path)
+            self.model.to(self.device)
+            self.model.eval()
+        except Exception as e:
+            logger.error(f"Failed to load TensorRT model: {e}")
+            logger.error("Make sure the model was converted with tools/convert_yolox_to_tensorrt.py")
+            return False
+
+        self.is_tensorrt = True
+
+        logger.info(f"✓ TensorRT model loaded successfully")
+        logger.info(f"  Input size: {self.input_size}")
+        logger.info(f"  Num classes: {self.exp.num_classes} (COCO)")
+        logger.info(f"  Expected speedup: 1.5-2.4x vs PyTorch")
+        logger.info(f"  Confidence threshold: {self.conf_threshold}")
+
+        return True
 
     def preprocess(self, img: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
         """
