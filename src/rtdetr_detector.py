@@ -140,6 +140,18 @@ class RTDETRDetector:
                 # Load state dict
                 cfg.model.load_state_dict(state)
 
+                # CRITICAL FIX for variable input sizes:
+                # Disable cached positional embeddings (eval_spatial_size) to enable dynamic generation
+                # This allows RT-DETR to work at any resolution, not just the 640x640 it was trained on
+                # Must disable for BOTH encoder (positional embeddings) and decoder (anchor generation)
+                if hasattr(cfg.model, 'encoder') and hasattr(cfg.model.encoder, 'eval_spatial_size'):
+                    logger.info(f"Disabling encoder eval_spatial_size for dynamic positional embeddings")
+                    cfg.model.encoder.eval_spatial_size = None
+
+                if hasattr(cfg.model, 'decoder') and hasattr(cfg.model.decoder, 'eval_spatial_size'):
+                    logger.info(f"Disabling decoder eval_spatial_size for dynamic anchor generation")
+                    cfg.model.decoder.eval_spatial_size = None
+
                 # Create deployment model
                 class Model(nn.Module):
                     def __init__(self, model, postprocessor):

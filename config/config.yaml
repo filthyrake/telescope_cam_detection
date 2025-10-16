@@ -121,10 +121,10 @@ detection:
   #   Higher resolutions possible but may require model retraining
   #
   # IMPORTANT: Resolution trade-offs:
-  # - 640x640: Fast (~20ms), RT-DETR native resolution
-  # - 1920x1920: Slow (~150-250ms), YOLOX only (better for tiny/distant objects)
-  # Testing RT-DETR at 640x640 to see if transformer architecture detects better than YOLOX at higher res
-  input_size: [640, 640]  # [height, width] - RT-DETR native resolution for testing
+  # - 640x640: Fast (~20ms), RT-DETR trained resolution
+  # - 1920x1920: Slow (~150-250ms), best for tiny/distant objects
+  # Modified RT-DETR to use dynamic positional embeddings (works at any resolution)
+  input_size: [1920, 1920]  # [height, width] - Testing RT-DETR at high resolution
 
   # YOLOX detection thresholds
   conf_threshold: 0.40  # Confidence threshold (raised to reduce false positives from shadows/rocks)
@@ -572,12 +572,9 @@ privacy:
   min_neighbors: 5  # Haar cascade min neighbors (higher = fewer false positives)
 
   # Per-camera overrides (optional)
-  camera_overrides: {}
-    # Example:
-    # cam1:
-    #   enable_face_masking: false  # Disable for specific camera (e.g., remote area)
-    # cam2:
-    #   mask_style: "black_box"     # Use different masking style
+  camera_overrides:
+    cam1:
+      enable_face_masking: false  # Disabled - telescope cover triggering false person detections
 
 # API Access Control
 api:
