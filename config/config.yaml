@@ -116,15 +116,18 @@ detection:
   #   1280x1280: ~50-100ms (slower, better for small/distant wildlife)
   #   1920x1920: ~150-250ms (slow, maximum detail for tiny IR wildlife)
   #
-  # RT-DETR considerations:
-  #   640x640: Native resolution, fastest performance (~20ms)
-  #   Higher resolutions possible but may require model retraining
+  # RT-DETR performance (modified for dynamic resolution):
+  #   640x640: Native resolution, fastest (~20ms/frame), recommended for most use cases
+  #   1280x1280: Slower (~70-120ms/frame), better for small/distant objects
+  #   1920x1920: Much slower (~150-250ms/frame), only for very small/distant wildlife
   #
-  # IMPORTANT: Resolution trade-offs:
-  # - 640x640: Fast (~20ms), RT-DETR trained resolution
-  # - 1920x1920: Slow (~150-250ms), best for tiny/distant objects
-  # Modified RT-DETR to use dynamic positional embeddings (works at any resolution)
-  input_size: [1920, 1920]  # [height, width] - Testing RT-DETR at high resolution
+  # IMPORTANT: RT-DETR Resolution Trade-offs
+  # - We modified RT-DETR to use dynamic positional embeddings (works at any resolution)
+  # - 640x640: Best for real-time detection and general wildlife monitoring
+  # - 1920x1920: High GPU usage and latency, only use if small objects are missed at lower res
+  # - Higher resolution mostly increases feature map processing time, not model accuracy
+  # - Consider testing at 640x640 first, then increase only if needed
+  input_size: [1920, 1920]  # [height, width] - High resolution for small/distant wildlife
 
   # YOLOX detection thresholds
   conf_threshold: 0.40  # Confidence threshold (raised to reduce false positives from shadows/rocks)
