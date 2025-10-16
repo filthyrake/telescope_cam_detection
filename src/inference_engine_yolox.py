@@ -15,6 +15,7 @@ import numpy as np
 from src.yolox_detector import YOLOXDetector
 from src.shared_inference_coordinator import SharedInferenceCoordinator
 from src.bbox_utils import ensure_valid_bbox
+from src.memory_manager import MemoryManager, MemoryPressure
 from src.constants import (
     QUEUE_GET_TIMEOUT_SECONDS,
     LOG_DROPPED_EVERY_N,
@@ -116,8 +117,13 @@ class InferenceEngine:
         self.last_drop_warning_time = 0  # Track last drop warning for rate limiting
         self.drop_count_since_warning = 0  # Track drops since last warning
 
+        # GPU Memory Management (Issue #125)
+        self.memory_manager = MemoryManager(device=self.device)
+        self.degradation_active = False  # Track if we're in degraded mode
+        self.original_input_size = self.input_size  # Store original size for recovery
+
     def load_model(self) -> bool:
-        """Load YOLOX model"""
+        """Load YOLOX model with CPU fallback (Issue #125)"""
         try:
             logger.info(f"Loading YOLOX inference engine...")
 
@@ -135,27 +141,55 @@ class InferenceEngine:
             logger.info(f"Weights: {self.model_path}")
             logger.info(f"Device: {self.device}")
 
-            # Create detector
-            self.detector = YOLOXDetector(
-                model_name=self.model_name,
-                model_path=self.model_path,
-                device=self.device,
-                conf_threshold=self.conf_threshold,
-                nms_threshold=self.nms_threshold,
-                input_size=self.input_size,
-                wildlife_only=self.wildlife_only,
-            )
+            # Try loading on GPU first
+            try:
+                # Create detector
+                self.detector = YOLOXDetector(
+                    model_name=self.model_name,
+                    model_path=self.model_path,
+                    device=self.device,
+                    conf_threshold=self.conf_threshold,
+                    nms_threshold=self.nms_threshold,
+                    input_size=self.input_size,
+                    wildlife_only=self.wildlife_only,
+                )
 
-            # Load model
-            if not self.detector.load_model():
-                logger.error("Failed to load YOLOX model")
-                return False
+                # Load model
+                if not self.detector.load_model():
+                    raise RuntimeError("Failed to load YOLOX model")
 
-            # Log GPU info
-            if torch.cuda.is_available():
-                gpu_name = torch.cuda.get_device_name(0)
-                gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
-                logger.info(f"GPU: {gpu_name} ({gpu_memory:.1f} GB)")
+                # Log GPU info
+                if torch.cuda.is_available():
+                    gpu_name = torch.cuda.get_device_name(0)
+                    gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
+                    logger.info(f"GPU: {gpu_name} ({gpu_memory:.1f} GB)")
+
+            except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+                # GPU OOM or loading failure - try CPU fallback
+                logger.warning(f"GPU model loading failed: {e}")
+                logger.warning("Attempting CPU fallback...")
+
+                # Clear GPU cache
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+                # Retry with CPU
+                self.device = "cpu"
+                self.detector = YOLOXDetector(
+                    model_name=self.model_name,
+                    model_path=self.model_path,
+                    device="cpu",
+                    conf_threshold=self.conf_threshold,
+                    nms_threshold=self.nms_threshold,
+                    input_size=self.input_size,
+                    wildlife_only=self.wildlife_only,
+                )
+
+                if not self.detector.load_model():
+                    logger.error("Failed to load YOLOX model on CPU")
+                    return False
+
+                logger.warning("Model loaded on CPU (reduced performance expected)")
 
             logger.info(f"Two-stage detection: {'enabled' if self.use_two_stage else 'disabled'}")
 
@@ -427,7 +461,7 @@ class InferenceEngine:
 
     def _run_inference(self, frame: np.ndarray) -> List[Dict[str, Any]]:
         """
-        Run inference on a single frame.
+        Run inference on a single frame with OOM recovery (Issue #125).
 
         Args:
             frame: Input frame (BGR format)
@@ -440,11 +474,42 @@ class InferenceEngine:
             logger.error("Detector not loaded (coordinator mode should not call _run_inference)")
             return []
 
-        # Stage 1: Run YOLOX detection
-        detections = self.detector.detect(frame)
+        # Check memory pressure before inference
+        pressure = self.memory_manager.check_memory_pressure()
+        if pressure in (MemoryPressure.CRITICAL, MemoryPressure.EXTREME):
+            # Apply proactive memory reduction
+            recommendations = self.memory_manager.reduce_memory_usage(pressure)
+            self._apply_degradation(recommendations)
 
-        # Apply post-processing
-        return self._post_process_detections(detections, frame)
+        try:
+            # Stage 1: Run YOLOX detection
+            detections = self.detector.detect(frame)
+
+            # Apply post-processing
+            return self._post_process_detections(detections, frame)
+
+        except torch.cuda.OutOfMemoryError as e:
+            # GPU OOM - attempt recovery
+            logger.error(f"GPU OOM during inference for camera {self.camera_id}: {e}")
+            recommendations = self.memory_manager.handle_oom_error()
+            self._apply_degradation(recommendations)
+
+            # Wait before retrying
+            if 'wait_time' in recommendations:
+                time.sleep(recommendations['wait_time'])
+
+            # Retry inference with degraded settings
+            try:
+                detections = self.detector.detect(frame)
+                self.memory_manager.record_recovery()
+                return self._post_process_detections(detections, frame)
+            except Exception as retry_e:
+                logger.error(f"Inference failed after OOM recovery: {retry_e}")
+                return []
+
+        except Exception as e:
+            logger.error(f"Unexpected error during inference: {e}", exc_info=True)
+            return []
 
     def infer_single(self, frame: np.ndarray) -> List[Dict[str, Any]]:
         """
@@ -523,8 +588,54 @@ class InferenceEngine:
             if updated_settings:
                 logger.info(f"InferenceEngine settings updated: {', '.join(updated_settings)}")
 
+    def _apply_degradation(self, recommendations: Dict[str, Any]):
+        """
+        Apply memory reduction recommendations (Issue #125).
+
+        Args:
+            recommendations: Dict of memory reduction recommendations from MemoryManager
+        """
+        if not recommendations:
+            return
+
+        # Clear GPU cache
+        if recommendations.get('clear_cache', False):
+            self.memory_manager.clear_cache()
+
+        # Reduce input size
+        if recommendations.get('reduce_input_size', False):
+            suggested_size = recommendations.get('suggested_input_size')
+            if suggested_size and suggested_size != self.input_size:
+                logger.warning(f"Reducing input size: {self.input_size} → {suggested_size}")
+                self.input_size = suggested_size
+                if self.detector:
+                    self.detector.input_size = suggested_size
+                    self.detector.exp.test_size = suggested_size
+                self.degradation_active = True
+
+        # Disable Stage 2 classification
+        if recommendations.get('disable_stage2', False) and self.use_two_stage:
+            logger.warning("Disabling Stage 2 classification due to memory pressure")
+            self.use_two_stage = False
+            self.degradation_active = True
+
+        # CPU fallback (last resort)
+        if recommendations.get('cpu_fallback', False) and self.device != "cpu":
+            logger.error("Switching to CPU fallback due to persistent GPU OOM")
+            self.device = "cpu"
+            if self.detector:
+                # Reload model on CPU
+                try:
+                    logger.info("Reloading model on CPU...")
+                    self.detector.device = "cpu"
+                    self.detector.model.to("cpu")
+                    logger.info("Model successfully moved to CPU")
+                    self.degradation_active = True
+                except Exception as e:
+                    logger.error(f"Failed to move model to CPU: {e}")
+
     def get_stats(self) -> Dict[str, Any]:
-        """Get inference statistics"""
+        """Get inference statistics including memory management (Issue #125)"""
         stats = {
             'device': self.device,
             'fps': self.fps,
@@ -533,6 +644,7 @@ class InferenceEngine:
             'total_inferences': self.total_inference_count,  # Use cumulative count
             'dropped_results': self.dropped_results,
             'coordinator_mode': self.shared_coordinator is not None,
+            'degradation_active': self.degradation_active,  # OOM graceful degradation status
         }
 
         # Add drop rate
@@ -549,6 +661,9 @@ class InferenceEngine:
         if torch.cuda.is_available():
             stats['gpu_memory_allocated_mb'] = torch.cuda.memory_allocated(self.device) / 1024 / 1024
             stats['gpu_memory_reserved_mb'] = torch.cuda.memory_reserved(self.device) / 1024 / 1024
+
+        # Add memory manager stats (Issue #125)
+        stats['memory'] = self.memory_manager.get_memory_stats()
 
         # Add system memory usage if psutil is available
         try:

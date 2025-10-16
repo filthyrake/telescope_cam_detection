@@ -222,6 +222,51 @@
             color: #ff6666;
         }
 
+        /* Memory Alert Banner (Issue #125) */
+        .memory-alert {
+            background-color: #ffaa0044;
+            border: 2px solid #ffaa00;
+            border-radius: 10px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            display: none;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .memory-alert.critical {
+            background-color: #ff000044;
+            border-color: #ff6666;
+        }
+
+        .memory-alert.visible {
+            display: block;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        .memory-alert-title {
+            font-weight: bold;
+            font-size: 1.1em;
+            margin-bottom: 5px;
+            color: #ffaa00;
+        }
+
+        .memory-alert.critical .memory-alert-title {
+            color: #ff6666;
+        }
+
+        .memory-alert-message {
+            color: #ccc;
+            font-size: 0.95em;
+        }
+
         /* Grid View Styles */
         .camera-grid {
             display: grid;
@@ -447,6 +492,12 @@
             </div>
         </header>
 
+        <!-- Memory Pressure Alert Banner (Issue #125) -->
+        <div id="memoryAlert" class="memory-alert">
+            <div class="memory-alert-title" id="memoryAlertTitle">⚠️ High GPU Memory Usage</div>
+            <div class="memory-alert-message" id="memoryAlertMessage">GPU memory usage is high. System may reduce quality to prevent crashes.</div>
+        </div>
+
         <!-- Single Camera View -->
         <div class="main-content" id="singleView">
             <div class="video-container" id="videoContainer">
@@ -480,6 +531,18 @@
                 <div class="stat-item">
                     <span class="stat-label">Total Latency</span>
                     <span class="stat-value" id="totalLatency">-</span>
+                </div>
+                <div class="stat-item" id="gpuMemorySection" style="display: none;">
+                    <span class="stat-label">GPU Memory</span>
+                    <span class="stat-value" id="gpuMemory">-</span>
+                </div>
+                <div class="stat-item" id="memoryPressureSection" style="display: none;">
+                    <span class="stat-label">Memory Status</span>
+                    <span class="stat-value" id="memoryPressure">-</span>
+                </div>
+                <div class="stat-item" id="degradationSection" style="display: none;">
+                    <span class="stat-label">Degradation</span>
+                    <span class="stat-value" id="degradationStatus" style="color: #ffaa00;">-</span>
                 </div>
             </div>
         </div>
