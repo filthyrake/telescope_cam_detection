@@ -609,6 +609,9 @@ class InferenceEngine:
                 logger.warning(f"Reducing input size: {self.input_size} → {suggested_size}")
                 self.input_size = suggested_size
                 if self.detector:
+                    # Update detector input size
+                    # Note: Direct attribute access is used here for simplicity.
+                    # Future improvement: Add detector.update_input_size() method
                     self.detector.input_size = suggested_size
                     if hasattr(self.detector, "exp") and self.detector.exp is not None:
                         self.detector.exp.test_size = suggested_size

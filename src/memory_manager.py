@@ -103,9 +103,13 @@ class MemoryManager:
             reserved = torch.cuda.memory_reserved(self.device)
             total = torch.cuda.get_device_properties(self.device).total_memory
 
-            # Calculate usage as percentage.
-            # Use reserved memory because it includes both allocated memory and GPU cache,
-            # providing a more realistic view of actual memory pressure than allocated memory alone.
+            # Calculate usage as percentage using reserved memory.
+            # We use reserved (not allocated) because:
+            # 1. Reserved memory represents what PyTorch has claimed from the GPU
+            # 2. PyTorch won't automatically release reserved memory without explicit cache clearing
+            # 3. The difference (reserved - allocated) is freeable cache, which our degradation
+            #    strategy addresses through cache clearing at high pressure levels
+            # 4. Reserved memory is a better indicator of imminent OOM conditions
             usage_percent = reserved / total if total > 0 else 0.0
 
             # Determine pressure level with hysteresis

@@ -38,7 +38,7 @@ When memory pressure is detected, the system applies progressive degradation:
 - Reduce input size to 640x640
 - Set batch size to 1
 - Increase degradation level counter
-- **Note**: Stage 2 classification is NEVER disabled, even under extreme pressure
+- **Note**: Stage 2 classification is NEVER disabled, even under extreme pressure. The memory manager achieves this by simply not including any Stage 2 disabling recommendations; preservation is enforced at the application level through the absence of such directives.
 
 ### 3. OOM Detection and Recovery
 

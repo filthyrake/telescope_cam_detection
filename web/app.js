@@ -833,13 +833,16 @@ class DetectionApp {
             gpuMemorySection.style.display = 'flex';
 
             const usagePercent = memory.usage_percent || 0;
-            const usedGB = memory.allocated_gb || 0;
+            const allocatedGB = memory.allocated_gb || 0;
+            const reservedGB = memory.reserved_gb || 0;
             const totalGB = memory.total_gb || 0;
 
             const gpuMemoryElement = document.getElementById('gpuMemory');
             if (gpuMemoryElement) {
+                // Show both allocated and reserved memory for transparency
+                // Reserved includes allocated + freeable cache
                 gpuMemoryElement.textContent =
-                    `${usedGB.toFixed(1)}GB / ${totalGB.toFixed(1)}GB (${usagePercent.toFixed(0)}%)`;
+                    `${allocatedGB.toFixed(1)}GB alloc, ${reservedGB.toFixed(1)}GB rsv / ${totalGB.toFixed(1)}GB (${usagePercent.toFixed(0)}%)`;
             }
 
             // Update memory pressure indicator
@@ -883,7 +886,7 @@ class DetectionApp {
             }
 
             // Update memory alert banner
-            this.updateMemoryAlert(pressure, usagePercent, degradationActive);
+            this.updateMemoryAlert(pressure, usagePercent, degradationActive, reservedGB, totalGB);
 
         } else {
             // GPU not available - hide sections
@@ -893,7 +896,7 @@ class DetectionApp {
         }
     }
 
-    updateMemoryAlert(pressure, usagePercent, degradationActive) {
+    updateMemoryAlert(pressure, usagePercent, degradationActive, reservedGB, totalGB) {
         const alertElement = document.getElementById('memoryAlert');
         const titleElement = document.getElementById('memoryAlertTitle');
         const messageElement = document.getElementById('memoryAlertMessage');
@@ -903,14 +906,14 @@ class DetectionApp {
             alertElement.classList.add('visible', 'critical');
             titleElement.textContent = '🚨 Critical GPU Memory Pressure';
             messageElement.textContent =
-                `GPU memory usage is at ${usagePercent.toFixed(0)}%. System is reducing quality to prevent crashes. ${degradationActive ? 'Degradation active.' : ''}`;
+                `GPU reserved memory is at ${usagePercent.toFixed(0)}% (${reservedGB.toFixed(1)}GB / ${totalGB.toFixed(1)}GB). System is reducing quality to prevent crashes. ${degradationActive ? 'Degradation active.' : ''}`;
         } else if (pressure === 'high' || usagePercent > 80) {
             // Show warning alert
             alertElement.classList.add('visible');
             alertElement.classList.remove('critical');
             titleElement.textContent = '⚠️ High GPU Memory Usage';
             messageElement.textContent =
-                `GPU memory usage is at ${usagePercent.toFixed(0)}%. System may reduce quality if memory pressure increases.`;
+                `GPU reserved memory is at ${usagePercent.toFixed(0)}% (${reservedGB.toFixed(1)}GB / ${totalGB.toFixed(1)}GB). System may reduce quality if memory pressure increases.`;
         } else {
             // Hide alert
             alertElement.classList.remove('visible', 'critical');
