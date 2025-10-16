@@ -112,7 +112,7 @@ detection:
   # 640x640: ~11-21ms (fast, standard)
   # 1280x1280: ~50-100ms (slower, better for small/distant wildlife)
   # 1920x1920: ~150-250ms (slow, maximum detail for tiny IR wildlife)
-  input_size: [1920, 1920]  # [height, width]
+  input_size: [640, 640]  # [height, width] - RT-DETR expects 640x640
 
   # YOLOX detection thresholds
   conf_threshold: 0.40  # Confidence threshold (raised to reduce false positives from shadows/rocks)

@@ -14,21 +14,13 @@ import logging
 from typing import List, Dict, Any, Union
 from pathlib import Path
 
-# Add RT-DETR directory to sys.path dynamically
-_rtdetr_path = Path(__file__).parent.parent / "RT-DETR" / "rtdetrv2_pytorch"
-if not _rtdetr_path.exists():
-    raise ImportError(
-        f"RT-DETR not found at {_rtdetr_path}. "
-        "Please clone https://github.com/lyuwenyu/RT-DETR"
-    )
-
-if str(_rtdetr_path) not in sys.path:
-    sys.path.insert(0, str(_rtdetr_path))
-
-from src.core import YAMLConfig
+# Import from our src
 from src.coco_constants import COCO_CLASSES, WILDLIFE_CLASSES
 
 logger = logging.getLogger(__name__)
+
+# Global reference for RT-DETR path (will be set in load_model)
+_RTDETR_PATH = Path(__file__).parent.parent / "RT-DETR" / "rtdetrv2_pytorch"
 
 
 class RTDETRDetector:
@@ -76,6 +68,52 @@ class RTDETRDetector:
             True if loaded successfully, False otherwise
         """
         import time
+
+        # Lazy import of RT-DETR components to avoid sys.path conflicts at module load time
+        if not _RTDETR_PATH.exists():
+            logger.error(f"RT-DETR not found at {_RTDETR_PATH}")
+            logger.error("Please clone https://github.com/lyuwenyu/RT-DETR to RT-DETR/")
+            return False
+
+        # Import RT-DETR YAMLConfig by temporarily manipulating sys.modules and sys.path
+        _rtdetr_str = str(_RTDETR_PATH)
+
+        # Save original state
+        _original_path = sys.path.copy()
+        _original_src = sys.modules.get('src')  # Save our src module
+
+        try:
+            # Temporarily remove our 'src' module from sys.modules
+            if 'src' in sys.modules:
+                del sys.modules['src']
+
+            # Add RT-DETR to beginning of sys.path
+            sys.path.insert(0, _rtdetr_str)
+
+            # Import YAMLConfig from RT-DETR's src.core
+            from src.core import YAMLConfig as RTDETRYAMLConfig
+
+            # Clean up RT-DETR's src from sys.modules (we only needed YAMLConfig)
+            if 'src' in sys.modules:
+                _rtdetr_src = sys.modules['src']  # Save RT-DETR's src
+                del sys.modules['src']
+            else:
+                _rtdetr_src = None
+
+        except ImportError as e:
+            logger.error(f"Failed to import RT-DETR YAMLConfig: {e}")
+            # Restore our src module
+            if _original_src is not None:
+                sys.modules['src'] = _original_src
+            sys.path = _original_path
+            return False
+        finally:
+            # Restore original state
+            sys.path = _original_path
+            # Restore our src module
+            if _original_src is not None:
+                sys.modules['src'] = _original_src
+
         for attempt in range(max_retries):
             try:
                 logger.info(f"Loading RT-DETRv2 model")
@@ -83,7 +121,7 @@ class RTDETRDetector:
                 logger.info(f"Weights: {self.model_path}")
 
                 # Load config and checkpoint
-                cfg = YAMLConfig(self.config_path, resume=self.model_path)
+                cfg = RTDETRYAMLConfig(self.config_path, resume=self.model_path)
 
                 checkpoint = torch.load(self.model_path, map_location='cpu')
                 if 'ema' in checkpoint:
