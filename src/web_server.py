@@ -15,9 +15,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Security
+from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import uvicorn
 from queue import Empty
 from src.constants import (
@@ -95,6 +96,9 @@ class WebServer:
         self.app = FastAPI(title="Backyard Computer Vision System")
         self.active_connections: list[WebSocket] = []
 
+        # Security for clips endpoint
+        self.security = HTTPBearer(auto_error=False)
+
         # Latest detections per camera
         self.latest_detections: Dict[str, Dict[str, Any]] = {}  # camera_id -> detection_result
 
@@ -110,10 +114,43 @@ class WebServer:
         if web_dir.exists():
             self.app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
 
-        # Mount clips directory for browsing saved snapshots
-        clips_dir = Path(__file__).parent.parent / "clips"
-        if clips_dir.exists():
-            self.app.mount("/clips", StaticFiles(directory=str(clips_dir)), name="clips")
+        # Clips directory is now served via authenticated endpoints (see _setup_routes)
+
+    def _verify_clips_token(self, credentials: Optional[HTTPAuthorizationCredentials] = Security(HTTPBearer(auto_error=False))) -> bool:
+        """
+        Verify token for clips access.
+
+        Args:
+            credentials: HTTP Bearer credentials
+
+        Returns:
+            True if authenticated, raises HTTPException if not
+        """
+        # Get expected token from environment
+        import os
+        expected_token = os.environ.get('TELESCOPE_CLIPS_TOKEN', '')
+
+        # If no token configured, allow access (backward compatibility)
+        if not expected_token:
+            logger.warning("No TELESCOPE_CLIPS_TOKEN configured - clips endpoint is public!")
+            return True
+
+        # Check if credentials provided
+        if not credentials or not credentials.credentials:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required. Provide token via Authorization: Bearer <token>",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+
+        # Verify token
+        if credentials.credentials != expected_token:
+            raise HTTPException(
+                status_code=403,
+                detail="Invalid authentication token"
+            )
+
+        return True
 
     def _setup_routes(self):
         """Set up FastAPI routes."""
@@ -485,13 +522,47 @@ class WebServer:
 
                 clips.append({
                     "filename": file_path.name,
-                    "url": f"/clips/{file_path.name}",
-                    "annotated_url": f"/clips/{base_name}_annotated.jpg" if has_annotated else None,
+                    "url": f"/api/clips/{file_path.name}",
+                    "annotated_url": f"/api/clips/{base_name}_annotated.jpg" if has_annotated else None,
                     "timestamp": file_path.stat().st_mtime,
                     "metadata": metadata
                 })
 
             return {"clips": clips}
+
+        @self.app.get("/api/clips/{filename}")
+        async def get_clip(filename: str, credentials: Optional[HTTPAuthorizationCredentials] = Depends(self.security)):
+            """
+            Serve clip file with authentication.
+
+            Requires Bearer token in Authorization header if TELESCOPE_CLIPS_TOKEN env var is set.
+            """
+            # Verify authentication
+            self._verify_clips_token(credentials)
+
+            # Sanitize filename to prevent directory traversal
+            filename = Path(filename).name
+
+            # Build file path
+            clips_dir = Path(__file__).parent.parent / "clips"
+            file_path = clips_dir / filename
+
+            # Check file exists
+            if not file_path.exists() or not file_path.is_file():
+                raise HTTPException(status_code=404, detail=f"Clip '{filename}' not found")
+
+            # Check file is within clips directory (security check)
+            try:
+                file_path.resolve().relative_to(clips_dir.resolve())
+            except ValueError:
+                raise HTTPException(status_code=403, detail="Access denied")
+
+            # Serve file
+            return FileResponse(
+                path=str(file_path),
+                media_type="image/jpeg" if filename.endswith('.jpg') else "application/octet-stream",
+                filename=filename
+            )
 
         @self.app.post("/api/config/reload")
         async def reload_config():
