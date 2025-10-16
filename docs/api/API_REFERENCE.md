@@ -310,14 +310,21 @@ curl http://localhost:8000/api/system/stats | jq '.gpu'
 
 ---
 
-### GET `/clips_list`
+### GET `/api/clips`
 
-**Description**: List all saved detection clips
+**Description**: List all saved detection clips (requires authentication if token configured)
+
+**Authentication**: Bearer token (optional, see Configuration)
 
 **Query Parameters**:
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `limit` | int | 100 | Maximum clips to return |
+
+**Request Headers**:
+```
+Authorization: Bearer <your-token-here>
+```
 
 **Response**: `application/json`
 
@@ -339,30 +346,69 @@ curl http://localhost:8000/api/system/stats | jq '.gpu'
 
 **HTTP Status**:
 - `200 OK`: Success
+- `401 Unauthorized`: Missing or invalid authentication token (when `TELESCOPE_CLIPS_TOKEN` is set)
 - `500 Internal Server Error`: Error reading clips directory
+
+**Example (authenticated)**:
+```bash
+curl -H "Authorization: Bearer your-token-here" http://localhost:8000/api/clips?limit=10
+```
+
+**Example (public access, if no token configured)**:
+```bash
+curl http://localhost:8000/api/clips?limit=10
+```
 
 ---
 
-### GET `/clips/{filename}`
+### GET `/clips_list`
 
-**Description**: Serve a specific clip file
+**Description**: Legacy endpoint, redirects to `/api/clips` (requires authentication if token configured)
+
+**Status**: Deprecated, use `/api/clips` instead
+
+**Authentication**: Bearer token (optional, see Configuration)
+
+**HTTP Status**:
+- `307 Temporary Redirect`: Redirects to `/api/clips`
+- `401 Unauthorized`: Missing or invalid authentication token (when `TELESCOPE_CLIPS_TOKEN` is set)
+
+---
+
+### GET `/api/clips/{filename}`
+
+**Description**: Serve a specific clip file (requires authentication if token configured)
+
+**Authentication**: Bearer token (optional, see Configuration)
 
 **Path Parameters**:
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `filename` | string | Clip filename (e.g., `bird_20251005_071214_813087_conf0.52.jpg`) |
 
-**Response**: `image/jpeg` or `application/json`
+**Request Headers**:
+```
+Authorization: Bearer <your-token-here>
+```
+
+**Response**: Binary file (JPEG, MP4, or JSON depending on file type)
 
 **HTTP Status**:
 - `200 OK`: File found and served
+- `401 Unauthorized`: Missing or invalid authentication token (when `TELESCOPE_CLIPS_TOKEN` is set)
 - `404 Not Found`: File does not exist
 - `403 Forbidden`: File outside clips directory
 
-**Example**:
+**Example (authenticated)**:
+```bash
+curl -H "Authorization: Bearer your-token-here" \
+  http://localhost:8000/api/clips/bird_20251005_071214_813087_conf0.52.jpg \
+  -o bird.jpg
 ```
-GET /clips/bird_20251005_071214_813087_conf0.52.jpg
-Response: JPEG image binary
+
+**Example (public access, if no token configured)**:
+```bash
+curl http://localhost:8000/api/clips/bird_20251005_071214_813087_conf0.52.jpg -o bird.jpg
 ```
 
 ---
@@ -600,11 +646,23 @@ async function getStats() {
 
 **List Clips**:
 ```javascript
-async function getClips(limit = 50) {
-  const response = await fetch(`http://localhost:8000/clips_list?limit=${limit}`);
+async function getClips(limit = 50, token = null) {
+  const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+  const response = await fetch(`http://localhost:8000/api/clips?limit=${limit}`, { headers });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+
   const clips = await response.json();
   return clips;
 }
+
+// Usage (with authentication)
+const clips = await getClips(50, 'your-token-here');
+
+// Usage (public access, if no token configured)
+const clips = await getClips(50);
 ```
 
 ---
@@ -643,17 +701,23 @@ def get_stats():
     response = requests.get('http://localhost:8000/stats')
     return response.json()
 
-def get_clips(limit=50):
-    response = requests.get(f'http://localhost:8000/clips_list?limit={limit}')
+def get_clips(limit=50, token=None):
+    headers = {'Authorization': f'Bearer {token}'} if token else {}
+    response = requests.get(f'http://localhost:8000/api/clips?limit={limit}', headers=headers)
+    response.raise_for_status()  # Raise exception for 401, 404, etc.
     return response.json()
 
 # Usage
 stats = get_stats()
 print(f"FPS: {stats['inference_engine']['fps']:.1f}")
 
-clips = get_clips(limit=10)
+# With authentication
+clips = get_clips(limit=10, token='your-token-here')
 for clip in clips:
     print(f"{clip['timestamp']}: {clip['class']} ({clip['confidence']:.2f})")
+
+# Or without authentication (if no token configured)
+clips = get_clips(limit=10)
 ```
 
 ---
@@ -675,12 +739,44 @@ for clip in clips:
 
 ## Authentication
 
-**Current**: None (open access)
+### Clips Directory Authentication (Optional)
+
+The system supports optional Bearer token authentication for saved clips:
+
+**Configuration**:
+```bash
+# Set environment variable
+export TELESCOPE_CLIPS_TOKEN="your-secure-random-token"
+
+# Generate secure token
+openssl rand -base64 32
+```
+
+**Protected Endpoints**:
+- `/api/clips` - List clips
+- `/api/clips/{filename}` - Download clips
+- `/clips_list` - Legacy endpoint (redirects)
+
+**Usage**:
+```bash
+# Authenticated request
+curl -H "Authorization: Bearer your-token-here" http://localhost:8000/api/clips
+
+# Returns 401 if token is wrong or missing (when TELESCOPE_CLIPS_TOKEN is set)
+```
+
+**Backward Compatibility**:
+- If `TELESCOPE_CLIPS_TOKEN` is not set, clips are publicly accessible
+- Warning logged on first unauthenticated access
+
+### Other Endpoints
+
+**Current**: No authentication (open access)
 
 **Recommendations**:
 - Use nginx reverse proxy with HTTP basic auth
-- Add API key support
-- Implement OAuth2 for production
+- Add API key support for programmatic access
+- Implement OAuth2 for production deployments
 
 ---
 

@@ -332,6 +332,48 @@ web:
 | `mjpeg_fps` | int | 30 | MJPEG stream frame rate (1-60 fps) |
 | `jpeg_quality` | int | 85 | JPEG compression quality (0-100, higher = better quality/larger size) |
 
+### Clips Directory Authentication
+
+Protect saved wildlife clips with optional Bearer token authentication:
+
+**Setup:**
+```bash
+# Set environment variable (recommended method)
+export TELESCOPE_CLIPS_TOKEN="your-secure-token-here"
+
+# Or in systemd service file
+Environment="TELESCOPE_CLIPS_TOKEN=your-secure-token-here"
+```
+
+**Protected endpoints:**
+- `GET /api/clips` - List saved clips (requires token)
+- `GET /api/clips/{filename}` - Download clip file (requires token)
+- `GET /clips_list` - Legacy endpoint, redirects to /api/clips (requires token)
+
+**Authentication:**
+```bash
+# List clips (authenticated)
+curl -H "Authorization: Bearer your-secure-token-here" http://localhost:8000/api/clips
+
+# Download clip (authenticated)
+curl -H "Authorization: Bearer your-secure-token-here" http://localhost:8000/api/clips/cam1_bird_20231006_143022.jpg -o bird.jpg
+
+# Unauthenticated request (returns 401)
+curl http://localhost:8000/api/clips
+# {"detail":"Missing authentication token"}
+```
+
+**Backward compatibility:**
+- If `TELESCOPE_CLIPS_TOKEN` is not set, clips are publicly accessible
+- System logs warning on first access: "SECURITY WARNING: Clips directory is publicly accessible"
+- One-time warning prevents log spam
+
+**Security notes:**
+- Use strong random tokens: `openssl rand -base64 32`
+- Store token securely (environment variable, not in config files)
+- Returns 401 with `WWW-Authenticate: Bearer` header per RFC 6750
+- Does not protect web UI or video feeds (only saved clips)
+
 **MJPEG Stream Settings:**
 - **Higher FPS** (mjpeg_fps): Smoother video, more CPU/bandwidth
 - **Lower FPS**: Less smooth, lower CPU/bandwidth
@@ -417,6 +459,78 @@ snapshots:
 ---
 
 ## Performance Tuning
+
+### Empty Frame Filtering
+
+Skip full YOLOX inference on frames with no motion (30-50% throughput improvement):
+
+```yaml
+performance:
+  empty_frame_filter:
+    enabled: true                # Enable motion-based frame skipping
+    motion_threshold: 500        # Minimum motion area (pixels²) to process frame
+    blur_size: 21                # Gaussian blur kernel size (must be odd)
+    min_motion_area: 100         # Minimum motion blob size (pixels²)
+```
+
+**How it works:**
+- Uses lightweight frame differencing to detect motion
+- Skips full YOLOX inference if no motion detected
+- Expected 30-50% throughput improvement (70-90% of wildlife footage is empty)
+- Adds ~1-2ms per frame (much faster than full inference)
+
+**When to use:**
+- Static camera setups with occasional wildlife
+- High-resolution inference where GPU is bottleneck
+- Long-running deployments where most frames are empty
+
+**Tuning:**
+- `motion_threshold`: Higher = fewer frames processed (stricter)
+- `min_motion_area`: Filter out small motion (shadows, leaves)
+- `blur_size`: Larger = less sensitive to small changes
+
+### Sparse Detection (Temporal Coherence)
+
+Run full inference every N frames, reuse detections on intermediate frames (3x GPU load reduction):
+
+```yaml
+performance:
+  sparse_detection:
+    enabled: true                # Enable keyframe-based inference
+    keyframe_interval: 3         # Run full inference every 3rd frame
+```
+
+**How it works:**
+- Runs full YOLOX inference only on keyframes (every Nth frame)
+- Reuses last detections on intermediate frames
+- Expected 3x GPU load reduction with `keyframe_interval: 3`
+- Combines with empty frame filtering for maximum savings
+
+**When to use:**
+- Slow-moving wildlife (most animals don't move much between frames)
+- Multi-camera setups where GPU is bottleneck
+- When detection latency tolerance allows (adds ~30-60ms perceived lag)
+
+**Trade-offs:**
+- Lower GPU usage
+- Slightly delayed detection updates (detections appear "sticky")
+- Not recommended for fast-moving objects (birds in flight)
+
+**Tuning:**
+- `keyframe_interval: 2` → 2x GPU reduction, minimal lag
+- `keyframe_interval: 3` → 3x GPU reduction, acceptable lag (recommended)
+- `keyframe_interval: 5` → 5x GPU reduction, noticeable lag
+
+**Combined optimization:**
+```yaml
+performance:
+  empty_frame_filter:
+    enabled: true                # Skip empty frames
+  sparse_detection:
+    enabled: true                # Keyframe inference
+    keyframe_interval: 3         # Every 3rd frame
+  # Expected combined savings: 50-70% GPU load reduction!
+```
 
 ### RTSP Stream Reliability
 

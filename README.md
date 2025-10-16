@@ -12,6 +12,8 @@ Real-time object detection system for monitoring astronomical telescopes and des
 - **Ultra-fast detection**: 11-21ms inference with YOLOX
 - **Multi-camera support**: Monitor multiple angles simultaneously with fault-tolerant startup
 - **GPU OOM graceful degradation**: Automatic memory management prevents crashes with progressive quality reduction
+- **Performance optimizations**: Empty frame filtering (30-50% throughput gain) + sparse detection (3x GPU load reduction)
+- **Clips directory authentication**: Optional Bearer token authentication for saved wildlife clips
 - **Motion filtering**: Background subtraction to eliminate false positives from static objects
 - **Time-of-day filtering**: Species activity patterns reduce false positives (e.g., birds at night → likely bugs/bats)
 - **Automatic reconnection**: Cameras reconnect automatically if connection is lost

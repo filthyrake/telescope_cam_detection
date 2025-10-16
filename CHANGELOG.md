@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Clips directory authentication** (#166, #26) - 2025-10-16
+  - Bearer token authentication for /api/clips endpoint
+  - Prevents unauthorized access to saved wildlife clips
+  - Configure with TELESCOPE_CLIPS_TOKEN environment variable
+  - Backward compatible: public access if token not set (with warning)
+  - All clips endpoints protected: /api/clips (list) and /api/clips/{filename} (download)
+  - Legacy /clips_list endpoint with 307 redirect for backward compatibility
+  - Returns 401 with WWW-Authenticate header per RFC 6750
+
+- **Empty frame filtering with L-filter method** (#166, #160) - 2025-10-16
+  - Skip full YOLOX inference on frames with no motion
+  - Lightweight motion detection using frame differencing
+  - Expected 30-50% throughput improvement (70-90% of wildlife footage is empty)
+  - New EmptyFrameFilter class with statistics tracking
+  - Configurable via performance.empty_frame_filter in config.yaml
+  - Adjustable motion_threshold, blur_size, and min_motion_area
+
+- **Sparse detection with temporal coherence** (#166, #158) - 2025-10-16
+  - Run full inference every N frames (keyframe_interval)
+  - Reuse detections on intermediate frames
+  - Expected 3x GPU load reduction with keyframe_interval=3
+  - Configurable via performance.sparse_detection in config.yaml
+  - Combines with empty frame filtering for maximum GPU savings
+  - Statistics exposed via /api/system/stats endpoint
+
+- **Quick latency check utility** (#155) - 2025-10-16
+  - New scripts/check_latency.py for rapid latency testing
+  - Connects to running system via WebSocket feed
+  - Collects 20 latency samples and displays statistics (min/max/avg)
+  - Shows warnings for high latency (>500ms or >1000ms)
+  - Quick sanity check tool (5-10 seconds vs 30s full integration test)
+  - Complements tests/test_latency.py for development workflow
+
 - **GPU OOM graceful degradation** (#153, #125) - 2025-10-16
   - Real-time GPU memory monitoring with 4 pressure levels (Normal/High/Critical/Extreme)
   - Progressive degradation strategies: cache clearing → batch reduction → input size reduction → CPU fallback
@@ -90,6 +123,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improved code maintainability and readability
 
 ### Fixed
+- **Memory leak in TwoStageDetectionPipeline** (#156, #131) - 2025-10-16
+  - Replace unbounded time tracking lists with bounded deques
+  - Changed enhancement_times and classification_times to deque(maxlen=1000)
+  - Prevents memory leak (~7MB/day/camera eliminated)
+  - Maintains statistical accuracy with 1000 recent measurements
+  - No performance impact (deque append is O(1))
+
 - **GPU video decode performance regression on A30** (#152) - 2025-10-15
   - Reverted GPU video decode (h264_cuvid via FFmpeg) to CPU decode (OpenCV)
   - A30 lacks dedicated NVDEC hardware → GPU decode was inefficient (261% CPU via FFmpeg)
