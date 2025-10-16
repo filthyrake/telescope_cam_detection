@@ -12,6 +12,7 @@ import logging
 import numpy as np
 import time
 import hashlib
+import itertools
 from collections import OrderedDict, deque
 from typing import Dict, Any, List, Optional, Tuple, Union
 
@@ -361,7 +362,10 @@ class TwoStageDetectionPipeline:
 
                         if self.enhancement_times:
                             recent_count = min(len(self.enhancement_times), 10)
-                            avg_enhancement = np.mean(list(self.enhancement_times)[-recent_count:])
+                            # Use islice for efficient access to last N elements without converting entire deque
+                            start_idx = max(0, len(self.enhancement_times) - recent_count)
+                            recent_times = list(itertools.islice(self.enhancement_times, start_idx, len(self.enhancement_times)))
+                            avg_enhancement = np.mean(recent_times)
                             logger.info(f"Enhancement performance (last {recent_count} enhancements): {avg_enhancement:.1f}ms avg")
                     self.last_perf_log_time = current_time
             except Exception as e:
