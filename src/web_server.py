@@ -1054,6 +1054,44 @@ class WebServer:
 
         return frame
 
+    def _is_face_masking_enabled_for_camera(self, camera_id: str) -> bool:
+        """
+        Check if face masking is enabled for a specific camera.
+        Checks both global setting and per-camera overrides.
+
+        Args:
+            camera_id: Camera identifier
+
+        Returns:
+            True if face masking should be applied, False otherwise
+        """
+        # If globally disabled or no face masker, return False
+        if not self.enable_face_masking or not self.face_masker:
+            return False
+
+        # Check for per-camera override
+        if self.config_getter:
+            try:
+                config = self.config_getter()
+                privacy_config = config.get('privacy', {})
+                camera_overrides = privacy_config.get('camera_overrides', {})
+
+                # Check if this camera has an override
+                if camera_id in camera_overrides:
+                    camera_override = camera_overrides[camera_id]
+                    return camera_override.get('enable_face_masking', True)
+
+                # No override, use global setting
+                return True
+
+            except Exception as e:
+                logger.error(f"Error checking face masking config for camera {camera_id}: {e}")
+                # Default to global setting on error
+                return True
+
+        # No config getter, use global setting
+        return True
+
     def _apply_face_masking_to_frame(self, frame: np.ndarray, camera_id: str) -> np.ndarray:
         """
         Apply face masking to a frame for live feed.
@@ -1066,6 +1104,10 @@ class WebServer:
         Returns:
             Masked frame
         """
+        # Check if face masking is enabled for this specific camera
+        if not self._is_face_masking_enabled_for_camera(camera_id):
+            return frame
+
         if not self.face_masker:
             return frame
 

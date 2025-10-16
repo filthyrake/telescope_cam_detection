@@ -43,7 +43,7 @@ cameras:
     name: "Secondary View"
     ip: "10.0.6.79"  # Direct camera IP (testing direct RTSP vs Neolink)
     stream: "main"
-    enabled: true
+    enabled: false  # Temporarily disabled
     protocol: "rtsp-tcp"  # Direct RTSP over TCP (testing to fix H.264 corruption)
     target_width: 2560  # E1 Pro native resolution (better quality for Stage 2)
     target_height: 1440
@@ -562,7 +562,7 @@ collision_detection:
 # Automatically detect and mask faces in live feeds and saved clips
 # Backend retains unmasked versions for security investigation
 privacy:
-  enable_face_masking: true  # Master switch for face masking
+  enable_face_masking: false  # Master switch for face masking (disabled - telescope cover false positives)
   mask_style: "gaussian_blur"  # Options: gaussian_blur, pixelate, black_box, adaptive_blur
   detection_backend: "opencv_haar"  # Options: opencv_haar, mediapipe, yolox
 
