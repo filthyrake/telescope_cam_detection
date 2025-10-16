@@ -16,6 +16,7 @@ from src.yolox_detector import YOLOXDetector
 from src.shared_inference_coordinator import SharedInferenceCoordinator
 from src.bbox_utils import ensure_valid_bbox
 from src.memory_manager import MemoryManager, MemoryPressure
+from src.empty_frame_filter import EmptyFrameFilter
 from src.constants import (
     QUEUE_GET_TIMEOUT_SECONDS,
     LOG_DROPPED_EVERY_N,
@@ -54,6 +55,8 @@ class InferenceEngine:
         shared_coordinator: Optional[SharedInferenceCoordinator] = None,
         camera_id: Optional[str] = None,
         camera_name: Optional[str] = None,
+        empty_frame_filter_config: Optional[Dict[str, Any]] = None,
+        sparse_detection_config: Optional[Dict[str, Any]] = None,
         **kwargs  # Ignore extra params from old config
     ):
         """
@@ -78,6 +81,15 @@ class InferenceEngine:
             shared_coordinator: Optional SharedInferenceCoordinator for batched inference
             camera_id: Camera identifier for this engine instance
             camera_name: Camera name for logging
+            empty_frame_filter_config: Optional config dict for empty frame filter (Issue #160)
+                - enabled: bool - Enable motion detection to skip empty frames
+                - min_motion_area: int - Minimum motion area in pixels² (default 200)
+                - threshold: int - Frame difference threshold 0-255 (default 25)
+                - blur_size: int - Gaussian blur kernel size (default 21, must be odd)
+            sparse_detection_config: Optional config dict for sparse detection (Issue #158)
+                - enabled: bool - Enable sparse detection with temporal coherence
+                - keyframe_interval: int - Run full inference every N frames (default 3, must be >= 1)
+                - mode: str - Sparse detection mode (default 'simple')
         """
         self.model_name = model_name
         self.model_path = model_path
@@ -121,6 +133,34 @@ class InferenceEngine:
         self.memory_manager = MemoryManager(device=self.device)
         self.degradation_active = False  # Track if we're in degraded mode
         self.original_input_size = self.input_size  # Store original size for recovery
+
+        # Empty Frame Filter (Issue #160)
+        self.empty_frame_filter: Optional[EmptyFrameFilter] = None
+        if empty_frame_filter_config and empty_frame_filter_config.get('enabled', False):
+            self.empty_frame_filter = EmptyFrameFilter(
+                min_motion_area=empty_frame_filter_config.get('min_motion_area', 200),
+                threshold=empty_frame_filter_config.get('threshold', 25),
+                blur_size=empty_frame_filter_config.get('blur_size', 21)
+            )
+
+        # Sparse Detection (Issue #158)
+        self.sparse_detection_enabled = False
+        self.keyframe_interval = 1
+        self.sparse_mode = "simple"
+        if sparse_detection_config and sparse_detection_config.get('enabled', False):
+            self.sparse_detection_enabled = True
+            keyframe_interval = sparse_detection_config.get('keyframe_interval', 3)
+            # Validate keyframe_interval to prevent ZeroDivisionError
+            if keyframe_interval < 1:
+                logger.warning(f"Invalid keyframe_interval={keyframe_interval}, must be >= 1. Using default of 3.")
+                keyframe_interval = 3
+            self.keyframe_interval = keyframe_interval
+            self.sparse_mode = sparse_detection_config.get('mode', 'simple')
+            logger.info(f"Sparse detection enabled: keyframe_interval={self.keyframe_interval}, mode={self.sparse_mode}")
+
+        # Sparse detection state
+        self.frame_counter = 0
+        self.last_detections: List[Dict[str, Any]] = []
 
     def load_model(self) -> bool:
         """Load YOLOX model with CPU fallback (Issue #125)"""
@@ -459,9 +499,32 @@ class InferenceEngine:
 
         return filtered_detections
 
+    def _process_and_store_detections(self, frame: np.ndarray) -> List[Dict[str, Any]]:
+        """
+        Helper method to run inference and post-process detections (DRY helper for _run_inference).
+        Reduces code duplication between normal and OOM-retry paths.
+
+        Args:
+            frame: Input frame (BGR format)
+
+        Returns:
+            List of processed detection dictionaries
+        """
+        # Stage 1: Run YOLOX detection
+        detections = self.detector.detect(frame)
+
+        # Apply post-processing
+        processed_detections = self._post_process_detections(detections, frame)
+
+        # Store for sparse detection reuse
+        self.last_detections = processed_detections
+
+        return processed_detections
+
     def _run_inference(self, frame: np.ndarray) -> List[Dict[str, Any]]:
         """
-        Run inference on a single frame with OOM recovery (Issue #125).
+        Run inference on a single frame with OOM recovery (Issue #125),
+        empty frame filtering (Issue #160), and sparse detection (Issue #158).
 
         Args:
             frame: Input frame (BGR format)
@@ -474,6 +537,23 @@ class InferenceEngine:
             logger.error("Detector not loaded (coordinator mode should not call _run_inference)")
             return []
 
+        # Sparse Detection (Issue #158): Check if this is a keyframe
+        self.frame_counter += 1
+        is_keyframe = (self.frame_counter % self.keyframe_interval == 0)
+
+        # If not a keyframe and sparse detection is enabled, reuse last detections
+        if self.sparse_detection_enabled and not is_keyframe:
+            return self.last_detections.copy() if self.last_detections else []
+
+        # Empty Frame Filter (Issue #160): Check for motion before running full inference
+        if self.empty_frame_filter and not self.empty_frame_filter.has_motion(frame):
+            # No motion detected - skip inference
+            empty_detections = []
+            self.last_detections = empty_detections
+            return empty_detections
+
+        # Motion detected or filter disabled - proceed with full inference
+
         # Check memory pressure before inference
         pressure = self.memory_manager.check_memory_pressure()
         if pressure in (MemoryPressure.CRITICAL, MemoryPressure.EXTREME):
@@ -482,11 +562,7 @@ class InferenceEngine:
             self._apply_degradation(recommendations)
 
         try:
-            # Stage 1: Run YOLOX detection
-            detections = self.detector.detect(frame)
-
-            # Apply post-processing
-            return self._post_process_detections(detections, frame)
+            return self._process_and_store_detections(frame)
 
         except torch.cuda.OutOfMemoryError as e:
             # GPU OOM - attempt recovery
@@ -500,9 +576,8 @@ class InferenceEngine:
 
             # Retry inference with degraded settings
             try:
-                detections = self.detector.detect(frame)
                 self.memory_manager.record_recovery()
-                return self._post_process_detections(detections, frame)
+                return self._process_and_store_detections(frame)
             except Exception as retry_e:
                 logger.error(f"Inference failed after OOM recovery: {retry_e}")
                 return []
@@ -662,6 +737,20 @@ class InferenceEngine:
 
         # Add memory manager stats (Issue #125)
         stats['memory'] = self.memory_manager.get_memory_stats()
+
+        # Add empty frame filter stats (Issue #160)
+        if self.empty_frame_filter:
+            stats['empty_frame_filter'] = self.empty_frame_filter.get_stats()
+
+        # Add sparse detection stats (Issue #158)
+        if self.sparse_detection_enabled:
+            stats['sparse_detection'] = {
+                'enabled': True,
+                'keyframe_interval': self.keyframe_interval,
+                'mode': self.sparse_mode,
+                'frame_counter': self.frame_counter,
+                'keyframes_processed': self.frame_counter // self.keyframe_interval
+            }
 
         # Add system memory usage if psutil is available
         try:

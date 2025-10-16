@@ -1115,6 +1115,11 @@ class TelescopeDetectionSystem:
         input_size = camera_detection_config.get('input_size', [640, 640])
         input_size_tuple = tuple(input_size)
 
+        # Get performance optimizations config
+        performance_config = self.config.get('performance', {})
+        empty_frame_filter_config = performance_config.get('empty_frame_filter')
+        sparse_detection_config = performance_config.get('sparse_detection')
+
         inference_engine = InferenceEngine(
             model_name=model_config_dict.get('name', 'yolox-s'),
             model_path=model_config_dict.get('weights', 'models/yolox/yolox_s.pth'),
@@ -1133,7 +1138,9 @@ class TelescopeDetectionSystem:
             wildlife_only=camera_detection_config.get('wildlife_only', True),
             shared_coordinator=self.shared_coordinator,
             camera_id=camera_id,
-            camera_name=camera_name
+            camera_name=camera_name,
+            empty_frame_filter_config=empty_frame_filter_config,
+            sparse_detection_config=sparse_detection_config
         )
 
         logger.info(f"  [{camera_id}] YOLOX inference engine initialized")

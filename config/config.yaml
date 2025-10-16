@@ -459,6 +459,23 @@ performance:
   rtsp_max_failures: 30  # Reconnect after N consecutive failures
   rtsp_retry_delay: 5.0  # Seconds to wait before retrying connection
 
+  # Empty Frame Filtering (L-filter method) - Issue #160
+  # Skip full YOLOX inference on frames with no motion
+  # Expected: 30-50% throughput boost for wildlife monitoring
+  empty_frame_filter:
+    enabled: true  # Enable empty frame filtering
+    min_motion_area: 200  # Minimum motion area (pixels²) to trigger full inference
+    blur_size: 21  # Gaussian blur for noise reduction (must be odd)
+    threshold: 25  # Frame difference threshold (0-255, lower = more sensitive)
+
+  # Sparse Detection with Temporal Coherence - Issue #158
+  # Run full inference every N frames, reuse detections on intermediate frames
+  # Expected: 3x GPU load reduction with keyframe_interval=3
+  sparse_detection:
+    enabled: true  # Enable sparse detection
+    keyframe_interval: 3  # Run full inference every N frames (1 = disabled)
+    mode: "simple"  # Options: "simple" (reuse detections), "tracking" (future: object tracking)
+
 # Motion Detection Filter (reduces false positives from static objects)
 motion_filter:
   enabled: true  # Enable motion-based filtering
@@ -524,6 +541,12 @@ privacy:
 api:
   allow_unmasked_access: false  # Require authentication for /api/clips/raw/ endpoint
   unmasked_access_token_env: "TELESCOPE_UNMASKED_TOKEN"  # Environment variable name for auth token
+
+# Clips Access Authentication
+# Set TELESCOPE_CLIPS_TOKEN environment variable to enable authentication for clips endpoint
+# Example: export TELESCOPE_CLIPS_TOKEN="your-secret-token-here"
+# If not set, clips endpoint will be public (logs warning on first access)
+# Access clips with: curl -H "Authorization: Bearer your-secret-token-here" http://localhost:8000/api/clips/filename.jpg
 
 # Snapshot/Clip Saving
 snapshots:
