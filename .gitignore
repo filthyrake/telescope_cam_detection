@@ -62,8 +62,8 @@ yolov8*-world*.pt
 test_*.jpg
 test_*.png
 
-# Test scripts (may contain hardcoded credentials - NEVER commit)
-test_*.py
+# Test scripts in root (may contain hardcoded credentials - NEVER commit)
+/test_*.py
 
 # YOLOX repository (external dependency)
 YOLOX/
