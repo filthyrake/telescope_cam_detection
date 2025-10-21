@@ -1218,6 +1218,11 @@ class TelescopeDetectionSystem:
         enable_time_of_day_filter = time_of_day_filter_config.get('enabled', False)
         time_of_day_filter_params = {k: v for k, v in time_of_day_filter_config.items() if k != 'enabled'}
 
+        # Get tracking configuration
+        tracking_config = self.config.get('tracking', {})
+        enable_tracking = tracking_config.get('enabled', False)
+        tracking_params = {k: v for k, v in tracking_config.items() if k != 'enabled'}
+
         detection_processor = DetectionProcessor(
             input_queue=inference_queue,
             output_queue=self.detection_queue,  # All cameras write to shared detection queue
@@ -1227,7 +1232,9 @@ class TelescopeDetectionSystem:
             enable_motion_filter=enable_motion_filter,
             motion_filter_config=motion_filter_params,
             enable_time_of_day_filter=enable_time_of_day_filter,
-            time_of_day_filter_config=time_of_day_filter_params
+            time_of_day_filter_config=time_of_day_filter_params,
+            enable_tracking=enable_tracking,
+            tracking_config=tracking_params
         )
 
         logger.info(f"  [{camera_id}] Detection processor initialized")

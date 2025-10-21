@@ -425,6 +425,23 @@ collision_detection:
   enabled: false
   danger_threshold: 50  # pixels
 
+# Object Tracking Configuration
+# Track detected objects across frames with unique IDs for analytics
+tracking:
+  enabled: false  # Enable object tracking
+  algorithm: "iou"  # Tracking algorithm: "iou" (currently only option)
+  
+  # Tracking parameters
+  max_age: 30  # Delete track after N frames without detection
+  min_hits: 3  # Require N detections before considering track valid
+  iou_threshold: 0.3  # Minimum IoU (Intersection over Union) for association
+  
+  # Per-camera tracking
+  per_camera: true  # Track separately per camera (no cross-camera tracking)
+  
+  # Future: cross-camera tracking (not yet implemented)
+  # cross_camera: false  # Track objects across multiple cameras
+
 # Snapshot/Clip Saving
 snapshots:
   enabled: true  # Enable snapshot saving

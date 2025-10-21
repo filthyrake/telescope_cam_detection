@@ -14,6 +14,7 @@ from collections import deque
 from src.visualization_utils import draw_detections
 from src.motion_filter import MotionFilter
 from src.time_of_day_filter import TimeOfDayFilter
+from src.object_tracker import ObjectTracker
 from src.constants import (
     QUEUE_GET_TIMEOUT_SECONDS,
     LOG_DROPPED_EVERY_N,
@@ -41,7 +42,9 @@ class DetectionProcessor:
         enable_motion_filter: bool = False,
         motion_filter_config: Optional[Dict[str, Any]] = None,
         enable_time_of_day_filter: bool = False,
-        time_of_day_filter_config: Optional[Dict[str, Any]] = None
+        time_of_day_filter_config: Optional[Dict[str, Any]] = None,
+        enable_tracking: bool = False,
+        tracking_config: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize detection processor.
@@ -56,6 +59,8 @@ class DetectionProcessor:
             motion_filter_config: Configuration dict for motion filter
             enable_time_of_day_filter: Enable time-of-day filtering
             time_of_day_filter_config: Configuration dict for time-of-day filter
+            enable_tracking: Enable object tracking
+            tracking_config: Configuration dict for tracking
         """
         self.input_queue = input_queue
         self.output_queue = output_queue
@@ -82,6 +87,20 @@ class DetectionProcessor:
             config = time_of_day_filter_config or {}
             self.time_of_day_filter = TimeOfDayFilter(**config)
             logger.info("Time-of-day filter enabled")
+
+        # Object tracking
+        self.enable_tracking = enable_tracking
+        self.tracker = None
+        if enable_tracking:
+            config = tracking_config or {}
+            self.tracker = ObjectTracker(
+                algorithm=config.get('algorithm', 'iou'),
+                max_age=config.get('max_age', 30),
+                min_hits=config.get('min_hits', 3),
+                iou_threshold=config.get('iou_threshold', 0.3),
+                per_camera=config.get('per_camera', True)
+            )
+            logger.info(f"Object tracking enabled (algorithm: {config.get('algorithm', 'iou')})")
 
         # Statistics
         self.processed_count = 0
@@ -280,6 +299,11 @@ class DetectionProcessor:
             detections = self.time_of_day_filter.filter_detections(detections, datetime.fromtimestamp(timestamp))
         detections_after_time_filter = len(detections)
 
+        # Update object tracking if enabled
+        tracks = {}
+        if self.enable_tracking and self.tracker:
+            tracks = self.tracker.update(detections, camera_id=camera_id)
+
         # Calculate total latency (from frame capture to now)
         current_time = time.time()
         total_latency = current_time - timestamp
@@ -308,6 +332,13 @@ class DetectionProcessor:
             'motion_filtered': detections_before_motion - len(detections) if self.enable_motion_filter else 0,
             'time_filtered': detections_before_time_filter - detections_after_time_filter if self.enable_time_of_day_filter else 0
         }
+
+        # Add tracking information if enabled
+        if self.enable_tracking and self.tracker:
+            processed_result['tracks'] = {
+                track_id: track.to_dict() for track_id, track in tracks.items()
+            }
+            processed_result['total_active_tracks'] = len(tracks)
 
         return processed_result
 
@@ -343,6 +374,7 @@ class DetectionProcessor:
             'last_detection_time': self.last_detection_time,
             'motion_filter_enabled': self.enable_motion_filter,
             'time_of_day_filter_enabled': self.enable_time_of_day_filter,
+            'tracking_enabled': self.enable_tracking,
             'dropped_results': self.dropped_results,
         }
 
@@ -359,6 +391,10 @@ class DetectionProcessor:
         # Add time-of-day filter stats if enabled
         if self.enable_time_of_day_filter and self.time_of_day_filter:
             stats['time_of_day_filter_stats'] = self.time_of_day_filter.get_stats()
+
+        # Add tracking stats if enabled
+        if self.enable_tracking and self.tracker:
+            stats['tracking_stats'] = self.tracker.get_stats()
 
         # Add memory usage if psutil is available
         try:

@@ -729,6 +729,146 @@ class WebServer:
                 logger.error(f"Error getting config: {e}")
                 raise HTTPException(status_code=500, detail=f"Error getting config: {str(e)}")
 
+        @self.app.get("/api/tracks/active")
+        async def get_active_tracks(camera_id: Optional[str] = None):
+            """
+            Get currently active tracks (objects in view).
+
+            Query params:
+                camera_id: Optional camera ID to filter tracks
+
+            Returns:
+                JSON with list of active tracks
+            """
+            try:
+                # Get tracker from detection processors
+                all_tracks = []
+                for processor in self.detection_processors:
+                    if processor and processor.tracker:
+                        tracks = processor.tracker.get_active_tracks(camera_id)
+                        for track in tracks.values():
+                            all_tracks.append(track.to_dict())
+
+                return {
+                    "tracks": all_tracks,
+                    "count": len(all_tracks)
+                }
+            except Exception as e:
+                logger.error(f"Error getting active tracks: {e}")
+                raise HTTPException(status_code=500, detail=f"Error getting tracks: {str(e)}")
+
+        @self.app.get("/api/tracks/{track_id}/history")
+        async def get_track_history(track_id: str):
+            """
+            Get full trajectory and history for a specific track.
+
+            Args:
+                track_id: Track UUID
+
+            Returns:
+                JSON with track details and complete history
+            """
+            try:
+                # Search for track across all detection processors
+                for processor in self.detection_processors:
+                    if processor and processor.tracker:
+                        track = processor.tracker.get_track(track_id)
+                        if track:
+                            track_dict = track.to_dict()
+                            # Include full trajectory (not limited)
+                            track_dict['trajectory'] = list(track.trajectory)
+                            track_dict['bbox_history'] = [
+                                bbox for bbox in track.bbox_history
+                            ]
+                            return track_dict
+
+                # Track not found
+                raise HTTPException(status_code=404, detail=f"Track {track_id} not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error getting track history: {e}")
+                raise HTTPException(status_code=500, detail=f"Error getting track history: {str(e)}")
+
+        @self.app.get("/api/tracks/stats")
+        async def get_tracking_stats(camera_id: Optional[str] = None, start: Optional[float] = None):
+            """
+            Get tracking statistics.
+
+            Query params:
+                camera_id: Optional camera ID to filter stats
+                start: Optional start timestamp to filter completed tracks
+
+            Returns:
+                JSON with tracking statistics including:
+                - Total unique tracks
+                - Breakdown by class
+                - Average dwell time
+                - Longest track info
+            """
+            try:
+                # Aggregate stats from all detection processors
+                all_stats = {
+                    'total_unique_tracks': 0,
+                    'total_active_tracks': 0,
+                    'total_completed_tracks': 0,
+                    'active_by_class': {},
+                    'completed_by_class': {},
+                    'avg_dwell_time_seconds': 0.0,
+                    'longest_track': None
+                }
+
+                total_dwell_times = []
+                longest_track = None
+                max_dwell_time = 0.0
+
+                for processor in self.detection_processors:
+                    if processor and processor.tracker:
+                        stats = processor.tracker.get_stats(camera_id, start)
+
+                        all_stats['total_active_tracks'] += stats.get('total_active_tracks', 0)
+                        all_stats['total_completed_tracks'] += stats.get('total_completed_tracks', 0)
+
+                        # Merge class counts
+                        for class_name, count in stats.get('active_by_class', {}).items():
+                            all_stats['active_by_class'][class_name] = \
+                                all_stats['active_by_class'].get(class_name, 0) + count
+
+                        for class_name, count in stats.get('completed_by_class', {}).items():
+                            all_stats['completed_by_class'][class_name] = \
+                                all_stats['completed_by_class'].get(class_name, 0) + count
+
+                        # Track longest track
+                        if 'longest_track' in stats and stats['longest_track']:
+                            track_info = stats['longest_track']
+                            if track_info['duration_seconds'] > max_dwell_time:
+                                max_dwell_time = track_info['duration_seconds']
+                                longest_track = track_info
+
+                # Calculate average dwell time
+                all_stats['total_unique_tracks'] = (
+                    all_stats['total_active_tracks'] + all_stats['total_completed_tracks']
+                )
+
+                if longest_track:
+                    all_stats['longest_track'] = longest_track
+
+                # Get combined class totals
+                all_stats['by_class'] = {}
+                for class_name in set(
+                    list(all_stats['active_by_class'].keys()) +
+                    list(all_stats['completed_by_class'].keys())
+                ):
+                    all_stats['by_class'][class_name] = (
+                        all_stats['active_by_class'].get(class_name, 0) +
+                        all_stats['completed_by_class'].get(class_name, 0)
+                    )
+
+                return all_stats
+            except Exception as e:
+                logger.error(f"Error getting tracking stats: {e}")
+                raise HTTPException(status_code=500, detail=f"Error getting tracking stats: {str(e)}")
+
         @self.app.websocket("/ws/detections")
         async def websocket_detections(websocket: WebSocket):
             """
@@ -869,6 +1009,11 @@ class WebServer:
             "detection_counts": detection_result.get("detection_counts", {}),
             "total_detections": detection_result.get("total_detections", 0)
         }
+
+        # Add tracking information if available
+        if "tracks" in detection_result:
+            message["tracks"] = detection_result["tracks"]
+            message["total_active_tracks"] = detection_result.get("total_active_tracks", 0)
 
         return message
 
