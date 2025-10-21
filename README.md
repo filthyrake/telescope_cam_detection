@@ -10,6 +10,7 @@ Real-time object detection system for monitoring astronomical telescopes and des
 ## Features
 
 - **Ultra-fast detection**: 11-21ms inference with YOLOX
+- **Object tracking**: Track animals across frames with unique IDs, dwell time, and movement analytics
 - **Multi-camera support**: Monitor multiple angles simultaneously with fault-tolerant startup
 - **GPU OOM graceful degradation**: Automatic memory management prevents crashes with progressive quality reduction
 - **Performance optimizations**: Empty frame filtering (30-50% throughput gain) + sparse detection (3x GPU load reduction)
