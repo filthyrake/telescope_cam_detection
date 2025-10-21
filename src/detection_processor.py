@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional
 from queue import Queue, Empty
 from threading import Thread, Event
 from collections import deque
-from visualization_utils import draw_detections
+from src.visualization_utils import draw_detections
 from src.motion_filter import MotionFilter
 from src.time_of_day_filter import TimeOfDayFilter
 from src.constants import (
