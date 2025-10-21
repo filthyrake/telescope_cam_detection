@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Object tracking with unique IDs** - 2025-10-21
+  - Track detected objects across frames with persistent UUIDs
+  - IoU-based tracking algorithm with configurable parameters
+  - Movement metrics: distance traveled, velocity, dwell time
+  - Per-camera tracking isolation (no cross-camera ID conflicts)
+  - Track lifecycle management with min_hits validation and max_age timeout
+  - REST API endpoints: /api/tracks/active, /api/tracks/{id}/history, /api/tracks/stats
+  - WebSocket integration for real-time track updates
+  - Configurable via tracking section in config.yaml
+  - Enables analytics: unique counts, behavior patterns, movement analysis
+  - 15 comprehensive unit tests (all passing)
+  - Full documentation in docs/features/OBJECT_TRACKING.md
+
 - **Clips directory authentication** (#166, #26) - 2025-10-16
   - Bearer token authentication for /api/clips endpoint
   - Prevents unauthorized access to saved wildlife clips
