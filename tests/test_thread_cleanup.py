@@ -26,6 +26,39 @@ from src.constants import THREAD_JOIN_TIMEOUT_SECONDS
 logging.basicConfig(level=logging.CRITICAL)
 
 
+# Module-level helper functions for testing thread behavior
+def create_unresponsive_thread_target():
+    """
+    Create a thread target function that simulates a stuck/unresponsive thread.
+    This function is intentionally unstoppable to test timeout and retry logic.
+    
+    Returns:
+        callable: A function that runs indefinitely, ignoring stop signals.
+    """
+    def unresponsive_thread():
+        # Create a local event that is never set, making this thread truly stuck
+        stop_event = Event()
+        while not stop_event.wait(timeout=0.1):
+            pass
+    return unresponsive_thread
+
+
+def create_delayed_stop_thread_target(stop_flag):
+    """
+    Create a thread target function that stops after a delay.
+    Useful for testing scenarios where threads eventually stop on retry.
+    
+    Args:
+        stop_flag: Event that will be set to signal thread to stop
+        
+    Returns:
+        callable: A function that waits for stop_flag with a timeout.
+    """
+    def delayed_stop():
+        stop_flag.wait(timeout=0.5)
+    return delayed_stop
+
+
 class TestStreamCaptureThreadCleanup(unittest.TestCase):
     """Tests for RTSPStreamCapture thread cleanup."""
 
@@ -94,14 +127,8 @@ class TestStreamCaptureThreadCleanup(unittest.TestCase):
             camera_id="test_cam"
         )
         
-        # Create a thread that will never stop
-        def infinite_loop():
-            stop_event = Event()
-            while not stop_event.wait(timeout=0.1):
-                pass
-        
-        # Replace the capture thread with our infinite loop thread (daemon=True like real implementation)
-        capture.capture_thread = Thread(target=infinite_loop, daemon=True)
+        # Replace the capture thread with an unresponsive thread (daemon=True like real implementation)
+        capture.capture_thread = Thread(target=create_unresponsive_thread_target(), daemon=True)
         capture.capture_thread.start()
         
         # Verify thread is a daemon (as it is in real implementation)
@@ -140,12 +167,7 @@ class TestStreamCaptureThreadCleanup(unittest.TestCase):
         
         # Create a thread that stops after a delay
         stop_flag = Event()
-        
-        def delayed_stop():
-            # Wait for the stop flag, but with a timeout
-            stop_flag.wait(timeout=0.5)
-        
-        capture.capture_thread = Thread(target=delayed_stop, daemon=True)
+        capture.capture_thread = Thread(target=create_delayed_stop_thread_target(stop_flag), daemon=True)
         capture.capture_thread.start()
         
         # Mock join to simulate first attempt failing, second succeeding
@@ -231,14 +253,8 @@ class TestDetectionProcessorThreadCleanup(unittest.TestCase):
             output_queue=output_queue
         )
         
-        # Create a thread that will never stop
-        def infinite_loop():
-            stop_event = Event()
-            while not stop_event.wait(timeout=0.1):
-                pass
-        
-        # Replace the processor thread with our infinite loop thread (daemon=True like real implementation)
-        processor.processor_thread = Thread(target=infinite_loop, daemon=True)
+        # Replace the processor thread with an unresponsive thread (daemon=True like real implementation)
+        processor.processor_thread = Thread(target=create_unresponsive_thread_target(), daemon=True)
         processor.processor_thread.start()
         
         # Verify thread is a daemon (as it is in real implementation)
@@ -278,11 +294,7 @@ class TestDetectionProcessorThreadCleanup(unittest.TestCase):
         
         # Create a thread that stops after a delay
         stop_flag = Event()
-        
-        def delayed_stop():
-            stop_flag.wait(timeout=0.5)
-        
-        processor.processor_thread = Thread(target=delayed_stop, daemon=True)
+        processor.processor_thread = Thread(target=create_delayed_stop_thread_target(stop_flag), daemon=True)
         processor.processor_thread.start()
         
         # Mock join to simulate first attempt failing, second succeeding
