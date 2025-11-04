@@ -146,7 +146,7 @@ class TestStreamCaptureThreadCleanup(unittest.TestCase):
             # Wait for the stop flag, but with a timeout
             stop_flag.wait(timeout=0.5)
         
-        capture.capture_thread = Thread(target=delayed_stop, daemon=False)
+        capture.capture_thread = Thread(target=delayed_stop, daemon=True)
         capture.capture_thread.start()
         
         # Mock join to simulate first attempt failing, second succeeding
@@ -284,7 +284,7 @@ class TestDetectionProcessorThreadCleanup(unittest.TestCase):
         def delayed_stop():
             stop_flag.wait(timeout=0.5)
         
-        processor.processor_thread = Thread(target=delayed_stop, daemon=False)
+        processor.processor_thread = Thread(target=delayed_stop, daemon=True)
         processor.processor_thread.start()
         
         # Mock join to simulate first attempt failing, second succeeding
