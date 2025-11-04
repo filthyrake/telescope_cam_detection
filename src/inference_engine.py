@@ -13,6 +13,15 @@ from threading import Thread, Event
 import numpy as np
 import cv2
 from pathlib import Path
+from src.constants import (
+    QUEUE_GET_TIMEOUT_SECONDS,
+    DEFAULT_GPU_DEVICE,
+    DEFAULT_MODEL_NAME,
+    DEFAULT_MODEL_PATH,
+    DEFAULT_TEXT_THRESHOLD,
+    DEFAULT_BOX_THRESHOLD
+)
+from src.utils import calculate_fps
 from groundingdino.util.inference import Model
 
 logger = logging.getLogger(__name__)
@@ -218,8 +227,9 @@ class InferenceEngine:
                 self.avg_inference_time = self.total_inference_time / self.inference_count
 
                 # Calculate FPS
-                if time.time() - self.last_fps_check >= 1.0:
-                    self.fps = self.inference_count / (time.time() - self.last_fps_check)
+                elapsed = time.time() - self.last_fps_check
+                if elapsed >= 1.0:
+                    self.fps = calculate_fps(self.inference_count, elapsed, default=self.fps)
                     self.last_fps_check = time.time()
                     self.inference_count = 0
                     logger.debug(f"Inference FPS: {self.fps:.1f}, Avg time: {self.avg_inference_time*1000:.1f}ms")
