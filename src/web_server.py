@@ -1046,7 +1046,11 @@ class WebServer:
                     with frame_source.frame_lock:
                         if frame_source.latest_frame is not None:
                             if isinstance(frame_source.latest_frame, torch.Tensor):
-                                frame = frame_source.latest_frame.cpu().numpy()
+                                frame_tensor = frame_source.latest_frame
+                                frame = frame_tensor.cpu().detach().numpy()
+                                # Note: Do NOT delete frame_source.latest_frame as it's stored for reuse
+                                # Only delete the temporary reference
+                                del frame_tensor
                             else:
                                 frame = frame_source.latest_frame.copy()
                         else:

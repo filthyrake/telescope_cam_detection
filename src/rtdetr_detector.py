@@ -216,7 +216,10 @@ class RTDETRDetector:
         # Get original size
         if isinstance(img, torch.Tensor):
             orig_h, orig_w = img.shape[:2]
-            img_np = img.cpu().numpy() if img.is_cuda else img.numpy()
+            img_tensor_temp = img
+            # .cpu() is a no-op on CPU tensors, so no conditional needed
+            img_np = img_tensor_temp.cpu().detach().numpy()
+            del img_tensor_temp  # Explicitly free GPU tensor
         else:
             orig_h, orig_w = img.shape[:2]
             img_np = img
@@ -260,25 +263,36 @@ class RTDETRDetector:
         detections = []
 
         # labels, boxes, scores are lists with one element (batch size 1)
-        labels = labels[0].cpu().numpy()
-        boxes = boxes[0].cpu().numpy()
-        scores = scores[0].cpu().numpy()
+        labels_tensor = labels[0]
+        boxes_tensor = boxes[0]
+        scores_tensor = scores[0]
+        
+        labels_np = labels_tensor.cpu().detach().numpy()
+        boxes_np = boxes_tensor.cpu().detach().numpy()
+        scores_np = scores_tensor.cpu().detach().numpy()
+        
+        # Explicitly free GPU tensors (temporary references only)
+        del labels_tensor, boxes_tensor, scores_tensor
+        # Also delete list references since they're not used after this
+        del labels, boxes, scores
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-        for i in range(len(labels)):
-            score = float(scores[i])
+        for i in range(len(labels_np)):
+            score = float(scores_np[i])
 
             # Apply confidence threshold
             if score < self.conf_threshold:
                 continue
 
-            class_id = int(labels[i])
+            class_id = int(labels_np[i])
 
             # Filter wildlife classes if enabled
             if self.wildlife_only and class_id not in WILDLIFE_CLASSES:
                 continue
 
             # Get box coordinates (already scaled to original size by postprocessor)
-            x1, y1, x2, y2 = boxes[i]
+            x1, y1, x2, y2 = boxes_np[i]
             x1, y1, x2, y2 = float(x1), float(y1), float(x2), float(y2)
 
             # Get class name
@@ -345,9 +359,17 @@ class RTDETRDetector:
             for frame_idx in range(len(frames)):
                 detections = []
 
-                frame_labels = labels[frame_idx].cpu().numpy()
-                frame_boxes = boxes[frame_idx].cpu().numpy()
-                frame_scores = scores[frame_idx].cpu().numpy()
+                # Convert tensors to numpy with proper cleanup
+                frame_labels_tensor = labels[frame_idx]
+                frame_boxes_tensor = boxes[frame_idx]
+                frame_scores_tensor = scores[frame_idx]
+                
+                frame_labels = frame_labels_tensor.cpu().detach().numpy()
+                frame_boxes = frame_boxes_tensor.cpu().detach().numpy()
+                frame_scores = frame_scores_tensor.cpu().detach().numpy()
+                
+                # Explicitly free per-frame GPU tensors
+                del frame_labels_tensor, frame_boxes_tensor, frame_scores_tensor
 
                 for i in range(len(frame_labels)):
                     score = float(frame_scores[i])
@@ -401,6 +423,8 @@ class RTDETRDetector:
                 del boxes
             if 'scores' in locals():
                 del scores
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()  # Aggressive cleanup
 
     def is_wildlife_relevant(self, class_id: int) -> bool:
         """Check if detection is wildlife-relevant"""

@@ -157,7 +157,9 @@ class TwoStageDetectionPipeline:
         # Convert to NumPy if GPU tensor
         if isinstance(crop, torch.Tensor):
             # Detach from computation graph and move to CPU
-            crop_np = crop.detach().cpu().numpy()
+            crop_tensor = crop
+            crop_np = crop_tensor.detach().cpu().numpy()
+            del crop_tensor  # Explicitly free GPU tensor
 
             # Convert CHW to HWC for OpenCV (if needed)
             if crop_np.ndim == 3 and crop_np.shape[0] in [1, 3]:  # CHW format

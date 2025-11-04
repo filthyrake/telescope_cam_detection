@@ -117,7 +117,7 @@ class SnapshotSaver:
             NumPy array (converts if tensor, returns as-is if already NumPy)
         """
         if isinstance(frame, torch.Tensor):
-            frame_cpu = frame.cpu().numpy()
+            frame_cpu = frame.cpu().detach().numpy()
             del frame  # Explicitly delete GPU tensor to free VRAM (Issue #98)
             return frame_cpu
         return frame
