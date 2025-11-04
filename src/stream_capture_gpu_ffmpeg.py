@@ -12,6 +12,7 @@ import torch
 from typing import Optional, Union
 from queue import Queue, Full
 from threading import Thread, Event, Lock
+from src.utils import calculate_fps
 
 logger = logging.getLogger(__name__)
 

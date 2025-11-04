@@ -16,6 +16,7 @@ from threading import Thread, Event, Lock
 from collections import deque
 import json
 import numpy as np
+from src.utils import safe_divide
 
 if TYPE_CHECKING:
     from .face_masker import FaceMasker

@@ -1,6 +1,5 @@
 """Tests for shared math utility helpers."""
 
-import os
 import sys
 from pathlib import Path
 

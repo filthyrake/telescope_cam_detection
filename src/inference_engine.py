@@ -13,14 +13,7 @@ from threading import Thread, Event
 import numpy as np
 import cv2
 from pathlib import Path
-from src.constants import (
-    QUEUE_GET_TIMEOUT_SECONDS,
-    DEFAULT_GPU_DEVICE,
-    DEFAULT_MODEL_NAME,
-    DEFAULT_MODEL_PATH,
-    DEFAULT_TEXT_THRESHOLD,
-    DEFAULT_BOX_THRESHOLD
-)
+from src.constants import QUEUE_GET_TIMEOUT_SECONDS
 from src.utils import calculate_fps
 from groundingdino.util.inference import Model
 
