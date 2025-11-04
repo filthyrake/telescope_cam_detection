@@ -79,7 +79,7 @@ def test_tensor_conversion_pattern():
         
         # Convert with proper cleanup
         tensor_temp = tensor
-        numpy_arr = tensor_temp.cpu().detach().numpy()
+        _ = tensor_temp.cpu().detach().numpy()
         del tensor_temp
         del tensor
         
