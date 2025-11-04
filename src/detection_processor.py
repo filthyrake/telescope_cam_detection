@@ -142,11 +142,13 @@ class DetectionProcessor:
                 )
                 
                 # Try one more time with longer timeout
-                self.processor_thread.join(timeout=THREAD_JOIN_TIMEOUT_SECONDS * 2)
+                extended_timeout = THREAD_JOIN_TIMEOUT_SECONDS * 2
+                self.processor_thread.join(timeout=extended_timeout)
                 
                 if self.processor_thread.is_alive():
+                    total_timeout = THREAD_JOIN_TIMEOUT_SECONDS + extended_timeout
                     logger.critical(
-                        f"CRITICAL: Detection processor thread is stuck after {THREAD_JOIN_TIMEOUT_SECONDS * 3}s total timeout. "
+                        f"CRITICAL: Detection processor thread is stuck after {total_timeout}s total timeout. "
                         f"Thread is orphaned and will continue running - potential resource leak (Issue #96). "
                         f"The thread was created as daemon={self.processor_thread.daemon}, so it "
                         f"{'will not' if self.processor_thread.daemon else 'WILL'} block process shutdown. "

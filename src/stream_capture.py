@@ -171,11 +171,13 @@ class RTSPStreamCapture:
                 )
                 
                 # Try one more time with longer timeout
-                self.capture_thread.join(timeout=THREAD_JOIN_TIMEOUT_SECONDS * 2)
+                extended_timeout = THREAD_JOIN_TIMEOUT_SECONDS * 2
+                self.capture_thread.join(timeout=extended_timeout)
                 
                 if self.capture_thread.is_alive():
+                    total_timeout = THREAD_JOIN_TIMEOUT_SECONDS + extended_timeout
                     logger.critical(
-                        f"[{self.camera_id}] CRITICAL: Capture thread is stuck after {THREAD_JOIN_TIMEOUT_SECONDS * 3}s total timeout. "
+                        f"[{self.camera_id}] CRITICAL: Capture thread is stuck after {total_timeout}s total timeout. "
                         f"Thread is orphaned and will continue running - this is a resource leak. "
                         f"The thread was created as daemon={self.capture_thread.daemon}, so it "
                         f"{'will not' if self.capture_thread.daemon else 'WILL'} block process shutdown."

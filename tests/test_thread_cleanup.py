@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import unittest
 import time
 import logging
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 from threading import Thread, Event
 from queue import Queue
 
@@ -109,7 +109,6 @@ class TestStreamCaptureThreadCleanup(unittest.TestCase):
         
         # Track join calls
         join_calls = []
-        original_join = capture.capture_thread.join
         
         def mock_join(timeout=None):
             join_calls.append(timeout)
@@ -169,7 +168,7 @@ class TestStreamCaptureThreadCleanup(unittest.TestCase):
         with patch('src.stream_capture.THREAD_JOIN_TIMEOUT_SECONDS', 0.1):
             capture.stop()
         
-        # Thread should be stopped and not daemon
+        # Thread should be stopped
         self.assertFalse(capture.capture_thread.is_alive())
 
 
@@ -247,7 +246,6 @@ class TestDetectionProcessorThreadCleanup(unittest.TestCase):
         
         # Track join calls
         join_calls = []
-        original_join = processor.processor_thread.join
         
         def mock_join(timeout=None):
             join_calls.append(timeout)
