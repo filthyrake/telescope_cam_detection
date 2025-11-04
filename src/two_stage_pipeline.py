@@ -156,7 +156,9 @@ class TwoStageDetectionPipeline:
 
                 for box in boxes:
                     # Extract detection info
-                    xyxy = box.xyxy[0].cpu().numpy()
+                    xyxy_tensor = box.xyxy[0]
+                    xyxy = xyxy_tensor.cpu().detach().numpy()
+                    del xyxy_tensor  # Explicitly free GPU tensor
                     conf = float(box.conf[0])
                     cls_id = int(box.cls[0])
                     class_name = self.detection_classes[cls_id] if cls_id < len(self.detection_classes) else f"class_{cls_id}"

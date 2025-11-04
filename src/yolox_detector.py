@@ -315,8 +315,11 @@ class YOLOXDetector:
 
         # Convert to detection format using shared helper
         if outputs[0] is not None:
-            output = outputs[0].cpu().numpy()
-            return self._format_model_output_to_detections(output, orig_h, orig_w)
+            output_tensor = outputs[0]
+            output_np = output_tensor.cpu().detach().numpy()
+            del output_tensor  # Explicitly free GPU tensor
+            torch.cuda.empty_cache()  # Aggressive cleanup
+            return self._format_model_output_to_detections(output_np, orig_h, orig_w)
 
         return []
 
@@ -390,7 +393,8 @@ class YOLOXDetector:
 
         for frame_idx, output in enumerate(outputs):
             if output is not None:
-                output_np = output.cpu().numpy()
+                output_np = output.cpu().detach().numpy()
+                del output  # Explicitly free GPU tensor
                 orig_h, orig_w = orig_sizes[frame_idx]
                 detections = self._format_model_output_to_detections(output_np, orig_h, orig_w)
             else:
@@ -402,6 +406,7 @@ class YOLOXDetector:
         del batch_tensor
         del preprocessed_frames
         del outputs
+        torch.cuda.empty_cache()  # Aggressive cleanup
 
         return all_detections
 

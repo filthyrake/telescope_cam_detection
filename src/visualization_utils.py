@@ -152,7 +152,9 @@ def draw_detections(
     """
     # Create a copy and convert to NumPy if needed (cv2 functions expect NumPy)
     if isinstance(frame, torch.Tensor):
-        annotated_frame = frame.cpu().numpy().copy()
+        frame_tensor = frame
+        annotated_frame = frame_tensor.cpu().detach().numpy().copy()
+        del frame_tensor  # Explicitly free GPU tensor
     else:
         annotated_frame = frame.copy()
 
@@ -209,7 +211,9 @@ def add_info_overlay(
     """
     # Convert to NumPy if needed (cv2 functions expect NumPy)
     if isinstance(frame, torch.Tensor):
-        frame = frame.cpu().numpy()
+        frame_tensor = frame
+        frame = frame_tensor.cpu().detach().numpy()
+        del frame_tensor  # Explicitly free GPU tensor
 
     if not info_text:
         return frame

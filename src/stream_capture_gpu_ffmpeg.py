@@ -381,7 +381,12 @@ class RTSPStreamCaptureGPU:
 
             if isinstance(self.latest_frame, torch.Tensor):
                 # Convert GPU tensor to NumPy (on CPU)
-                return self.latest_frame.cpu().numpy()
+                frame_tensor = self.latest_frame
+                frame_np = frame_tensor.cpu().detach().numpy()
+                # Note: Do NOT delete self.latest_frame as it's stored for reuse
+                # Only delete the temporary reference
+                del frame_tensor
+                return frame_np
             else:
                 # Already NumPy array
                 return self.latest_frame
