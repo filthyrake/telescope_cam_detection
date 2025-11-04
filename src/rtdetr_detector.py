@@ -217,7 +217,8 @@ class RTDETRDetector:
         if isinstance(img, torch.Tensor):
             orig_h, orig_w = img.shape[:2]
             img_tensor_temp = img
-            img_np = img_tensor_temp.cpu().detach().numpy() if img_tensor_temp.is_cuda else img_tensor_temp.detach().numpy()
+            # .cpu() is a no-op on CPU tensors, so no conditional needed
+            img_np = img_tensor_temp.cpu().detach().numpy()
             del img_tensor_temp  # Explicitly free GPU tensor
         else:
             orig_h, orig_w = img.shape[:2]
@@ -272,7 +273,8 @@ class RTDETRDetector:
         
         # Explicitly free GPU tensors
         del labels_tensor, boxes_tensor, scores_tensor, labels, boxes, scores
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         for i in range(len(labels_np)):
             score = float(scores_np[i])
@@ -419,7 +421,8 @@ class RTDETRDetector:
                 del boxes
             if 'scores' in locals():
                 del scores
-            torch.cuda.empty_cache()  # Aggressive cleanup
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()  # Aggressive cleanup
 
     def is_wildlife_relevant(self, class_id: int) -> bool:
         """Check if detection is wildlife-relevant"""

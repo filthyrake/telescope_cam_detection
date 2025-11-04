@@ -318,7 +318,8 @@ class YOLOXDetector:
             output_tensor = outputs[0]
             output_np = output_tensor.cpu().detach().numpy()
             del output_tensor  # Explicitly free GPU tensor
-            torch.cuda.empty_cache()  # Aggressive cleanup
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()  # Aggressive cleanup
             return self._format_model_output_to_detections(output_np, orig_h, orig_w)
 
         return []
@@ -406,7 +407,8 @@ class YOLOXDetector:
         del batch_tensor
         del preprocessed_frames
         del outputs
-        torch.cuda.empty_cache()  # Aggressive cleanup
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()  # Aggressive cleanup
 
         return all_detections
 

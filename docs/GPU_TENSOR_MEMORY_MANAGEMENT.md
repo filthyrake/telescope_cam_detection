@@ -43,7 +43,7 @@ The `del` statement explicitly marks the tensor for garbage collection:
 - Critical for GPU tensors in high-throughput scenarios
 - PyTorch keeps GPU tensors alive until GC runs, which can be unpredictable
 
-Reference: [PyTorch FAQ - GPU memory isn't freed properly](https://pytorch.org/docs/stable/notes/faq.html#my-gpu-memory-isn-t-freed-properly)
+Reference: [PyTorch CUDA Memory Management](https://pytorch.org/docs/stable/notes/cuda.html#memory-management)
 
 ### When to use torch.cuda.empty_cache()?
 
@@ -190,6 +190,6 @@ gpu_memory_mb = stats.get('gpu_memory_allocated_mb', 0)
 
 ## References
 
-- [PyTorch FAQ - GPU Memory](https://pytorch.org/docs/stable/notes/faq.html#my-gpu-memory-isn-t-freed-properly)
-- [PyTorch Memory Management](https://pytorch.org/docs/stable/notes/cuda.html#memory-management)
+- [PyTorch CUDA Memory Management](https://pytorch.org/docs/stable/notes/cuda.html#memory-management)
+- [PyTorch Best Practices - GPU Memory](https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html#cpu-vs-gpu)
 - [Tensor.detach() Documentation](https://pytorch.org/docs/stable/generated/torch.Tensor.detach.html)
