@@ -271,8 +271,10 @@ class RTDETRDetector:
         boxes_np = boxes_tensor.cpu().detach().numpy()
         scores_np = scores_tensor.cpu().detach().numpy()
         
-        # Explicitly free GPU tensors
-        del labels_tensor, boxes_tensor, scores_tensor, labels, boxes, scores
+        # Explicitly free GPU tensors (temporary references only)
+        del labels_tensor, boxes_tensor, scores_tensor
+        # Also delete list references since they're not used after this
+        del labels, boxes, scores
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 

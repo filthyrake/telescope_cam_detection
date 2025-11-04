@@ -394,8 +394,10 @@ class YOLOXDetector:
 
         for frame_idx, output in enumerate(outputs):
             if output is not None:
-                output_np = output.cpu().detach().numpy()
-                del output  # Explicitly free GPU tensor
+                # Create temporary reference before conversion
+                output_tensor = output
+                output_np = output_tensor.cpu().detach().numpy()
+                del output_tensor  # Explicitly free temporary reference
                 orig_h, orig_w = orig_sizes[frame_idx]
                 detections = self._format_model_output_to_detections(output_np, orig_h, orig_w)
             else:
@@ -406,7 +408,7 @@ class YOLOXDetector:
         # Explicitly delete GPU tensors to free VRAM faster (Issue #151)
         del batch_tensor
         del preprocessed_frames
-        del outputs
+        del outputs  # Delete list to free all tensor references
         if torch.cuda.is_available():
             torch.cuda.empty_cache()  # Aggressive cleanup
 
