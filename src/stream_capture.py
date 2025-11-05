@@ -21,6 +21,7 @@ from src.constants import (
     ERROR_SLEEP_SECONDS,
     FPS_CALCULATION_INTERVAL_SECONDS
 )
+from src.utils import calculate_fps
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +262,7 @@ class RTSPStreamCapture:
                 # Calculate FPS every second
                 elapsed = time.time() - self.last_fps_check
                 if elapsed >= FPS_CALCULATION_INTERVAL_SECONDS:
-                    self.fps = self.frame_count / elapsed if elapsed > 0 else 0.0
+                    self.fps = calculate_fps(self.frame_count, elapsed, default=self.fps)
                     self.last_fps_check = time.time()
                     self.frame_count = 0
 

@@ -12,6 +12,7 @@ import torch
 from typing import Optional, Union
 from queue import Queue, Full
 from threading import Thread, Event, Lock
+from src.utils import calculate_fps
 
 logger = logging.getLogger(__name__)
 
@@ -288,8 +289,9 @@ class RTSPStreamCaptureGPU:
                     self.dropped_frames += 1
 
                 # Calculate FPS
-                if time.time() - self.last_fps_check >= 1.0:
-                    self.fps = self.frame_count / (time.time() - self.last_fps_check)
+                elapsed = time.time() - self.last_fps_check
+                if elapsed >= 1.0:
+                    self.fps = calculate_fps(self.frame_count, elapsed, default=self.fps)
                     self.last_fps_check = time.time()
                     self.frame_count = 0
 

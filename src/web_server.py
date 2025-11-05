@@ -26,6 +26,7 @@ from src.constants import (
     DEFAULT_JPEG_QUALITY,
     WEBSOCKET_HEARTBEAT_INTERVAL_SECONDS
 )
+from src.utils import safe_divide
 
 if TYPE_CHECKING:
     from .face_masker import FaceMasker, FaceMaskingCache
@@ -235,7 +236,7 @@ class WebServer:
                     queue_size = stream_stats.get('queue_size', 0)
                     queue_max = stream_stats.get('queue_maxsize', 2)
 
-                    utilization = queue_size / queue_max if queue_max > 0 else 0.0
+                    utilization = safe_divide(queue_size, queue_max, default=0.0)
                     status = "ok"
 
                     if utilization >= critical_threshold:
@@ -273,7 +274,7 @@ class WebServer:
                 if self.detection_queue:
                     detection_size = self.detection_queue.qsize()
                     detection_max = self.detection_queue.maxsize
-                    detection_utilization = detection_size / detection_max if detection_max > 0 else 0.0
+                    detection_utilization = safe_divide(detection_size, detection_max, default=0.0)
                     detection_status = "ok"
 
                     if detection_utilization >= critical_threshold:

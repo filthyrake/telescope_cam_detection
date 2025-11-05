@@ -16,6 +16,7 @@ from threading import Thread, Event, Lock
 from collections import deque
 import json
 import numpy as np
+from src.utils import safe_divide
 
 if TYPE_CHECKING:
     from .face_masker import FaceMasker
@@ -557,7 +558,7 @@ class SnapshotSaver:
                 'camera_name': detection_result.get('camera_name', 'Default Camera'),
                 'detections': detections,
                 'detection_counts': detection_result.get('detection_counts', {}),
-                'clip_duration_seconds': len(buffered_frames) / self.fps
+                'clip_duration_seconds': safe_divide(len(buffered_frames), self.fps, default=0.0)
             }
 
             metadata_file = filepath.with_suffix('.json')
@@ -686,6 +687,15 @@ class SnapshotSaver:
 if __name__ == "__main__":
     # Test the snapshot saver
     import numpy as np
+    from src.constants import (
+        DEFAULT_SNAPSHOT_COOLDOWN_SECONDS,
+        DEFAULT_SNAPSHOT_TRIGGER_CLASSES,
+        DEFAULT_SNAPSHOT_MIN_CONFIDENCE,
+        DEFAULT_CLIP_DURATION_SECONDS,
+        DEFAULT_PRE_BUFFER_SECONDS,
+        DEFAULT_POST_BUFFER_SECONDS
+    )
+    from src.utils import safe_divide
 
     logger.info("Testing SnapshotSaver")
 

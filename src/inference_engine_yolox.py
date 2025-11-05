@@ -26,6 +26,7 @@ from src.constants import (
     FPS_CALCULATION_INTERVAL_SECONDS,
     MIN_TIME_DELTA
 )
+from src.utils import calculate_fps
 
 logger = logging.getLogger(__name__)
 
@@ -360,8 +361,9 @@ class InferenceEngine:
                     self.avg_inference_time = self.total_inference_time / self.total_inference_count
 
                     # Calculate FPS
-                    if time.time() - self.last_fps_check >= FPS_CALCULATION_INTERVAL_SECONDS:
-                        self.fps = self.inference_count / (time.time() - self.last_fps_check)
+                    elapsed = time.time() - self.last_fps_check
+                    if elapsed >= FPS_CALCULATION_INTERVAL_SECONDS:
+                        self.fps = calculate_fps(self.inference_count, elapsed, default=self.fps)
                         self.last_fps_check = time.time()
                         self.inference_count = 0
                         logger.debug(f"Inference FPS: {self.fps:.1f}, Avg time: {self.avg_inference_time*1000:.1f}ms")
@@ -421,8 +423,9 @@ class InferenceEngine:
             self.avg_inference_time = self.total_inference_time / self.total_inference_count
 
             # Calculate FPS
-            if time.time() - self.last_fps_check >= FPS_CALCULATION_INTERVAL_SECONDS:
-                self.fps = self.inference_count / (time.time() - self.last_fps_check)
+            elapsed = time.time() - self.last_fps_check
+            if elapsed >= FPS_CALCULATION_INTERVAL_SECONDS:
+                self.fps = calculate_fps(self.inference_count, elapsed, default=self.fps)
                 self.last_fps_check = time.time()
                 self.inference_count = 0
                 logger.debug(f"Inference FPS: {self.fps:.1f}, Avg time: {self.avg_inference_time*1000:.1f}ms")
