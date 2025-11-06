@@ -6,7 +6,7 @@ with backpressure signaling instead of silent data loss.
 
 import unittest
 import time
-from queue import Queue, Full
+from queue import Queue
 from unittest.mock import Mock, patch, MagicMock
 
 # Mock all required modules before importing

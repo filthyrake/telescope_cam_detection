@@ -8,7 +8,7 @@ import torch
 import time
 import logging
 from typing import Optional, List, Dict, Any
-from queue import Queue, Empty
+from queue import Queue, Empty, Full
 from threading import Thread, Event, Lock
 import numpy as np
 
@@ -467,7 +467,7 @@ class InferenceEngine:
             # Clear backpressure signal if queue accepted the item
             if self.backpressure_event.is_set():
                 self.backpressure_event.clear()
-        except Exception as e:
+        except Full:
             # Queue is full and blocked - increment overflow counter and signal backpressure
             self.queue_overflow_count += 1
             self.dropped_results += 1

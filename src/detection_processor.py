@@ -8,7 +8,7 @@ import logging
 import torch
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from queue import Queue, Empty
+from queue import Queue, Empty, Full
 from threading import Thread, Event
 from collections import deque
 from src.visualization_utils import draw_detections
@@ -258,7 +258,7 @@ class DetectionProcessor:
                     # Clear backpressure signal if queue accepted the item
                     if self.backpressure_event.is_set():
                         self.backpressure_event.clear()
-                except Exception as e:
+                except Full:
                     # Queue is full and blocked - increment overflow counter and signal backpressure
                     self.queue_overflow_count += 1
                     self.dropped_results += 1
