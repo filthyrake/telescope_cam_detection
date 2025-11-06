@@ -10,6 +10,9 @@ Values that should be user-configurable are loaded from config.yaml instead.
 # Timeout for getting items from queues (blocking operations)
 QUEUE_GET_TIMEOUT_SECONDS = 0.1
 
+# Timeout for putting items into queues (blocking operations with backpressure)
+QUEUE_PUT_TIMEOUT_SECONDS = 1.0
+
 # Timeout for thread join operations
 THREAD_JOIN_TIMEOUT_SECONDS = 5.0
 

@@ -17,6 +17,7 @@ from src.time_of_day_filter import TimeOfDayFilter
 from src.object_tracker import ObjectTracker
 from src.constants import (
     QUEUE_GET_TIMEOUT_SECONDS,
+    QUEUE_PUT_TIMEOUT_SECONDS,
     LOG_DROPPED_EVERY_N,
     ERROR_SLEEP_SECONDS,
     THREAD_JOIN_TIMEOUT_SECONDS,
@@ -108,6 +109,10 @@ class DetectionProcessor:
         self.dropped_results = 0  # Track dropped results when queue is full
         self.last_drop_warning_time = 0  # Track last drop warning for rate limiting
         self.drop_count_since_warning = 0  # Track drops since last warning
+        self.queue_overflow_count = 0  # Track queue overflow events (backpressure triggered)
+        
+        # Backpressure signaling
+        self.backpressure_event = Event()  # Signals upstream to slow down
 
     def start(self) -> bool:
         """
@@ -246,12 +251,21 @@ class DetectionProcessor:
                             if saved_path:
                                 processed_result['snapshot_saved'] = saved_path
 
-                # Send to output queue
+                # Send to output queue with backpressure
+                # Use blocking put with timeout instead of put_nowait to avoid silent data loss
                 try:
-                    self.output_queue.put_nowait(processed_result)
+                    self.output_queue.put(processed_result, timeout=QUEUE_PUT_TIMEOUT_SECONDS)
+                    # Clear backpressure signal if queue accepted the item
+                    if self.backpressure_event.is_set():
+                        self.backpressure_event.clear()
                 except Exception as e:
+                    # Queue is full and blocked - increment overflow counter and signal backpressure
+                    self.queue_overflow_count += 1
                     self.dropped_results += 1
                     self.drop_count_since_warning += 1
+                    
+                    # Signal upstream components to slow down
+                    self.backpressure_event.set()
 
                     # Log with drop rate when drops are frequent (improved observability)
                     current_time = time.time()
@@ -263,9 +277,10 @@ class DetectionProcessor:
                     if should_log:
                         drop_rate = self.drop_count_since_warning / max(time_since_last_warning, MIN_TIME_DELTA)
                         total_drop_rate = self.dropped_results / max(self.processed_count, 1)
-                        logger.warning(
-                            f"Output queue full: dropped {self.dropped_results} total results "
-                            f"(drop rate: {drop_rate:.2f}/s, {total_drop_rate*100:.1f}% overall) - system overloaded"
+                        logger.error(
+                            f"Output queue blocked - system overloaded: dropped {self.dropped_results} total results "
+                            f"(drop rate: {drop_rate:.2f}/s, {total_drop_rate*100:.1f}% overall, "
+                            f"{self.queue_overflow_count} overflow events)"
                         )
                         self.last_drop_warning_time = current_time
                         self.drop_count_since_warning = 0
@@ -393,6 +408,7 @@ class DetectionProcessor:
             'time_of_day_filter_enabled': self.enable_time_of_day_filter,
             'tracking_enabled': self.enable_tracking,
             'dropped_results': self.dropped_results,
+            'queue_overflow_count': self.queue_overflow_count,
         }
 
         # Add drop rate
