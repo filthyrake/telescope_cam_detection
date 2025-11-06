@@ -278,9 +278,11 @@ class DetectionProcessor:
                         drop_rate = self.drop_count_since_warning / max(time_since_last_warning, MIN_TIME_DELTA)
                         total_drop_rate = self.dropped_results / max(self.processed_count, 1)
                         logger.error(
-                            f"Output queue blocked - system overloaded: dropped {self.dropped_results} total results "
-                            f"(drop rate: {drop_rate:.2f}/s, {total_drop_rate*100:.1f}% overall, "
-                            f"{self.queue_overflow_count} overflow events)"
+                            (
+                                f"Output queue blocked - system overloaded: dropped {self.dropped_results} total results "
+                                f"(drop rate: {drop_rate:.2f}/s, {total_drop_rate*100:.1f}% overall, "
+                                f"{self.queue_overflow_count} overflow events)"
+                            )
                         )
                         self.last_drop_warning_time = current_time
                         self.drop_count_since_warning = 0

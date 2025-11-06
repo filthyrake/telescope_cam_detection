@@ -21,6 +21,10 @@ sys.modules['numpy'] = MagicMock()
 from src.detection_processor import DetectionProcessor
 from src.constants import QUEUE_PUT_TIMEOUT_SECONDS
 
+# Test timing constants
+PROCESSING_OVERHEAD_SECONDS = 0.5  # Additional time to allow for queue processing
+BACKPRESSURE_CLEAR_WAIT_SECONDS = 0.3  # Time to wait for backpressure signal to clear
+
 
 class TestDetectionProcessorBackpressure(unittest.TestCase):
     """Tests for DetectionProcessor queue backpressure mechanism."""
@@ -100,7 +104,7 @@ class TestDetectionProcessorBackpressure(unittest.TestCase):
         input_queue.put(detection_result)
         
         # Wait longer for processing (timeout + processing time)
-        time.sleep(QUEUE_PUT_TIMEOUT_SECONDS + 0.5)
+        time.sleep(QUEUE_PUT_TIMEOUT_SECONDS + PROCESSING_OVERHEAD_SECONDS)
         
         # Check that overflow was tracked
         self.assertGreater(processor.queue_overflow_count, 0)
@@ -139,7 +143,7 @@ class TestDetectionProcessorBackpressure(unittest.TestCase):
         input_queue.put(detection_result)
         
         # Wait for processing
-        time.sleep(0.3)
+        time.sleep(BACKPRESSURE_CLEAR_WAIT_SECONDS)
         
         # Backpressure should be cleared
         self.assertFalse(processor.backpressure_event.is_set())
@@ -175,7 +179,7 @@ class TestDetectionProcessorBackpressure(unittest.TestCase):
         input_queue.put(detection_result)
         
         # Wait for processing attempt
-        time.sleep(QUEUE_PUT_TIMEOUT_SECONDS + 0.5)
+        time.sleep(QUEUE_PUT_TIMEOUT_SECONDS + PROCESSING_OVERHEAD_SECONDS)
         
         elapsed = time.time() - start_time
         
