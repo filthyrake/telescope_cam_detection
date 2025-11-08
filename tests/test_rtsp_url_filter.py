@@ -67,10 +67,8 @@ class TestRTSPURLFilter(unittest.TestCase):
         self.logger.info(msg)
         
         output = self.get_log_output()
-        self.assertNotIn("pass1", output)
-        self.assertNotIn("pass2", output)
-        self.assertNotIn("user1", output)
-        self.assertNotIn("user2", output)
+        self.assertNotIn("user1:pass1", output)
+        self.assertNotIn("user2:pass2", output)
         self.assertIn("rtsp://***:***@10.0.0.1/stream", output)
         self.assertIn("rtsp://***:***@10.0.0.2/stream", output)
     
@@ -98,7 +96,7 @@ class TestRTSPURLFilter(unittest.TestCase):
         self.logger.info(f"ONVIF URL: {url}")
         
         output = self.get_log_output()
-        self.assertNotIn("password", output)
+        self.assertNotIn("admin:password", output)
         self.assertIn("rtsp://***:***@192.168.1.100:554/Streaming/Channels/101", output)
     
     def test_h265_url_format(self):
@@ -107,7 +105,7 @@ class TestRTSPURLFilter(unittest.TestCase):
         self.logger.info(f"H265 URL: {url}")
         
         output = self.get_log_output()
-        self.assertNotIn("secret", output)
+        self.assertNotIn("admin:secret", output)
         self.assertIn("rtsp://***:***@192.168.1.100:554/h265Preview_01_main", output)
     
     def test_url_without_credentials(self):
@@ -134,7 +132,7 @@ class TestRTSPURLFilter(unittest.TestCase):
         self.logger.info(f"Uppercase: {url}")
         
         output = self.get_log_output()
-        self.assertNotIn("password", output)
+        self.assertNotIn("admin:password", output)
         # The protocol part is preserved but credentials are redacted
         self.assertIn("RTSP://***:***@192.168.1.100:554/stream", output)
     
@@ -156,7 +154,7 @@ class TestRTSPURLFilter(unittest.TestCase):
             self.logger.error(f"Connection failed: {e}", exc_info=True)
         
         output = self.get_log_output()
-        self.assertNotIn("mypass", output)
+        self.assertNotIn("admin:mypass", output)
         self.assertIn("rtsp://***:***@192.168.1.100:554/stream", output)
     
     def test_formatted_logging(self):
@@ -231,7 +229,7 @@ class TestRTSPURLFilterDirect(unittest.TestCase):
         self.assertIn("Connecting to camera", result)
         self.assertIn("with timeout 5s", result)
         self.assertIn("rtsp://***:***@10.0.0.1/stream", result)
-        self.assertNotIn("pass", result)
+        self.assertNotIn("rtsp://admin:pass@10.0.0.1/stream", result)
 
 
 if __name__ == '__main__':

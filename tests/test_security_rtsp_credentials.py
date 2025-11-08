@@ -15,16 +15,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import unittest
 import logging
 from io import StringIO
-from unittest.mock import MagicMock, patch
-from queue import Queue
+from unittest.mock import MagicMock
 
 # Mock dependencies before importing
 sys.modules['cv2'] = MagicMock()
 sys.modules['numpy'] = MagicMock()
 sys.modules['torch'] = MagicMock()
 
-from src.stream_capture import RTSPStreamCapture, RTSPURLFilter
-from src.stream_capture_gpu_ffmpeg import RTSPStreamCaptureGPU
+from src.stream_capture import RTSPURLFilter
+# Import GPU module to ensure filter is attached
+import src.stream_capture_gpu_ffmpeg  # noqa: F401
 
 
 class TestRTSPCredentialSecurity(unittest.TestCase):
@@ -36,17 +36,24 @@ class TestRTSPCredentialSecurity(unittest.TestCase):
         self.handler = logging.StreamHandler(self.log_stream)
         self.handler.setFormatter(logging.Formatter('%(message)s'))
         
-        # Store original handlers so we can restore them
+        # Store original handlers and filters so we can restore them
         self.original_handlers = {
             'src.stream_capture': logging.getLogger('src.stream_capture').handlers[:],
             'src.stream_capture_gpu_ffmpeg': logging.getLogger('src.stream_capture_gpu_ffmpeg').handlers[:]
         }
+        self.original_filters = {
+            'src.stream_capture': logging.getLogger('src.stream_capture').filters[:],
+            'src.stream_capture_gpu_ffmpeg': logging.getLogger('src.stream_capture_gpu_ffmpeg').filters[:]
+        }
     
     def tearDown(self):
-        """Restore original handlers."""
+        """Restore original handlers and filters."""
         for logger_name, handlers in self.original_handlers.items():
             logger = logging.getLogger(logger_name)
             logger.handlers = handlers
+        for logger_name, filters in self.original_filters.items():
+            logger = logging.getLogger(logger_name)
+            logger.filters = filters
     
     def get_log_output(self):
         """Get the captured log output."""
@@ -134,23 +141,25 @@ class TestRTSPCredentialSecurity(unittest.TestCase):
         """
         test_cases = [
             ("rtsp://admin:password123@192.168.1.100:554/stream",
-             "rtsp://***:***@192.168.1.100:554/stream"),
+             "rtsp://***:***@192.168.1.100:554/stream",
+             "password123"),
             ("rtsp://user:p@ss!word@10.0.0.1/main",
-             "rtsp://***:***@10.0.0.1/main"),
+             "rtsp://***:***@10.0.0.1/main",
+             "p@ss!word"),
             ("rtsp://test:@192.168.1.50:554/sub",
-             "rtsp://***:***@192.168.1.50:554/sub"),
+             "rtsp://***:***@192.168.1.50:554/sub",
+             ""),
         ]
         
         filter_obj = RTSPURLFilter()
         
-        for original, expected in test_cases:
+        for original, expected, password in test_cases:
             redacted = filter_obj._redact_credentials(original)
             self.assertEqual(redacted, expected,
                            f"URL {original} should be redacted to {expected}")
-            self.assertNotIn("password", redacted,
-                           "Password should never appear in redacted URL")
-            self.assertNotIn("p@ss!word", redacted,
-                           "Special character passwords should be redacted")
+            if password:
+                self.assertNotIn(password, redacted,
+                               f"Password '{password}' should never appear in redacted URL")
 
 
 if __name__ == '__main__':
