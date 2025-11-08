@@ -5,6 +5,7 @@ Handles video stream capture from Reolink RLC-410W camera with minimal latency.
 
 import cv2
 import os
+import re
 import time
 import logging
 from typing import Optional, Tuple
@@ -23,7 +24,102 @@ from src.constants import (
 )
 from src.utils import calculate_fps
 
+
+class RTSPURLFilter(logging.Filter):
+    """
+    Logging filter that redacts credentials from RTSP URLs.
+    
+    Replaces rtsp://user:pass@host with rtsp://***:***@host to prevent
+    credential leakage in logs and error messages.
+    """
+    
+    # Pattern to match RTSP URLs with credentials
+    # Matches: rtsp://username:password@host
+    # This pattern correctly handles:
+    # - Empty passwords (rtsp://user:@host)
+    # - Special characters including @ in passwords (rtsp://user:p@ss@host)
+    # - IP addresses and domain names as hostnames
+    # - Multiple URLs in the same message (stops at whitespace)
+    # The key is matching @ followed by a valid hostname/IP pattern using lookahead
+    RTSP_CREDENTIAL_PATTERN = re.compile(
+        r'(rtsp://)([^:/@\s]+):([^\s]*)@(?=(?:\d{1,3}\.){3}\d{1,3}(?:[:/]|$)|[a-zA-Z0-9][\w\-\.]*(?:[:/]|$))',
+        re.IGNORECASE
+    )
+    
+    def filter(self, record: logging.LogRecord) -> bool:
+        """
+        Redact credentials from RTSP URLs in log messages.
+        
+        Args:
+            record: Log record to filter
+            
+        Returns:
+            True (always allow the record through, just modify it)
+        """
+        # Redact credentials in the main message
+        if record.msg:
+            record.msg = self._redact_credentials(str(record.msg))
+        
+        # Redact credentials in formatted arguments
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {
+                    k: self._redact_credentials(str(v)) if isinstance(v, str) else v
+                    for k, v in record.args.items()
+                }
+            elif isinstance(record.args, tuple):
+                record.args = tuple(
+                    self._redact_credentials(str(arg)) if isinstance(arg, str) else arg
+                    for arg in record.args
+                )
+        
+        # Redact credentials in exception info (exc_text)
+        if record.exc_text:
+            record.exc_text = self._redact_credentials(record.exc_text)
+        
+        # Also handle exception info that hasn't been formatted yet
+        if record.exc_info:
+            # exc_info is a tuple (type, value, traceback)
+            # We need to redact the exception message (value)
+            if record.exc_info[1] is not None:
+                # Modify the exception's string representation
+                exc_msg = str(record.exc_info[1])
+                redacted_msg = self._redact_credentials(exc_msg)
+                if exc_msg != redacted_msg:
+                    # Create a new exception with redacted message
+                    try:
+                        record.exc_info = (
+                            record.exc_info[0],
+                            type(record.exc_info[1])(redacted_msg),
+                            record.exc_info[2]
+                        )
+                    except:
+                        # If we can't create a new exception, just redact exc_text later
+                        pass
+            
+        return True
+    
+    def _redact_credentials(self, text: str) -> str:
+        """
+        Replace credentials in RTSP URLs with asterisks.
+        
+        Args:
+            text: Text that may contain RTSP URLs
+            
+        Returns:
+            Text with credentials redacted
+        """
+        # Replace rtsp://user:pass@ with rtsp://***:***@
+        # Group 1: protocol (rtsp://)
+        # Group 2: username (discarded)
+        # Group 3: password (discarded)
+        # Replacement: protocol + ***:***@
+        return self.RTSP_CREDENTIAL_PATTERN.sub(r'\1***:***@', text)
+
+
 logger = logging.getLogger(__name__)
+# Add RTSP URL filter to prevent credential leakage in logs
+logger.addFilter(RTSPURLFilter())
 
 
 class RTSPStreamCapture:
