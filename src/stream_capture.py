@@ -93,7 +93,7 @@ class RTSPURLFilter(logging.Filter):
                             type(record.exc_info[1])(redacted_msg),
                             record.exc_info[2]
                         )
-                    except Exception:
+                    except (TypeError, AttributeError):
                         # If we can't create a new exception, just redact exc_text later
                         pass
             

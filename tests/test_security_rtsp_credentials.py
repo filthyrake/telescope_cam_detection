@@ -154,7 +154,19 @@ class TestRTSPCredentialSecurity(unittest.TestCase):
         filter_obj = RTSPURLFilter()
         
         for original, expected, password in test_cases:
-            redacted = filter_obj._redact_credentials(original)
+            # Create a mock LogRecord with msg set to the original URL
+            record = logging.LogRecord(
+                name="test",
+                level=logging.INFO,
+                pathname=__file__,
+                lineno=0,
+                msg=original,
+                args=(),
+                exc_info=None
+            )
+            filter_obj.filter(record)
+            redacted = record.msg
+            
             self.assertEqual(redacted, expected,
                            f"URL {original} should be redacted to {expected}")
             if password:
