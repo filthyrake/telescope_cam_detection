@@ -73,6 +73,24 @@ This project follows PEP 8 style guide with:
 - Maximum line length: 100 characters
 - Type hints where possible
 
+**Linting commands:**
+```bash
+# Check for syntax errors and undefined names
+flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
+
+# Check code style (max line length 100)
+flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=100 --statistics
+
+# Format code with black
+black --line-length 100 src/ main.py
+
+# Check import ordering
+isort --profile black src/ main.py
+
+# Security scanning
+bandit -r src/ -ll
+```
+
 ```python
 # Example function signature
 def process_frame(
@@ -317,8 +335,8 @@ Follow Conventional Commits:
 
 ## Additional Resources
 
-- [README.md](../README.md) - Project overview and quick start
-- [CONTRIBUTING.md](../CONTRIBUTING.md) - Contribution guidelines
-- [docs/](../docs/) - Comprehensive documentation
-- [TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md) - Common issues
-- [PERFORMANCE.md](../docs/PERFORMANCE.md) - Optimization guide
+- <a>README.md</a> - Project overview and quick start
+- <a>CONTRIBUTING.md</a> - Contribution guidelines
+- <a>docs/</a> - Comprehensive documentation
+- <a>TROUBLESHOOTING.md</a> - Common issues
+- <a>PERFORMANCE.md</a> - Optimization guide
