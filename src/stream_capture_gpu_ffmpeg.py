@@ -13,8 +13,11 @@ from typing import Optional, Union
 from queue import Queue, Full
 from threading import Thread, Event, Lock
 from src.utils import calculate_fps
+from src.stream_capture import RTSPURLFilter
 
 logger = logging.getLogger(__name__)
+# Add RTSP URL filter to prevent credential leakage in logs
+logger.addFilter(RTSPURLFilter())
 
 
 class RTSPStreamCaptureGPU:
