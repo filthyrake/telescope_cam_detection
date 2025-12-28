@@ -5,6 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Backyard Computer Vision System</title>
     <style>
+        /* Accessibility helpers */
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: #000;
+            color: #fff;
+            padding: 8px;
+            z-index: 100;
+            text-decoration: none;
+        }
+
+        .skip-link:focus {
+            top: 0;
+        }
+
+        /* Visible focus indicator for keyboard users */
+        :focus {
+            outline: 3px solid #0096ff;
+            outline-offset: 2px;
+        }
+
+        /* Screen-reader only helper */
+        .visually-hidden {
+            position: absolute !important;
+            height: 1px;
+            width: 1px;
+            overflow: hidden;
+            clip: rect(1px, 1px, 1px, 1px);
+            white-space: nowrap;
+        }
         * {
             margin: 0;
             padding: 0;
@@ -446,7 +477,8 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <div class="container" id="main-content" tabindex="-1">
         <header>
             <h1>🔭 Backyard Computer Vision System</h1>
             <div id="connectionStatus" class="status disconnected">Disconnected</div>
@@ -501,9 +533,9 @@
         <!-- Single Camera View -->
         <div class="main-content" id="singleView">
             <div class="video-container" id="videoContainer">
-                <canvas id="videoCanvas"></canvas>
+                <canvas id="videoCanvas" role="img" aria-labelledby="cameraName" tabindex="0"></canvas>
                 <div class="video-overlay" id="videoOverlay">
-                    <div><strong id="cameraName">-</strong></div>
+                    <div><strong id="cameraName">No camera selected</strong></div>
                     <div>Frame: <span id="frameId">-</span></div>
                     <div>FPS: <span id="fps">-</span></div>
                 </div>
@@ -554,9 +586,12 @@
             </div>
         </div>
 
+        <!-- Live region for detection alerts (polite) -->
+        <div id="detection-status" role="status" aria-live="polite" aria-atomic="true" class="visually-hidden"></div>
+
         <div class="detections-list">
             <h2>Recent Detections</h2>
-            <div id="detectionsList" class="no-detections">
+            <div id="detectionsList" class="no-detections" role="list" aria-label="Recent detections">
                 No detections yet
             </div>
         </div>

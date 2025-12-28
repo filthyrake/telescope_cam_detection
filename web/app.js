@@ -48,6 +48,11 @@ class DetectionApp {
         // Memory monitoring (Issue #125)
         this.memoryStatsInterval = null;
 
+        // Accessibility state tracking
+        this._accessibilitySetup = false;
+        this._previousTopDetection = null;
+        this._hadDetections = false;
+
         this.init();
     }
 
@@ -60,9 +65,102 @@ class DetectionApp {
         this.setupViewModeToggle();
         this.setupLayoutSelector();
         this.setupCameraTogglePanel();
+        this.setupAccessibility();
         this.connectWebSocket();
         this.startVideoStream();
         this.startMemoryStatsPolling();
+    }
+
+    /* Accessibility setup: ARIA attributes, keyboard handlers, live-region wiring */
+    setupAccessibility() {
+        // Prevent duplicate event listeners on hot reload
+        if (this._accessibilitySetup) return;
+        this._accessibilitySetup = true;
+
+        // Controls
+        const viewModeBtn = document.getElementById('viewModeBtn');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const cameraToggleBtn = document.getElementById('cameraToggleBtn');
+        const cameraSelect = document.getElementById('cameraSelect');
+        const cameraTogglePanel = document.getElementById('cameraTogglePanel');
+        const detectionsList = document.getElementById('detectionsList');
+        const detectionStatus = document.getElementById('detection-status');
+
+        if (viewModeBtn) {
+            viewModeBtn.setAttribute('aria-label', 'Toggle view mode: switch between single and grid view');
+            viewModeBtn.setAttribute('aria-pressed', this.viewMode === 'grid' ? 'true' : 'false');
+        }
+
+        if (fullscreenBtn) {
+            fullscreenBtn.setAttribute('aria-label', 'Toggle fullscreen for video');
+        }
+
+        if (cameraToggleBtn) {
+            cameraToggleBtn.setAttribute('aria-controls', 'cameraTogglePanel');
+            cameraToggleBtn.setAttribute('aria-expanded', 'false');
+            cameraToggleBtn.setAttribute('aria-label', 'Show or hide camera visibility controls');
+        }
+
+        if (cameraSelect) {
+            cameraSelect.setAttribute('aria-label', 'Select camera');
+        }
+
+        // Global Escape handling: close panels and return focus
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                // Close camera toggle panel if open
+                if (cameraTogglePanel && cameraTogglePanel.style.display === 'block') {
+                    cameraTogglePanel.style.display = 'none';
+                    if (cameraToggleBtn) {
+                        cameraToggleBtn.focus();
+                        cameraToggleBtn.setAttribute('aria-expanded', 'false');
+                    }
+                }
+
+                // Close grid controls when visible
+                const gridControls = document.getElementById('gridControls');
+                if (gridControls && gridControls.style.display === 'flex') {
+                    gridControls.style.display = 'none';
+                    if (viewModeBtn) viewModeBtn.focus();
+                }
+            }
+        });
+
+        // Arrow navigation in detections list: let ArrowDown/ArrowUp move focus between items
+        if (detectionsList) {
+            detectionsList.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    const focusable = Array.from(detectionsList.querySelectorAll('.detection-item[tabindex="0"]'));
+                    if (focusable.length === 0) return;
+
+                    const idx = focusable.indexOf(document.activeElement);
+                    if (idx === -1 && focusable[0]) {
+                        focusable[0].focus();
+                        e.preventDefault();
+                        return;
+                    }
+
+                    if (e.key === 'ArrowDown' && idx < focusable.length - 1) {
+                        focusable[idx + 1].focus();
+                        e.preventDefault();
+                    } else if (e.key === 'ArrowUp' && idx > 0) {
+                        focusable[idx - 1].focus();
+                        e.preventDefault();
+                    }
+                }
+            });
+        }
+
+        // Ensure live region exists
+        if (!detectionStatus) {
+            const region = document.createElement('div');
+            region.id = 'detection-status';
+            region.setAttribute('role', 'status');
+            region.setAttribute('aria-live', 'polite');
+            region.setAttribute('aria-atomic', 'true');
+            region.className = 'visually-hidden';
+            document.body.appendChild(region);
+        }
     }
 
     async fetchCameras() {
@@ -131,19 +229,26 @@ class DetectionApp {
         const cameraSelect = document.getElementById('cameraSelect');
         const gridControls = document.getElementById('gridControls');
 
+        // Mark initial accessibility state
+        viewModeBtn.setAttribute('aria-pressed', this.viewMode === 'grid' ? 'true' : 'false');
+
         viewModeBtn.addEventListener('click', () => {
             if (this.viewMode === 'single') {
                 this.switchViewMode('grid');
                 viewModeBtn.textContent = '📹 Single View';
                 cameraSelect.disabled = true;
+                cameraSelect.setAttribute('aria-disabled', 'true');
                 gridControls.style.display = 'flex';
+                viewModeBtn.setAttribute('aria-pressed', 'true');
             } else {
                 this.switchViewMode('single');
                 viewModeBtn.textContent = '📊 Grid View';
                 cameraSelect.disabled = false;
+                cameraSelect.removeAttribute('aria-disabled');
                 gridControls.style.display = 'none';
                 // Hide camera toggle panel when switching to single view
                 document.getElementById('cameraTogglePanel').style.display = 'none';
+                viewModeBtn.setAttribute('aria-pressed', 'false');
             }
         });
 
@@ -155,6 +260,7 @@ class DetectionApp {
             viewModeBtn.style.opacity = '0.5';
             viewModeBtn.style.cursor = 'not-allowed';
             viewModeBtn.title = 'Grid view requires multiple cameras';
+            viewModeBtn.setAttribute('aria-disabled', 'true');
         }
     }
 
@@ -179,8 +285,19 @@ class DetectionApp {
         });
 
         // Toggle panel visibility
+        toggleBtn.setAttribute('aria-expanded', 'false');
         toggleBtn.addEventListener('click', () => {
-            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+            const isOpen = panel.style.display === 'block';
+            panel.style.display = isOpen ? 'none' : 'block';
+            toggleBtn.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+            if (isOpen) {
+                // Panel is being closed, return focus to the toggle button
+                toggleBtn.focus();
+            } else {
+                // Panel is being opened, move focus into the panel for keyboard users
+                const firstInput = panel.querySelector('input, button, select');
+                if (firstInput) firstInput.focus();
+            }
         });
 
         // Create checkbox for each camera
@@ -250,9 +367,22 @@ class DetectionApp {
             gridItem.id = `grid-${camera.id}`;
             gridItem.dataset.cameraId = camera.id;
 
+            // Make grid item keyboard accessible and clickable
+            gridItem.tabIndex = 0;
+            gridItem.setAttribute('role', 'button');
+            gridItem.setAttribute('aria-label', `Open ${camera.name} in single view`);
+
             // Click to fullscreen
             gridItem.addEventListener('click', () => {
                 this.fullscreenGridCamera(camera.id);
+            });
+
+            // Keyboard activation (Enter / Space)
+            gridItem.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    this.fullscreenGridCamera(camera.id);
+                }
             });
 
             // Create image element for video stream
@@ -734,19 +864,26 @@ class DetectionApp {
 
     updateDetectionsList(detections) {
         const listElement = document.getElementById('detectionsList');
+        const liveRegion = document.getElementById('detection-status');
 
         if (detections.length === 0) {
             listElement.innerHTML = '<div class="no-detections">No detections</div>';
+            // Only announce "No detections" when transitioning from having detections
+            if (liveRegion && this._hadDetections) {
+                liveRegion.textContent = 'No detections';
+            }
+            this._hadDetections = false;
+            this._previousTopDetection = null;
             return;
         }
 
-        // Sort by confidence
+        // Sort by confidence and show top 10
         const sorted = [...detections].sort((a, b) => b.confidence - a.confidence);
-
-        // Display top 10
         const top = sorted.slice(0, 10);
 
-        listElement.innerHTML = top.map(det => {
+        // Clear and build accessible list items
+        listElement.innerHTML = '';
+        top.forEach(det => {
             let itemClass = 'detection-item';
             if (det.class_name === 'person') {
                 itemClass += ' person';
@@ -754,13 +891,53 @@ class DetectionApp {
                 itemClass += ' animal';
             }
 
-            return `
-                <div class="${itemClass}">
-                    <div class="detection-class">${det.class_name}</div>
-                    <div class="detection-confidence">Confidence: ${(det.confidence * 100).toFixed(1)}%</div>
-                </div>
-            `;
-        }).join('');
+            const item = document.createElement('div');
+            item.className = itemClass;
+            item.setAttribute('role', 'listitem');
+            item.tabIndex = 0;
+            item.setAttribute('aria-label', `${det.class_name}, confidence ${(det.confidence * 100).toFixed(1)} percent`);
+
+            const classDiv = document.createElement('div');
+            classDiv.className = 'detection-class';
+            classDiv.textContent = det.class_name;
+
+            const confDiv = document.createElement('div');
+            confDiv.className = 'detection-confidence';
+            confDiv.textContent = `Confidence: ${(det.confidence * 100).toFixed(1)}%`;
+
+            // Activation: announce selection in live region
+            const announce = () => {
+                if (liveRegion) {
+                    liveRegion.textContent = `Selected detection: ${det.class_name} at ${(det.confidence * 100).toFixed(1)} percent`;
+                }
+            };
+
+            item.addEventListener('click', announce);
+            item.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    announce();
+                }
+            });
+
+            item.appendChild(classDiv);
+            item.appendChild(confDiv);
+            listElement.appendChild(item);
+        });
+
+        // Only announce when top detection changes (different class or new detection)
+        if (liveRegion && top.length > 0) {
+            const topDet = top[0];
+            const prevTop = this._previousTopDetection;
+            const isNewDetection = !prevTop || prevTop.class_name !== topDet.class_name;
+
+            if (isNewDetection) {
+                liveRegion.textContent = `New detection: ${topDet.class_name} detected at ${(topDet.confidence * 100).toFixed(0)} percent confidence`;
+            }
+
+            this._previousTopDetection = { class_name: topDet.class_name, confidence: topDet.confidence };
+        }
+        this._hadDetections = true;
     }
 
     updateConnectionStatus(connected) {
