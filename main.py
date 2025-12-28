@@ -13,10 +13,20 @@ from pathlib import Path
 from queue import Queue, Empty
 from typing import Optional, Dict, Any
 import yaml
+import os
 
 # Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+# Configure structured logging early (can be overridden with JSON_LOGS env var)
+from src.logging_config import setup_logging
+json_logging = os.getenv('JSON_LOGS', 'false').lower() == 'true'
+setup_logging(json_output=json_logging)
+
+# Application logger
+logger = logging.getLogger(__name__)
+
+# Import application components after logging is configured
 from src.stream_capture import RTSPStreamCapture, create_rtsp_url
 from src.inference_engine_yolox import InferenceEngine  # YOLOX version (47x faster!)
 from src.shared_inference_coordinator import SharedInferenceCoordinator  # Batched inference
@@ -27,12 +37,6 @@ from src.two_stage_pipeline_yolox import TwoStageDetectionPipeline  # YOLOX-comp
 from src.species_classifier import SpeciesClassifier
 from src.camera_health_monitor import CameraHealthMonitor
 from src.face_masker import FaceMasker, FaceMaskingCache  # Privacy-preserving face masking
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 # Configuration validation constants
 MIN_INPUT_DIMENSION = 64
