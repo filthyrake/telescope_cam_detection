@@ -48,6 +48,11 @@ class DetectionApp {
         // Memory monitoring (Issue #125)
         this.memoryStatsInterval = null;
 
+        // Accessibility state tracking
+        this._accessibilitySetup = false;
+        this._previousTopDetection = null;
+        this._hadDetections = false;
+
         this.init();
     }
 
@@ -68,6 +73,10 @@ class DetectionApp {
 
     /* Accessibility setup: ARIA attributes, keyboard handlers, live-region wiring */
     setupAccessibility() {
+        // Prevent duplicate event listeners on hot reload
+        if (this._accessibilitySetup) return;
+        this._accessibilitySetup = true;
+
         // Controls
         const viewModeBtn = document.getElementById('viewModeBtn');
         const fullscreenBtn = document.getElementById('fullscreenBtn');
@@ -281,12 +290,13 @@ class DetectionApp {
             const isOpen = panel.style.display === 'block';
             panel.style.display = isOpen ? 'none' : 'block';
             toggleBtn.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
-            if (!isOpen) {
-                // Move focus into the panel for keyboard users
+            if (isOpen) {
+                // Panel is being closed, return focus to the toggle button
+                toggleBtn.focus();
+            } else {
+                // Panel is being opened, move focus into the panel for keyboard users
                 const firstInput = panel.querySelector('input, button, select');
                 if (firstInput) firstInput.focus();
-            } else {
-                toggleBtn.focus();
             }
         });
 
@@ -858,7 +868,12 @@ class DetectionApp {
 
         if (detections.length === 0) {
             listElement.innerHTML = '<div class="no-detections">No detections</div>';
-            if (liveRegion) liveRegion.textContent = 'No detections';
+            // Only announce "No detections" when transitioning from having detections
+            if (liveRegion && this._hadDetections) {
+                liveRegion.textContent = 'No detections';
+            }
+            this._hadDetections = false;
+            this._previousTopDetection = null;
             return;
         }
 
@@ -910,11 +925,19 @@ class DetectionApp {
             listElement.appendChild(item);
         });
 
-        // Announce top detection summary in polite live region
+        // Only announce when top detection changes (different class or new detection)
         if (liveRegion && top.length > 0) {
             const topDet = top[0];
-            liveRegion.textContent = `New detection: ${topDet.class_name} detected at ${(topDet.confidence * 100).toFixed(0)} percent confidence`;
+            const prevTop = this._previousTopDetection;
+            const isNewDetection = !prevTop || prevTop.class_name !== topDet.class_name;
+
+            if (isNewDetection) {
+                liveRegion.textContent = `New detection: ${topDet.class_name} detected at ${(topDet.confidence * 100).toFixed(0)} percent confidence`;
+            }
+
+            this._previousTopDetection = { class_name: topDet.class_name, confidence: topDet.confidence };
         }
+        this._hadDetections = true;
     }
 
     updateConnectionStatus(connected) {
