@@ -19,6 +19,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depe
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, Field
 import uvicorn
 from queue import Empty
 from src.constants import (
@@ -32,6 +33,122 @@ if TYPE_CHECKING:
     from .face_masker import FaceMasker, FaceMaskingCache
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Response Models
+# ---------------------------------------------------------------------------
+
+class QueueMetricItem(BaseModel):
+    camera_id: str = Field(..., description="Camera identifier", example="cam1")
+    camera_name: str = Field(..., description="Human-readable camera name", example="Backyard North")
+    size: int = Field(..., description="Current queue depth", example=1)
+    maxsize: int = Field(..., description="Maximum queue capacity", example=2)
+    utilization: float = Field(..., description="Queue fill ratio (0.0–1.0)", example=0.5)
+    status: str = Field(..., description="Queue status: ok | warning | critical", example="ok")
+
+
+class QueueAlert(BaseModel):
+    level: str = Field(..., description="Alert severity: warning | critical", example="warning")
+    queue: str = Field(..., description="Queue identifier", example="frame_queue_cam1")
+    message: str = Field(..., description="Human-readable alert message",
+                         example="Frame queue for camera 'cam1' is 75% full (3/4)")
+
+
+class QueueMetrics(BaseModel):
+    frame_queues: List[QueueMetricItem] = Field(default_factory=list,
+                                                description="Per-camera frame queue metrics")
+    inference_queues: List[QueueMetricItem] = Field(default_factory=list,
+                                                    description="Per-camera inference queue metrics")
+    detection_queue: Dict[str, Any] = Field(default_factory=dict,
+                                            description="Shared detection queue metrics")
+
+
+class HealthResponse(BaseModel):
+    status: str = Field(..., description="Overall system health: ok | warning | critical",
+                        example="ok")
+    timestamp: float = Field(..., description="Unix timestamp of the health check", example=1700000000.0)
+    active_connections: int = Field(..., description="Number of active WebSocket connections", example=2)
+    queue_monitoring_enabled: bool = Field(..., description="Whether queue health monitoring is active",
+                                           example=True)
+    queues: QueueMetrics = Field(..., description="Detailed queue metrics per camera and component")
+    alerts: List[QueueAlert] = Field(default_factory=list,
+                                     description="Active alerts for queues exceeding thresholds")
+
+
+class CameraInfo(BaseModel):
+    id: str = Field(..., description="Camera identifier", example="cam1")
+    name: str = Field(..., description="Human-readable camera name", example="Backyard North")
+    is_connected: bool = Field(..., description="Whether the camera is currently connected", example=True)
+    fps: float = Field(..., description="Current capture frame rate", example=15.0)
+
+
+class CameraListResponse(BaseModel):
+    cameras: List[CameraInfo] = Field(..., description="List of all configured cameras")
+
+
+class StatsResponse(BaseModel):
+    active_connections: int = Field(..., description="Active WebSocket client connections", example=1)
+    num_cameras: int = Field(..., description="Total number of configured cameras", example=2)
+    cameras_with_detections: int = Field(..., description="Cameras that have produced at least one detection",
+                                         example=1)
+    last_detection_times: Dict[str, Optional[float]] = Field(
+        ...,
+        description="Most recent detection Unix timestamp per camera ID",
+        example={"cam1": 1700000000.0, "cam2": None},
+    )
+
+
+class RestartResponse(BaseModel):
+    success: bool = Field(..., description="Whether the restart was successful", example=True)
+    camera_id: str = Field(..., description="Camera that was restarted", example="cam1")
+    message: str = Field(..., description="Human-readable result message",
+                         example="Camera 'cam1' restarted successfully")
+
+
+class ClipMetadata(BaseModel):
+    filename: str = Field(..., description="Clip filename", example="detection_20240101_120000.jpg")
+    url: str = Field(..., description="URL to fetch the clip", example="/api/clips/detection_20240101_120000.jpg")
+    annotated_url: Optional[str] = Field(None, description="URL to the annotated version, if available",
+                                          example="/api/clips/detection_20240101_120000_annotated.jpg")
+    timestamp: float = Field(..., description="File modification Unix timestamp", example=1700000000.0)
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Detection metadata from the companion JSON file")
+
+
+class ClipsListResponse(BaseModel):
+    clips: List[ClipMetadata] = Field(..., description="Saved detection clips, newest first")
+
+
+class ConfigResponse(BaseModel):
+    config: Dict[str, Any] = Field(..., description="Current active configuration as a deep-copied dict")
+
+
+class TrackItem(BaseModel):
+    track_id: str = Field(..., description="Unique track UUID", example="550e8400-e29b-41d4-a716-446655440000")
+    camera_id: str = Field(..., description="Camera where this track was observed", example="cam1")
+    class_name: str = Field(..., description="Detected object class", example="bird")
+    confidence: float = Field(..., description="Detection confidence (0.0–1.0)", example=0.92)
+    bbox: List[float] = Field(..., description="Bounding box [x1, y1, x2, y2] in pixel coordinates",
+                              example=[120.0, 80.0, 240.0, 180.0])
+    first_seen: float = Field(..., description="Unix timestamp when the track first appeared",
+                              example=1700000000.0)
+    last_seen: float = Field(..., description="Unix timestamp of the most recent detection",
+                             example=1700000005.0)
+
+
+class ActiveTracksResponse(BaseModel):
+    tracks: List[TrackItem] = Field(..., description="Currently active tracks visible in the scene")
+    count: int = Field(..., description="Number of active tracks", example=3)
+
+
+# OpenAPI tag descriptions shown in /docs
+API_TAGS_METADATA = [
+    {"name": "monitoring", "description": "System-wide health, queue depths, and performance metrics."},
+    {"name": "cameras",    "description": "Per-camera health, statistics, and control actions."},
+    {"name": "clips",      "description": "Browse and retrieve saved detection clip images."},
+    {"name": "config",     "description": "Runtime configuration inspection and hot-reload."},
+    {"name": "tracking",   "description": "Object tracking trajectories and statistics."},
+]
 
 
 class WebServer:
@@ -94,7 +211,16 @@ class WebServer:
         self.mjpeg_fps = mjpeg_fps
         self.jpeg_quality = jpeg_quality
 
-        self.app = FastAPI(title="Backyard Computer Vision System")
+        self.app = FastAPI(
+            title="Backyard Computer Vision System",
+            description=(
+                "Real-time wildlife detection and telescope collision prevention system. "
+                "Streams detection results over WebSocket and exposes REST endpoints for "
+                "camera management, clip retrieval, and configuration hot-reload."
+            ),
+            version="1.0.0",
+            openapi_tags=API_TAGS_METADATA,
+        )
         self.active_connections: list[WebSocket] = []
 
         # Security for clips endpoint
@@ -198,14 +324,44 @@ class WebServer:
                 return HTMLResponse(content=clips_file.read_text())
             return HTMLResponse(content="<h1>Clips browser not found</h1>", status_code=404)
 
-        @self.app.get("/health")
+        @self.app.get(
+            "/health",
+            response_model=HealthResponse,
+            summary="System health check",
+            description=(
+                "Returns overall system health including per-camera queue utilization and active alerts.\n\n"
+                "**Status levels:**\n"
+                "- `ok` — all queues below warning threshold\n"
+                "- `warning` — at least one queue ≥ 70% full\n"
+                "- `critical` — at least one queue ≥ 90% full\n\n"
+                "Returns HTTP 200 in all cases; use the `status` field to determine degradation."
+            ),
+            responses={
+                200: {
+                    "description": "Health data returned successfully",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "status": "ok",
+                                "timestamp": 1700000000.0,
+                                "active_connections": 1,
+                                "queue_monitoring_enabled": True,
+                                "queues": {
+                                    "frame_queues": [{"camera_id": "cam1", "camera_name": "Backyard North",
+                                                      "size": 1, "maxsize": 2, "utilization": 0.5, "status": "ok"}],
+                                    "inference_queues": [],
+                                    "detection_queue": {"size": 0, "maxsize": 100, "utilization": 0.0, "status": "ok"}
+                                },
+                                "alerts": []
+                            }
+                        }
+                    }
+                }
+            },
+            tags=["monitoring"],
+        )
         async def health():
-            """
-            Health check endpoint with queue depth monitoring.
-
-            Returns overall system health with queue metrics and alerts.
-            Status levels: "ok", "warning", "critical"
-            """
+            """Health check endpoint with queue depth monitoring."""
             # Get queue health config
             queue_health_config = {}
             if self.config_getter:
@@ -311,7 +467,14 @@ class WebServer:
                 "alerts": alerts
             }
 
-        @self.app.get("/cameras")
+        @self.app.get(
+            "/cameras",
+            response_model=CameraListResponse,
+            summary="List all cameras",
+            description="Returns the ID, name, connection status, and current FPS for every configured camera.",
+            responses={200: {"description": "Camera list returned successfully"}},
+            tags=["cameras"],
+        )
         async def cameras():
             """Get list of available cameras."""
             camera_list = []
@@ -324,7 +487,17 @@ class WebServer:
                 })
             return {"cameras": camera_list}
 
-        @self.app.get("/stats")
+        @self.app.get(
+            "/stats",
+            response_model=StatsResponse,
+            summary="System statistics",
+            description=(
+                "Returns a lightweight snapshot of system activity: active WebSocket connections, "
+                "total camera count, and the last detection timestamp per camera."
+            ),
+            responses={200: {"description": "Statistics returned successfully"}},
+            tags=["monitoring"],
+        )
         async def stats():
             """Get system statistics."""
             return {
@@ -372,7 +545,19 @@ class WebServer:
                 "uptime_seconds": round(uptime_seconds, 1)
             }
 
-        @self.app.get("/api/cameras/{camera_id}/health")
+        @self.app.get(
+            "/api/cameras/{camera_id}/health",
+            summary="Camera health",
+            description=(
+                "Returns detailed health information for the specified camera. "
+                "Uses the health monitor when available; falls back to basic stream-capture stats otherwise."
+            ),
+            responses={
+                200: {"description": "Camera health data"},
+                404: {"description": "Camera ID not found"},
+            },
+            tags=["cameras"],
+        )
         async def camera_health(camera_id: str):
             """Get health status for a specific camera."""
             # Use health monitor if available
@@ -397,7 +582,19 @@ class WebServer:
             frame_source = self.frame_sources[camera_idx]
             return _create_fallback_health_data(camera_id, frame_source)
 
-        @self.app.get("/api/cameras/{camera_id}/stats")
+        @self.app.get(
+            "/api/cameras/{camera_id}/stats",
+            summary="Camera detailed statistics",
+            description=(
+                "Returns per-camera statistics aggregated from capture, inference, and detection components: "
+                "FPS, frame drop rates, queue depths, inference latency, and per-class detection counts."
+            ),
+            responses={
+                200: {"description": "Camera statistics"},
+                404: {"description": "Camera ID not found"},
+            },
+            tags=["cameras"],
+        )
         async def camera_stats(camera_id: str):
             """Get detailed statistics for a specific camera."""
             # Find camera index
@@ -461,7 +658,21 @@ class WebServer:
 
             return result
 
-        @self.app.post("/api/cameras/{camera_id}/restart")
+        @self.app.post(
+            "/api/cameras/{camera_id}/restart",
+            response_model=RestartResponse,
+            summary="Restart a camera",
+            description=(
+                "Triggers a reconnection attempt for the specified camera. "
+                "Runs asynchronously in an executor to avoid blocking the event loop."
+            ),
+            responses={
+                200: {"description": "Restart attempted (check `success` field for outcome)"},
+                404: {"description": "Camera ID not found"},
+                503: {"description": "Camera restart callback not configured"},
+            },
+            tags=["cameras"],
+        )
         async def restart_camera(camera_id: str):
             """Manually trigger camera restart."""
             if not self.restart_callback:
@@ -501,7 +712,16 @@ class WebServer:
                 logger.error(f"Error restarting camera {camera_id}: {e}")
                 raise HTTPException(status_code=500, detail=f"Error restarting camera: {str(e)}")
 
-        @self.app.get("/api/cameras/health/summary")
+        @self.app.get(
+            "/api/cameras/health/summary",
+            summary="All cameras health summary",
+            description=(
+                "Returns an aggregated health summary across all cameras, including counts of healthy, "
+                "degraded, failed, and restarting cameras."
+            ),
+            responses={200: {"description": "Health summary returned"}},
+            tags=["cameras"],
+        )
         async def cameras_health_summary():
             """Get health summary for all cameras."""
             if self.health_monitor:
@@ -526,7 +746,16 @@ class WebServer:
                 'cameras': cameras
             }
 
-        @self.app.get("/api/system/stats")
+        @self.app.get(
+            "/api/system/stats",
+            summary="System-wide statistics",
+            description=(
+                "Returns aggregated system metrics including GPU memory usage, total inference throughput, "
+                "queue depths, and per-camera FPS summaries."
+            ),
+            responses={200: {"description": "System statistics returned"}},
+            tags=["monitoring"],
+        )
         async def system_stats():
             """Get system-wide statistics including GPU memory and queue depths."""
             result = {
@@ -602,7 +831,24 @@ class WebServer:
 
             return result
 
-        @self.app.get("/api/clips")
+        @self.app.get(
+            "/api/clips",
+            response_model=ClipsListResponse,
+            summary="List saved detection clips",
+            description=(
+                "Returns all saved detection clips (JPEG images), newest first. "
+                "Each entry includes a URL for the original image, an optional URL for the annotated version, "
+                "and any companion JSON metadata.\n\n"
+                "**Authentication:** If the `TELESCOPE_CLIPS_TOKEN` environment variable is set, "
+                "supply the token via `Authorization: Bearer <token>`. "
+                "Without the env var the endpoint is public."
+            ),
+            responses={
+                200: {"description": "Clips list returned"},
+                401: {"description": "Missing or invalid Bearer token"},
+            },
+            tags=["clips"],
+        )
         async def clips_list(credentials: Optional[HTTPAuthorizationCredentials] = Security(self.security)):
             """Get list of saved clips (requires authentication if token configured)."""
             # Verify authentication
@@ -652,13 +898,25 @@ class WebServer:
             from fastapi.responses import RedirectResponse
             return RedirectResponse(url="/api/clips", status_code=307)
 
-        @self.app.get("/api/clips/{filename}")
+        @self.app.get(
+            "/api/clips/{filename}",
+            summary="Download a clip file",
+            description=(
+                "Serves a single clip file (JPEG or JSON) by filename. "
+                "Filenames are sanitized to prevent directory traversal.\n\n"
+                "**Authentication:** same as `GET /api/clips` — Bearer token required when "
+                "`TELESCOPE_CLIPS_TOKEN` is configured."
+            ),
+            responses={
+                200: {"description": "Clip file returned"},
+                401: {"description": "Missing or invalid Bearer token"},
+                403: {"description": "Path traversal attempt blocked"},
+                404: {"description": "Clip file not found"},
+            },
+            tags=["clips"],
+        )
         async def get_clip(filename: str, credentials: Optional[HTTPAuthorizationCredentials] = Security(self.security)):
-            """
-            Serve clip file with authentication.
-
-            Requires Bearer token in Authorization header if TELESCOPE_CLIPS_TOKEN env var is set.
-            """
+            """Serve clip file with authentication."""
             # Verify authentication
             self._verify_clips_token(credentials)
 
@@ -691,12 +949,22 @@ class WebServer:
                 filename=filename
             )
 
-        @self.app.post("/api/config/reload")
+        @self.app.post(
+            "/api/config/reload",
+            summary="Hot-reload configuration",
+            description=(
+                "Reloads configuration from disk and applies all hot-reloadable settings immediately. "
+                "Settings that require a full restart are identified in the response but not applied."
+            ),
+            responses={
+                200: {"description": "Configuration reloaded successfully"},
+                503: {"description": "Config reload callback not configured"},
+                500: {"description": "Error occurred during reload"},
+            },
+            tags=["config"],
+        )
         async def reload_config():
-            """
-            Reload configuration from file and apply hot-reloadable changes.
-            Settings that require restart will be identified but not applied.
-            """
+            """Reload configuration from file and apply hot-reloadable changes."""
             if not self.reload_config_callback:
                 raise HTTPException(status_code=503, detail="Config reload not available")
 
@@ -713,12 +981,23 @@ class WebServer:
                 logger.error(f"Error reloading config: {e}")
                 raise HTTPException(status_code=500, detail=f"Error reloading config: {str(e)}")
 
-        @self.app.get("/api/config/current")
+        @self.app.get(
+            "/api/config/current",
+            response_model=ConfigResponse,
+            summary="Get current configuration",
+            description=(
+                "Returns a deep copy of the active runtime configuration. "
+                "Useful for debugging and verifying that a hot-reload was applied correctly."
+            ),
+            responses={
+                200: {"description": "Current configuration returned"},
+                503: {"description": "Config getter not configured"},
+                500: {"description": "Error occurred while reading configuration"},
+            },
+            tags=["config"],
+        )
         async def get_current_config():
-            """
-            Get current active configuration.
-            Useful for debugging and verifying configuration state.
-            """
+            """Get current active configuration."""
             if not self.config_getter:
                 raise HTTPException(status_code=503, detail="Config getter not available")
 
@@ -730,17 +1009,24 @@ class WebServer:
                 logger.error(f"Error getting config: {e}")
                 raise HTTPException(status_code=500, detail=f"Error getting config: {str(e)}")
 
-        @self.app.get("/api/tracks/active")
-        async def get_active_tracks(camera_id: Optional[str] = None):
-            """
-            Get currently active tracks (objects in view).
-
-            Query params:
-                camera_id: Optional camera ID to filter tracks
-
-            Returns:
-                JSON with list of active tracks
-            """
+        @self.app.get(
+            "/api/tracks/active",
+            response_model=ActiveTracksResponse,
+            summary="Active object tracks",
+            description=(
+                "Returns all objects currently being tracked across all cameras. "
+                "Optionally filter by `camera_id` to see only tracks from a specific camera."
+            ),
+            responses={
+                200: {"description": "Active tracks returned"},
+                500: {"description": "Error retrieving tracks"},
+            },
+            tags=["tracking"],
+        )
+        async def get_active_tracks(
+            camera_id: Optional[str] = None,
+        ):
+            """Get currently active tracks (objects in view)."""
             try:
                 # Get tracker from detection processors
                 all_tracks = []
@@ -758,17 +1044,22 @@ class WebServer:
                 logger.error(f"Error getting active tracks: {e}")
                 raise HTTPException(status_code=500, detail=f"Error getting tracks: {str(e)}")
 
-        @self.app.get("/api/tracks/{track_id}/history")
+        @self.app.get(
+            "/api/tracks/{track_id}/history",
+            summary="Track trajectory history",
+            description=(
+                "Returns the complete trajectory and bounding-box history for a specific track UUID. "
+                "Searches across all detection processors."
+            ),
+            responses={
+                200: {"description": "Track history returned"},
+                404: {"description": "Track ID not found"},
+                500: {"description": "Error retrieving track history"},
+            },
+            tags=["tracking"],
+        )
         async def get_track_history(track_id: str):
-            """
-            Get full trajectory and history for a specific track.
-
-            Args:
-                track_id: Track UUID
-
-            Returns:
-                JSON with track details and complete history
-            """
+            """Get full trajectory and history for a specific track."""
             try:
                 # Search for track across all detection processors
                 for processor in self.detection_processors:
@@ -791,22 +1082,25 @@ class WebServer:
                 logger.error(f"Error getting track history: {e}")
                 raise HTTPException(status_code=500, detail=f"Error getting track history: {str(e)}")
 
-        @self.app.get("/api/tracks/stats")
+        @self.app.get(
+            "/api/tracks/stats",
+            summary="Tracking statistics",
+            description=(
+                "Returns aggregated tracking statistics across all detection processors.\n\n"
+                "**Query parameters:**\n"
+                "- `camera_id` — restrict results to a single camera\n"
+                "- `start` — Unix timestamp; only completed tracks seen after this time are included\n\n"
+                "**Response includes:** total unique track count, per-class breakdown, "
+                "average dwell time, and the longest track observed."
+            ),
+            responses={
+                200: {"description": "Tracking statistics returned"},
+                500: {"description": "Error retrieving tracking statistics"},
+            },
+            tags=["tracking"],
+        )
         async def get_tracking_stats(camera_id: Optional[str] = None, start: Optional[float] = None):
-            """
-            Get tracking statistics.
-
-            Query params:
-                camera_id: Optional camera ID to filter stats
-                start: Optional start timestamp to filter completed tracks
-
-            Returns:
-                JSON with tracking statistics including:
-                - Total unique tracks
-                - Breakdown by class
-                - Average dwell time
-                - Longest track info
-            """
+            """Get tracking statistics."""
             try:
                 # Aggregate stats from all detection processors
                 all_stats = {
